@@ -4,29 +4,26 @@ from langchain.prompts import PromptTemplate
 import json
 
 class AcademicAI:
-    def __init__(self, model_name="qwen"): # 你可以根据本地安装的模型修改，如 llama3 或 gemma
+    def __init__(self, model_name="qwen2.5:3b"):
+        # 针对 RTX 3050 Ti 优化，使用轻量级 3B 模型
         self.llm = Ollama(model=model_name)
 
-    def extract_keywords(self, title, abstract):
-        """
-        输入论文标题和摘要，返回提取的关键词 JSON 列表
-        """
+    def extract_tags(self, title, abstract):
+        """分析标题和摘要，提取核心关键词"""
         template = """
-        你是一个专业的学术助手。请分析以下论文的标题和摘要，并提取出 5-8 个核心研究关键词。
-        关键词应包含：研究领域、核心算法/技术、应用场景。
+        作为一名科研管理专家，请分析以下论文。
+        要求：提取 5 个核心研究关键词。
+        注意：仅返回一个 JSON 数组，例如 ["关键词1", "关键词2"]，严禁输出任何多余解释。
         
         论文标题：{title}
         论文摘要：{abstract}
-        
-        请仅返回一个标准的 JSON 格式列表，不要有任何多余的解释，格式如下：
-        ["关键词1", "关键词2", "关键词3"]
         """
         prompt = PromptTemplate.from_template(template)
         try:
             response = self.llm.invoke(prompt.format(title=title, abstract=abstract))
-            # 清洗可能存在的 markdown 标记
+            # 自动清洗可能存在的 Markdown 标签
             clean_res = response.replace('```json', '').replace('```', '').strip()
             return json.loads(clean_res)
         except Exception as e:
             print(f"AI 提取失败: {e}")
-            return []
+            return ["待分类"]
