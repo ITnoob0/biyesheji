@@ -17,7 +17,7 @@ class PaperViewSet(viewsets.ModelViewSet):
         # 2. 只有在有摘要的情况下才调用 AI
         if instance.abstract and len(instance.abstract) > 10:
             ai = AcademicAI()
-            keywords = ai.extract_keywords(instance.title, instance.abstract)
+            keywords = ai.extract_tags(instance.title, instance.abstract)
             
             # 3. 将提取的关键词保存回数据库
             instance.keywords = keywords

@@ -1,6 +1,6 @@
 # backend/ai_assistant/utils.py
 from langchain_community.llms import Ollama
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 import json
 
 class AcademicAI:
@@ -9,21 +9,28 @@ class AcademicAI:
         self.llm = Ollama(model=model_name)
 
     def extract_tags(self, title, abstract):
-        """分析标题和摘要，提取核心关键词"""
+        # 优化提示词，明确告诉它只需要输出一个干净的列表
         template = """
-        作为一名科研管理专家，请分析以下论文。
-        要求：提取 5 个核心研究关键词。
-        注意：仅返回一个 JSON 数组，例如 ["关键词1", "关键词2"]，严禁输出任何多余解释。
+        请作为学术助手，为下述论文提取5个核心关键词。
+        要求：
+        1. 仅返回一个 JSON 数组格式，例如 ["标签1", "标签2", "标签3", "标签4", "标签5"]。
+        2. 严禁返回任何多余的解释、前言或 Markdown 标签。
         
-        论文标题：{title}
-        论文摘要：{abstract}
+        标题：{title}
+        摘要：{abstract}
         """
         prompt = PromptTemplate.from_template(template)
         try:
             response = self.llm.invoke(prompt.format(title=title, abstract=abstract))
-            # 自动清洗可能存在的 Markdown 标签
-            clean_res = response.replace('```json', '').replace('```', '').strip()
-            return json.loads(clean_res)
+            # 增强清洗逻辑：去除可能存在的所有 Markdown 格式代码块
+            clean_res = response.strip()
+            if "```" in clean_res:
+                clean_res = clean_res.split("```")[1]
+                if clean_res.startswith("json"):
+                    clean_res = clean_res[4:]
+            
+            return json.loads(clean_res.strip())
         except Exception as e:
-            print(f"AI 提取失败: {e}")
-            return ["待分类"]
+            # 这里的 print 会显示在你的终端，请查看它
+            print(f"AI 提取失败，详细错误信息: {e}") 
+            return ["分析异常"]
