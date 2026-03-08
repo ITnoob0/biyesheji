@@ -68,6 +68,7 @@
 import { ref, onMounted, onUnmounted, markRaw } from 'vue'
 import * as echarts from 'echarts'
 import axios from 'axios'
+import { ElMessage } from 'element-plus' // 新增：引入 Element Plus 的消息提示组件
 import { 
   DocumentAdd, Share, Cpu, 
   Document, Star, Trophy, Reading,
@@ -91,9 +92,8 @@ let radarChartInstance: echarts.ECharts | null = null
 // --- 获取后端数据 ---
 const fetchDashboardData = async () => {
   try {
-    // 请根据你的 Django 配置修改实际 URL 前缀，如果配了路由此处可能是 /api/dashboard-stats/
-    // 为了防止你没配跨域，这里演示使用完整路径。如果运行端口不是 8000 请对应修改。
-    const response = await axios.get('http://127.0.0.1:8000/dashboard-stats/') 
+    // 【修复 1】：修正后端的 API 路由地址，加上 /api/achievements/ 前缀
+    const response = await axios.get('http://127.0.0.1:8000/api/achievements/dashboard-stats/') 
     const data = response.data
     
     statistics.value = data.statistics
@@ -101,6 +101,14 @@ const fetchDashboardData = async () => {
     
   } catch (error) {
     console.error("获取概览数据失败:", error)
+    
+    // 【修复 2】：请求失败时，也要隐藏雷达图的 Loading 动画，防止一直转圈
+    if (radarChartInstance) {
+      radarChartInstance.hideLoading()
+    }
+    
+    // 【修复 3】：在页面上弹出清晰的错误提示
+    ElMessage.error('无法获取科研画像数据，请检查后端服务或跨域配置是否正常')
   }
 }
 
