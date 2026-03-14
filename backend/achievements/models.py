@@ -123,6 +123,14 @@ class CoAuthor(models.Model):
         default=False,
         verbose_name="是否本校教师"
     )
+    internal_teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="coauthor_links",
+        verbose_name="关联内部教师账号"
+    )
 
     def __str__(self):
         return f"{self.name} ({self.paper.title})"
