@@ -5,12 +5,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
+import { defineProps } from 'vue';
 import * as echarts from 'echarts';
 import axios from 'axios';
 
 const chartRef = ref<HTMLDivElement | null>(null);
-const userId = 1; // 可根据实际路由或父组件传参调整
+const props = defineProps<{ userId: number | string }>();
 
 const nodeColors = {
   CenterTeacher: '#5470C6',
@@ -19,7 +20,7 @@ const nodeColors = {
   ExternalScholar: '#EE6666',
 };
 
-const fetchGraphData = async () => {
+const fetchGraphData = async (userId: number | string) => {
   const token = localStorage.getItem('token');
   const response = await axios.get(`/api/graph/topology/${userId}/`, {
     headers: {
@@ -77,9 +78,21 @@ const renderGraph = (data: any) => {
   chart.setOption(option);
 };
 
-onMounted(async () => {
-  const data = await fetchGraphData();
+let chart: echarts.ECharts | null = null;
+const loadGraph = async () => {
+  if (!props.userId) return;
+  const data = await fetchGraphData(props.userId);
+  if (chart) chart.dispose();
+  chart = echarts.init(chartRef.value!);
   renderGraph(data);
+};
+
+onMounted(loadGraph);
+watch(() => props.userId, loadGraph);
+
+import { onBeforeUnmount } from 'vue';
+onBeforeUnmount(() => {
+  if (chart) chart.dispose();
 });
 </script>
 

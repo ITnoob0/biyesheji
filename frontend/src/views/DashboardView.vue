@@ -3,8 +3,8 @@
     <el-card class="welcome-header" shadow="never">
       <div class="header-content">
         <div>
-          <h2 class="greeting">👨‍🏫 欢迎回来，刘老师！</h2>
-          <p class="subtitle">您的科研能力数字画像与数据分析引擎已就绪。</p>
+          <h2 class="greeting">👨‍🏫 欢迎回来，{{ teacherInfo.name || '教师' }}！</h2>
+          <p class="subtitle">所属学院：{{ teacherInfo.department || '未知' }} | 职称：{{ teacherInfo.title || '未知' }}</p>
         </div>
         <div class="quick-actions">
           <el-button type="primary" icon="DocumentAdd">录入论文</el-button>
@@ -39,17 +39,6 @@
     </el-row>
 
     <el-row :gutter="20" class="charts-container">
-      <el-col :span="14">
-        <el-card shadow="hover" class="chart-card">
-          <template #header>
-            <div class="card-header">
-              <span>📈 科研生命周期轨迹 (近十年)</span>
-            </div>
-          </template>
-          <div ref="trendChartRef" class="chart-instance"></div>
-        </el-card>
-      </el-col>
-      
       <el-col :span="10">
         <el-card shadow="hover" class="chart-card">
           <template #header>
@@ -57,7 +46,17 @@
               <span>🎯 综合能力雷达评估</span>
             </div>
           </template>
-          <div ref="radarChartRef" class="chart-instance"></div>
+          <RadarChart :radarData="radarData" />
+        </el-card>
+      </el-col>
+      <el-col :span="14">
+        <el-card shadow="hover" class="chart-card">
+          <template #header>
+            <div class="card-header">
+              <span>🕸️ 学术社交拓扑图</span>
+            </div>
+          </template>
+          <AcademicGraph :userId="userId" />
         </el-card>
       </el-col>
     </el-row>
@@ -65,15 +64,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, markRaw } from 'vue'
-import * as echarts from 'echarts'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
-import { ElMessage } from 'element-plus' // 新增：引入 Element Plus 的消息提示组件
-import { 
-  DocumentAdd, Share, Cpu, 
-  Document, Star, Trophy, Reading,
-  CaretTop, CaretBottom
-} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { DocumentAdd, Share, Cpu, Document, Star, Trophy, Reading, CaretTop, CaretBottom } from '@element-plus/icons-vue'
+import AcademicGraph from './AcademicGraph.vue'
+import RadarChart from '../components/RadarChart.vue'
 
 // --- 数据卡片数据 (赋初始默认值防止页面白屏) ---
 const statistics = ref([
@@ -82,6 +79,10 @@ const statistics = ref([
   { title: '综合科研评分', value: 0, suffix: '分', icon: 'Trophy', iconClass: 'icon-red', trend: 0 },
   { title: '主持/参与项目', value: 0, suffix: '项', icon: 'Reading', iconClass: 'icon-green', trend: 0 }
 ])
+const radarData = ref([])
+const teacherInfo = ref({ name: '', department: '', title: '' })
+const route = useRoute()
+const userId = route.params.id || 1
 
 // --- ECharts 图表逻辑 ---
 const trendChartRef = ref<HTMLElement | null>(null)
@@ -92,22 +93,24 @@ let radarChartInstance: echarts.ECharts | null = null
 // --- 获取后端数据 ---
 const fetchDashboardData = async () => {
   try {
-    // 【修复 1】：修正后端的 API 路由地址，加上 /api/achievements/ 前缀
-    const response = await axios.get('http://127.0.0.1:8000/api/achievements/dashboard-stats/') 
-    const data = response.data
-    
-    statistics.value = data.statistics
-    updateRadarChart(data.radar_data)
-    
-  } catch (error) {
-    console.error("获取概览数据失败:", error)
-    
-    // 【修复 2】：请求失败时，也要隐藏雷达图的 Loading 动画，防止一直转圈
-    if (radarChartInstance) {
-      radarChartInstance.hideLoading()
+    const token = localStorage.getItem('token')
+    // 获取统计数据
+    const statsRes = await axios.get(`/api/achievements/dashboard-stats/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    statistics.value = statsRes.data.statistics
+    // 获取雷达数据
+    const radarRes = await axios.get(`/api/achievements/radar/${userId}/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    radarData.value = radarRes.data.radar_dimensions
+    // 获取教师基本信息（可根据实际API调整）
+    teacherInfo.value = {
+      name: '刘老师',
+      department: '计算机学院',
+      title: '副教授'
     }
-    
-    // 【修复 3】：在页面上弹出清晰的错误提示
+  } catch (error) {
     ElMessage.error('无法获取科研画像数据，请检查后端服务或跨域配置是否正常')
   }
 }
@@ -181,16 +184,7 @@ const handleResize = () => {
 }
 
 onMounted(() => {
-  initTrendChart()
-  initRadarChart()
-  fetchDashboardData() // 发起真实数据请求
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  trendChartInstance?.dispose()
-  radarChartInstance?.dispose()
+  fetchDashboardData()
 })
 </script>
 

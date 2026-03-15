@@ -8,6 +8,12 @@ const router = createRouter({
       path: '/',
       name: 'dashboard',
       component: DashboardView
+    },
+    {
+      path: '/profile/:id',
+      name: 'profile',
+      component: DashboardView,
+      props: true
     }
   ],
 })
