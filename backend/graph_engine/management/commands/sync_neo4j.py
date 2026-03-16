@@ -1,41 +1,48 @@
-"""
-同步 MySQL 数据到 Neo4j 图数据库
-用法：python manage.py sync_neo4j
-"""
 from django.core.management.base import BaseCommand
 from django.conf import settings
-from achievements.models import TeacherProfile, Paper, CoAuthor, PaperKeyword, ResearchKeyword
+from django.contrib.auth import get_user_model
+from achievements.models import Paper, PaperKeyword
 from neo4j import GraphDatabase
 from typing import Any
 
+User = get_user_model()
+
 class Command(BaseCommand):
-    """
-    Django 管理命令：同步学术数据到 Neo4j 图数据库
-    """
     help = "Sync MySQL academic data to Neo4j graph database."
 
     def handle(self, *args: Any, **options: Any) -> None:
-        uri = getattr(settings, 'NEO4J_URI', 'bolt://localhost:7687')
+        uri = getattr(settings, 'NEO4J_URI', 'neo4j://127.0.0.1:7687')
         user = getattr(settings, 'NEO4J_USER', 'neo4j')
-        password = getattr(settings, 'NEO4J_PASSWORD', 'password')
+        password = getattr(settings, 'NEO4J_PASSWORD', 'liujianlei')
+        
         driver = GraphDatabase.driver(uri, auth=(user, password))
-        self.stdout.write(self.style.SUCCESS(f"Connecting to Neo4j at {uri} as {user}"))
+        
         with driver.session() as session:
-            # 同步教师节点
-            for tp in TeacherProfile.objects.select_related('user'):
+            self.stdout.write("Cleaning up old data in Neo4j...")
+            # 建议开发阶段开启：清空所有节点和关系，确保同步后数据的纯净
+            session.run("MATCH (n) DETACH DELETE n")
+
+            self.stdout.write("Syncing Teachers and Papers...")
+            # 直接遍历论文，动态确保教师节点存在
+            for paper in Paper.objects.select_related('teacher'):
+                # 1. 确保主讲教师节点存在（即使没有 TeacherProfile）
+                teacher_name = paper.teacher.get_full_name() or paper.teacher.username
                 session.run(
-                    "MERGE (t:Teacher {user_id: $user_id, name: $name})",
-                    user_id=tp.user.id,
-                    name=tp.user.get_full_name() or tp.user.username
+                    "MERGE (t:Teacher {user_id: $user_id}) "
+                    "SET t.name = $name",
+                    user_id=paper.teacher.id,
+                    name=teacher_name
                 )
-            # 同步论文节点
-            for paper in Paper.objects.all():
+
+                # 2. 确保论文节点存在
                 session.run(
-                    "MERGE (p:Paper {paper_id: $paper_id, title: $title})",
+                    "MERGE (p:Paper {paper_id: $paper_id}) "
+                    "SET p.title = $title",
                     paper_id=paper.id,
                     title=paper.title
                 )
-                # 教师与论文关系
+
+                # 3. 建立发布关系
                 session.run(
                     "MATCH (t:Teacher {user_id: $user_id}), (p:Paper {paper_id: $paper_id}) "
                     "MERGE (t)-[:PUBLISHED {is_first: $is_first}]->(p)",
@@ -43,19 +50,19 @@ class Command(BaseCommand):
                     paper_id=paper.id,
                     is_first=paper.is_first_author
                 )
-                # 合作者节点与关系
+
+                # 4. 同步合作者
                 for co in paper.coauthors.all():
                     if co.is_internal and co.internal_teacher:
+                        co_name = co.internal_teacher.get_full_name() or co.internal_teacher.username
                         session.run(
-                            "MERGE (t:Teacher {user_id: $user_id, name: $name})",
-                            user_id=co.internal_teacher.id,
-                            name=co.internal_teacher.get_full_name() or co.internal_teacher.username
+                            "MERGE (t:Teacher {user_id: $user_id}) SET t.name = $name",
+                            user_id=co.internal_teacher.id, name=co_name
                         )
                         session.run(
                             "MATCH (t:Teacher {user_id: $user_id}), (p:Paper {paper_id: $paper_id}) "
                             "MERGE (t)-[:CO_AUTHORED]->(p)",
-                            user_id=co.internal_teacher.id,
-                            paper_id=paper.id
+                            user_id=co.internal_teacher.id, paper_id=paper.id
                         )
                     else:
                         session.run(
@@ -65,21 +72,17 @@ class Command(BaseCommand):
                         session.run(
                             "MATCH (e:ExternalScholar {name: $name}), (p:Paper {paper_id: $paper_id}) "
                             "MERGE (e)-[:CO_AUTHORED]->(p)",
-                            name=co.name,
-                            paper_id=paper.id
+                            name=co.name, paper_id=paper.id
                         )
-                # 关键词节点与关系
-                for pk in PaperKeyword.objects.filter(paper=paper):
-                    kw = pk.keyword
-                    session.run(
-                        "MERGE (k:Keyword {name: $name})",
-                        name=kw.name
-                    )
+
+                # 5. 同步关键词
+                for pk in PaperKeyword.objects.filter(paper=paper).select_related('keyword'):
+                    session.run("MERGE (k:Keyword {name: $name})", name=pk.keyword.name)
                     session.run(
                         "MATCH (p:Paper {paper_id: $paper_id}), (k:Keyword {name: $name}) "
                         "MERGE (p)-[:HAS_KEYWORD]->(k)",
-                        paper_id=paper.id,
-                        name=kw.name
+                        paper_id=paper.id, name=pk.keyword.name
                     )
+
         driver.close()
-        self.stdout.write(self.style.SUCCESS("Neo4j sync completed."))
+        self.stdout.write(self.style.SUCCESS("Neo4j sync completed successfully!"))
