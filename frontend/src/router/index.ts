@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from '../views/DashboardView.vue'
 import LoginView from '../views/LoginView.vue' // 1. 导入新创建的登录视图组件
+import AchievementEntryView from '../views/AchievementEntryView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -12,7 +13,7 @@ const router = createRouter({
       component: LoginView
     },
     {
-      path: '/',
+      path: '/dashboard',
       name: 'dashboard',
       component: DashboardView
     },
@@ -21,6 +22,11 @@ const router = createRouter({
       name: 'profile',
       component: DashboardView,
       props: true
+    },
+    {
+      path: '/entry',
+      name: 'AchievementEntry',
+      component: AchievementEntryView
     }
   ],
 })
@@ -32,15 +38,16 @@ const router = createRouter({
  */
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
-  
-  if (to.name !== 'login' && !token) {
-    // 未登录且不是去登录页，重定向到登录页
+  // 访问根路径始终跳到登录页
+  if (to.path === '/') {
     next({ name: 'login' })
-  } else if (to.name === 'login' && token) {
-    // 已登录还想去登录页，直接跳转到首页
+    return
+  }
+  if (!token && to.name !== 'login') {
+    next({ name: 'login' })
+  } else if (token && to.name === 'login') {
     next({ name: 'dashboard' })
   } else {
-    // 正常放行
     next()
   }
 })

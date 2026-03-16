@@ -7,7 +7,7 @@
           <p class="subtitle">所属学院：{{ teacherInfo.department || '未知' }} | 职称：{{ teacherInfo.title || '未知' }}</p>
         </div>
         <div class="quick-actions">
-          <el-button type="primary" icon="DocumentAdd">录入论文</el-button>
+          <el-button type="primary" icon="DocumentAdd" @click="router.push('/entry')">录入论文</el-button>
           <el-button type="success" icon="Share">查看社交拓扑</el-button>
           <el-button type="warning" icon="Cpu">跨学科推荐</el-button>
         </div>
@@ -79,7 +79,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, markRaw, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
@@ -91,6 +91,7 @@ import AcademicGraph from './AcademicGraph.vue'
 import RadarChart from '../components/RadarChart.vue'
 
 const route = useRoute()
+const router = useRouter()
 const userId = ref(route.params.id || 1)
 
 const statistics = ref([

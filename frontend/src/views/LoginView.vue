@@ -14,10 +14,16 @@ const handleLogin = async () => {
       username: username.value,
       password: password.value
     })
-    
     // 关键：将获取到的 access 令牌保存到 LocalStorage
     localStorage.setItem('token', res.data.access)
-    
+
+    // 获取当前用户信息（假设有/api/users/me/接口返回{id, is_admin, ...}）
+    const userRes = await axios.get('/api/users/me/', {
+      headers: { Authorization: 'Bearer ' + res.data.access }
+    })
+    localStorage.setItem('user_id', userRes.data.id)
+    localStorage.setItem('is_admin', userRes.data.is_admin ? 'true' : 'false')
+
     // 登录成功后跳转到首页
     router.push('/')
   } catch (err) {
