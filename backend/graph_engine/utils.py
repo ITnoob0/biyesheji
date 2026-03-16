@@ -1,42 +1,83 @@
-from neo4j import GraphDatabase
+from django.conf import settings
+
 
 class Neo4jEngine:
     def __init__(self):
-        # 请根据你本地 Neo4j 的实际情况修改密码
-        self.uri = "bolt://localhost:7687"
-        self.user = "neo4j"
-        self.password = "liujianlei" # <-- 这里换成你的 Neo4j 密码
+        self.enabled = getattr(settings, 'ENABLE_NEO4J', False)
+        self.driver = None
+
+        if not self.enabled:
+            return
+
+        try:
+            from neo4j import GraphDatabase
+        except Exception:
+            self.enabled = False
+            return
+
+        self.uri = getattr(settings, 'NEO4J_URI', 'bolt://localhost:7687').replace('neo4j://', 'bolt://')
+        self.user = getattr(settings, 'NEO4J_USER', 'neo4j')
+        self.password = getattr(settings, 'NEO4J_PASSWORD', '')
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
 
     def close(self):
-        self.driver.close()
+        if self.driver is not None:
+            self.driver.close()
 
-    def sync_paper_to_graph(self, paper_id, title, author_names, keywords):
-        """
-        将论文、作者、关键词及其关系写入图数据库
-        """
+    def sync_paper_to_graph(self, paper_id, title, teacher, coauthors, keywords):
+        if not self.enabled or self.driver is None:
+            return
+
         query = """
-        // 1. 创建或找到论文节点 (MERGE 保证不会重复创建)
+        MERGE (t:Teacher {user_id: $teacher_user_id})
+        SET t.name = $teacher_name
+
         MERGE (p:Paper {paper_id: $paper_id})
         SET p.title = $title
 
-        // 2. 遍历作者并建立 [发表] 关系
-        WITH p
-        UNWIND $author_names AS author_name
-        MERGE (t:Teacher {name: author_name})
         MERGE (t)-[:PUBLISHED]->(p)
 
-        // 3. 遍历关键词并建立 [包含] 关系，同时将关键词挂载给作者
         WITH p, t
-        UNWIND $keywords AS kw
-        MERGE (k:Keyword {name: kw})
-        MERGE (p)-[:HAS_KEYWORD]->(k)
-        MERGE (t)-[:RESEARCHES]->(k)
+        OPTIONAL MATCH (p)-[oldKeywordRel:HAS_KEYWORD]->(:Keyword)
+        DELETE oldKeywordRel
+
+        WITH p, t
+        OPTIONAL MATCH (:ExternalScholar)-[oldCoauthoredRel:CO_AUTHORED]->(p)
+        DELETE oldCoauthoredRel
+
+        FOREACH (keyword_name IN $keywords |
+            MERGE (k:Keyword {name: keyword_name})
+            MERGE (p)-[:HAS_KEYWORD]->(k)
+            MERGE (t)-[:RESEARCHES]->(k)
+        )
+
+        FOREACH (coauthor_name IN $coauthors |
+            MERGE (c:ExternalScholar {name: coauthor_name})
+            MERGE (c)-[:CO_AUTHORED]->(p)
+        )
+        """
+
+        safe_keywords = [keyword for keyword in keywords if keyword]
+        safe_coauthors = [coauthor for coauthor in coauthors if coauthor]
+
+        with self.driver.session() as session:
+            session.run(
+                query,
+                paper_id=str(paper_id),
+                title=title,
+                teacher_user_id=int(teacher['user_id']),
+                teacher_name=teacher['name'],
+                coauthors=safe_coauthors,
+                keywords=safe_keywords,
+            )
+
+    def delete_paper_from_graph(self, paper_id):
+        if not self.enabled or self.driver is None:
+            return
+
+        query = """
+        MATCH (p:Paper {paper_id: $paper_id})
+        DETACH DELETE p
         """
         with self.driver.session() as session:
-            session.run(query, 
-                        paper_id=str(paper_id), 
-                        title=title, 
-                        author_names=author_names, 
-                        keywords=keywords)
-            print(f"✅ 成功将论文《{title}》及其关系网络同步至 Neo4j!")
+            session.run(query, paper_id=str(paper_id))

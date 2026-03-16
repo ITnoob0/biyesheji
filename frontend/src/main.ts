@@ -1,12 +1,4 @@
 import axios from 'axios'
-// Axios 全局请求拦截器
-axios.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = 'Bearer ' + token
-  }
-  return config
-}, error => Promise.reject(error))
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
@@ -15,16 +7,45 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import { clearSessionAuth, getSessionToken } from './utils/sessionAuth'
+
+axios.interceptors.request.use(
+  config => {
+    const token = getSessionToken()
+
+    if (token) {
+      config.headers = config.headers ?? {}
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    return config
+  },
+  error => Promise.reject(error),
+)
+
+axios.interceptors.response.use(
+  response => response,
+  error => {
+    if (error?.response?.status === 401) {
+      clearSessionAuth()
+
+      if (router.currentRoute.value.name !== 'login') {
+        router.replace({ name: 'login' })
+      }
+    }
+
+    return Promise.reject(error)
+  },
+)
 
 const app = createApp(App)
 
-// 注册所有 Element Plus 图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus) // 挂载 UI 框架
+app.use(ElementPlus)
 
 app.mount('#app')

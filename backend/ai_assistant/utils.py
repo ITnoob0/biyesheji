@@ -1,37 +1,91 @@
-# backend/ai_assistant/utils.py
-from langchain_community.llms import Ollama
-from langchain_core.prompts import PromptTemplate
 import json
+import re
+from collections import Counter
+
+try:
+    from langchain_community.llms import Ollama
+    from langchain_core.prompts import PromptTemplate
+except Exception:  # pragma: no cover - optional dependency fallback
+    Ollama = None
+    PromptTemplate = None
+
 
 class AcademicAI:
-    # 1. 将默认模型名改为与你启动命令一致的 qwen2.5-fast
-    def __init__(self, model_name="qwen2.5-fast"):
-        # 2. 增加 temperature=0，让模型输出更像“机器”一样严谨，减少幻觉
-        self.llm = Ollama(model=model_name, temperature=0)
+    def __init__(self, model_name='qwen2.5-fast'):
+        self.model_name = model_name
+        self.llm = None
+
+        if Ollama is not None:
+            try:
+                self.llm = Ollama(model=model_name, temperature=0)
+            except Exception:
+                self.llm = None
 
     def extract_tags(self, title, abstract):
-        # 3. 优化提示词：明确兜底动作，禁止自创诸如“待分类”的词汇
+        if not title and not abstract:
+            return []
+
+        if self.llm is None or PromptTemplate is None:
+            return self._fallback_extract_tags(title, abstract)
+
         template = """
-        请作为学术助手，为下述论文提取5个核心研究关键词。
-        要求：
-        1. 仅返回一个 JSON 数组格式，例如 ["标签1", "标签2", "标签3", "标签4", "标签5"]。
-        2. 严禁返回任何多余的解释、前言或 Markdown 标签。
-        3. 如果提供的内容无意义或无法提取出学术关键词，请固定返回 ["无法提取"]，绝对不要自行生造如"待分类"等词汇。
-        
+        请作为学术助手，为下述论文提取 3 到 5 个核心研究关键词。
+        只返回 JSON 数组，例如 ["关键词1", "关键词2"]，不要返回其他解释。
+
         标题：{title}
         摘要：{abstract}
         """
         prompt = PromptTemplate.from_template(template)
+
         try:
             response = self.llm.invoke(prompt.format(title=title, abstract=abstract))
-            
-            clean_res = response.strip()
-            if "```" in clean_res:
-                clean_res = clean_res.split("```")[1]
-                if clean_res.startswith("json"):
-                    clean_res = clean_res[4:]
-            
-            return json.loads(clean_res.strip())
-        except Exception as e:
-            print(f"AI 提取失败，详细错误信息: {e}") 
-            return ["分析异常"]
+            parsed_tags = self._parse_llm_response(response)
+            normalized_tags = self._normalize_tags(parsed_tags)
+            if normalized_tags:
+                return normalized_tags
+        except Exception:
+            pass
+
+        return self._fallback_extract_tags(title, abstract)
+
+    def _parse_llm_response(self, response):
+        cleaned = str(response).strip()
+        if '```' in cleaned:
+            blocks = cleaned.split('```')
+            cleaned = next((block for block in blocks if '[' in block and ']' in block), cleaned)
+            if cleaned.startswith('json'):
+                cleaned = cleaned[4:]
+
+        parsed = json.loads(cleaned.strip())
+        if isinstance(parsed, list):
+            return parsed
+        return []
+
+    def _fallback_extract_tags(self, title, abstract):
+        text = ' '.join(part for part in [title, abstract] if part)
+        chinese_tokens = re.findall(r'[\u4e00-\u9fff]{2,}', text)
+        english_tokens = re.findall(r'[A-Za-z][A-Za-z\-]{2,}', text.lower())
+
+        stopwords = {
+            '研究', '方法', '分析', '设计', '系统', '模型', '数据', '高校', '教师', 'paper',
+            'study', 'based', 'using', 'approach', 'analysis', 'method', 'results', 'system',
+            'research', 'university', 'college', 'teacher',
+        }
+
+        tokens = [token.strip() for token in chinese_tokens + english_tokens]
+        filtered_tokens = [token for token in tokens if token not in stopwords and len(token) >= 2]
+        ranked_tokens = [token for token, _ in Counter(filtered_tokens).most_common(5)]
+        return self._normalize_tags(ranked_tokens)
+
+    def _normalize_tags(self, tags):
+        normalized = []
+        for tag in tags:
+            clean_tag = str(tag).strip().strip('.,;:[]{}"\'')
+            if not clean_tag:
+                continue
+            if clean_tag in {'无法提取', '分析异常'}:
+                continue
+            if clean_tag not in normalized:
+                normalized.append(clean_tag)
+
+        return normalized[:5]

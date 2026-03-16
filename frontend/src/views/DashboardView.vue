@@ -3,8 +3,10 @@
     <el-card class="welcome-header" shadow="never">
       <div class="header-content">
         <div>
-          <h2 class="greeting">欢迎回来，{{ teacherInfo.name || '教师' }}！</h2>
-          <p class="subtitle">所属学院：{{ teacherInfo.department || '未知' }} | 职称：{{ teacherInfo.title || '未知' }}</p>
+          <h2 class="greeting">欢迎回来，{{ teacherInfo.name || '教师' }}</h2>
+          <p class="subtitle">
+            所属学院：{{ teacherInfo.department || '未知' }} | 职称：{{ teacherInfo.title || '未知' }}
+          </p>
         </div>
         <div class="quick-actions">
           <el-button type="primary" icon="DocumentAdd" @click="router.push('/entry')">录入论文</el-button>
@@ -68,7 +70,7 @@
       <el-col :span="24">
         <el-card shadow="hover">
           <template #header>
-            <div class="card-header"><span>近十年科研产出趋势</span></div>
+            <div class="card-header"><span>近七年科研产出趋势</span></div>
           </template>
           <div ref="trendChartRef" class="chart-instance" style="height: 400px; width: 100%;"></div>
         </el-card>
@@ -78,27 +80,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, markRaw, onUnmounted } from 'vue'
+import { markRaw, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { 
-  DocumentAdd, Share, Cpu, Document, Star, 
-  Trophy, Reading, CaretTop, CaretBottom 
+import {
+  DocumentAdd, Share, Cpu, Document, Star,
+  Trophy, Reading, CaretTop, CaretBottom,
 } from '@element-plus/icons-vue'
 import AcademicGraph from './AcademicGraph.vue'
 import RadarChart from '../components/RadarChart.vue'
+import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+
+type StatisticItem = {
+  title: string
+  value: number
+  suffix?: string
+  icon: string
+  iconClass: string
+  trend: number
+}
 
 const route = useRoute()
 const router = useRouter()
-const userId = ref(route.params.id || 1)
+const userId = ref<number>(0)
 
-const statistics = ref([
+const statistics = ref<StatisticItem[]>([
   { title: '总发文量', value: 0, suffix: '篇', icon: 'Document', iconClass: 'icon-blue', trend: 0 },
   { title: '总被引频次', value: 0, suffix: '次', icon: 'Star', iconClass: 'icon-orange', trend: 0 },
   { title: '综合科研评分', value: 0, suffix: '分', icon: 'Trophy', iconClass: 'icon-red', trend: 0 },
-  { title: '主持/参与项目', value: 0, suffix: '项', icon: 'Reading', iconClass: 'icon-green', trend: 0 }
+  { title: '主持/参与项目', value: 0, suffix: '项', icon: 'Reading', iconClass: 'icon-green', trend: 0 },
 ])
 const radarData = ref([])
 const teacherInfo = ref({ name: '加载中...', department: '...', title: '...' })
@@ -106,43 +118,70 @@ const teacherInfo = ref({ name: '加载中...', department: '...', title: '...' 
 const trendChartRef = ref<HTMLElement | null>(null)
 let trendChartInstance: echarts.ECharts | null = null
 
-const fetchDashboardData = async () => {
-  try {
-    const token = localStorage.getItem('token')
-    const headers = { Authorization: `Bearer ${token}` }
+const resolveTargetUserId = (sessionUser: SessionUser): number => {
+  const routeUserId = Number(route.params.id)
 
-    const statsRes = await axios.get('/api/achievements/dashboard-stats/', { headers })
+  if (sessionUser.is_admin && Number.isFinite(routeUserId) && routeUserId > 0) {
+    return routeUserId
+  }
+
+  return sessionUser.id
+}
+
+const syncSessionContext = async (): Promise<SessionUser | null> => {
+  const sessionUser = await ensureSessionUserContext()
+
+  if (!sessionUser) {
+    router.replace({ name: 'login' })
+    return null
+  }
+
+  userId.value = resolveTargetUserId(sessionUser)
+  teacherInfo.value = {
+    name: sessionUser.real_name || sessionUser.username || '教师',
+    department: sessionUser.department || '未知',
+    title: sessionUser.title || '未知',
+  }
+
+  return sessionUser
+}
+
+const fetchDashboardData = async () => {
+  const sessionUser = await syncSessionContext()
+
+  if (!sessionUser) {
+    return
+  }
+
+  try {
+    const statsRes = await axios.get('/api/achievements/dashboard-stats/')
     if (statsRes.data.statistics) {
       statistics.value = statsRes.data.statistics
     }
 
-    const radarRes = await axios.get(`/api/achievements/radar/${userId.value}/`, { headers })
-    radarData.value = radarRes.data.radar_dimensions
-
-    teacherInfo.value = {
-      name: userId.value == 1 ? '系统管理员' : '科研教师',
-      department: '计算机学院',
-      title: '高级研究员'
-    }
+    const radarRes = await axios.get(`/api/achievements/radar/${userId.value}/`)
+    radarData.value = radarRes.data.radar_dimensions ?? []
   } catch (error) {
     console.error('Data fetch error:', error)
-    ElMessage.error('无法获取数据，请检查后端 API 状态')
+    ElMessage.error('无法获取仪表盘数据，请检查后端接口状态')
   }
 }
 
 const initTrendChart = () => {
   if (!trendChartRef.value) return
+
   trendChartInstance = markRaw(echarts.init(trendChartRef.value))
   const option = {
     tooltip: { trigger: 'axis' },
-    legend: { data: ['发文量 (篇)', '被引频次 (次)'], bottom: '0' },
+    legend: { data: ['发文量(篇)', '被引频次(次)'], bottom: '0' },
     xAxis: { type: 'category', data: ['2018', '2019', '2020', '2021', '2022', '2023', '2024'] },
     yAxis: [{ type: 'value' }, { type: 'value', yAxisIndex: 1 }],
     series: [
-      { name: '发文量 (篇)', type: 'bar', data: [3, 5, 4, 6, 4, 8, 5] },
-      { name: '被引频次 (次)', type: 'line', yAxisIndex: 1, data: [45, 80, 110, 150, 180, 240, 260] }
-    ]
+      { name: '发文量(篇)', type: 'bar', data: [3, 5, 4, 6, 4, 8, 5] },
+      { name: '被引频次(次)', type: 'line', yAxisIndex: 1, data: [45, 80, 110, 150, 180, 240, 260] },
+    ],
   }
+
   trendChartInstance.setOption(option)
 }
 
@@ -150,14 +189,16 @@ const handleResize = () => {
   trendChartInstance?.resize()
 }
 
-watch(() => route.params.id, (newId) => {
-  userId.value = newId || 1
-  fetchDashboardData()
-})
+watch(
+  () => route.params.id,
+  () => {
+    void fetchDashboardData()
+  },
+)
 
 onMounted(() => {
   initTrendChart()
-  fetchDashboardData()
+  void fetchDashboardData()
   window.addEventListener('resize', handleResize)
 })
 
