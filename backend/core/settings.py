@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     # 本地业务模块
     'users',
     'achievements',
+    'project_guides',
     'graph_engine',
     'ai_assistant',
 ]

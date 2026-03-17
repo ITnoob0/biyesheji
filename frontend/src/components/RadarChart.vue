@@ -1,101 +1,153 @@
 <template>
-  <div v-show="radarData && radarData.length > 0" ref="radarRef" style="width:100%;height:400px;"></div>
-  <div v-if="!radarData || radarData.length === 0" class="empty-placeholder">
-    <el-empty description="暂无科研画像数据" :image-size="100" />
+  <div v-if="radarData && radarData.length > 0" class="radar-shell">
+    <div ref="radarRef" class="radar-canvas"></div>
+    <div class="radar-caption">
+      <span class="caption-title">{{ teacherName || '当前教师' }}画像维度</span>
+      <span class="caption-subtitle">六个维度共同描绘科研能力结构，不同区域越饱满代表画像越完整。</span>
+    </div>
+  </div>
+  <div v-else class="empty-placeholder">
+    <el-empty description="暂无科研画像雷达数据" :image-size="100" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount, nextTick } from 'vue';
-import * as echarts from 'echarts';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import * as echarts from 'echarts'
 
-const props = defineProps<{ radarData: { name: string; value: number }[] }>();
-const radarRef = ref<HTMLDivElement | null>(null);
-let chart: echarts.ECharts | null = null;
+const props = defineProps<{
+  radarData: { name: string; value: number }[]
+  teacherName?: string
+}>()
+
+const radarRef = ref<HTMLDivElement | null>(null)
+let chart: echarts.ECharts | null = null
 
 const renderRadar = async () => {
-  // 核心修复：如果数据为空，直接跳过渲染，避免 ECharts 内部布局崩溃
   if (!props.radarData || props.radarData.length === 0) {
-    return;
+    chart?.clear()
+    return
   }
 
-  // 等待 DOM 更新
-  await nextTick();
-  
-  if (!radarRef.value) return;
+  await nextTick()
+  if (!radarRef.value) return
 
-  // 优化：如果实例不存在则初始化，存在则复用
   if (!chart) {
-    chart = echarts.init(radarRef.value);
+    chart = echarts.init(radarRef.value)
   }
 
-  const option = {
+  chart.setOption({
     tooltip: {
       trigger: 'item',
       formatter: (params: any) => {
-        // 雷达图的数据结构较特殊，params.value 是一个数组
-        return `<b>${params.name}</b>`;
+        const values = props.radarData
+          .map((item, index) => `${item.name}: ${params.value[index]}`)
+          .join('<br/>')
+        return `<b>${props.teacherName || '当前教师'}</b><br/>${values}`
       },
     },
     radar: {
-      // 这里的 indicator 必须有值，否则 radarLayout.js 会报错
-      indicator: props.radarData.map(d => ({ name: d.name, max: 100 })),
-      shape: 'circle',
-      radius: '65%',
+      indicator: props.radarData.map(item => ({ name: item.name, max: 100 })),
+      radius: '62%',
+      center: ['50%', '50%'],
+      shape: 'polygon',
       splitNumber: 5,
       axisName: {
-        color: '#606266',
-        fontWeight: 'bold',
+        color: '#334155',
+        fontSize: 13,
+        fontWeight: 600,
       },
       splitArea: {
         areaStyle: {
-          color: ['#f4f7fc', '#eef1f6', '#e7ebf1', '#e0e5eb', '#d9dee4']
-        }
-      }
+          color: ['#f8fafc', '#f1f5f9', '#e2e8f0', '#dbeafe', '#dbeafe'],
+        },
+      },
+      splitLine: {
+        lineStyle: { color: 'rgba(148, 163, 184, 0.38)' },
+      },
+      axisLine: {
+        lineStyle: { color: 'rgba(148, 163, 184, 0.45)' },
+      },
     },
     series: [
       {
         type: 'radar',
         data: [
           {
-            value: props.radarData.map(d => d.value),
-            name: '当前学者学术画像',
-            areaStyle: { color: 'rgba(64, 158, 255, 0.4)' },
-            lineStyle: { color: '#409EFF' },
-            itemStyle: { color: '#409EFF' },
-            symbolSize: 6
+            value: props.radarData.map(item => item.value),
+            name: props.teacherName || '当前教师',
+            symbol: 'circle',
+            symbolSize: 8,
+            lineStyle: {
+              width: 3,
+              color: '#2563eb',
+            },
+            itemStyle: {
+              color: '#2563eb',
+            },
+            areaStyle: {
+              color: 'rgba(37, 99, 235, 0.24)',
+            },
           },
         ],
       },
     ],
-  };
-  chart.setOption(option);
-};
-
-// 监听数据变化
-watch(() => props.radarData, () => {
-  renderRadar();
-}, { deep: true });
-
-onMounted(() => {
-  renderRadar();
-  window.addEventListener('resize', handleResize);
-});
+  })
+}
 
 const handleResize = () => {
-  chart?.resize();
-};
+  chart?.resize()
+}
+
+watch(
+  () => props.radarData,
+  () => {
+    void renderRadar()
+  },
+  { deep: true },
+)
+
+onMounted(() => {
+  void renderRadar()
+  window.addEventListener('resize', handleResize)
+})
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize);
+  window.removeEventListener('resize', handleResize)
   if (chart) {
-    chart.dispose();
-    chart = null;
+    chart.dispose()
+    chart = null
   }
-});
+})
 </script>
 
 <style scoped>
+.radar-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.radar-canvas {
+  width: 100%;
+  height: 380px;
+}
+
+.radar-caption {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.caption-title {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.caption-subtitle {
+  color: #64748b;
+  line-height: 1.6;
+}
+
 .empty-placeholder {
   display: flex;
   justify-content: center;

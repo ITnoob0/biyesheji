@@ -24,10 +24,13 @@ class Neo4jEngine:
         if self.driver is not None:
             self.driver.close()
 
-    def sync_paper_to_graph(self, paper_id, title, teacher, coauthors, keywords):
+    def _run(self, query, **params):
         if not self.enabled or self.driver is None:
             return
+        with self.driver.session() as session:
+            session.run(query, **params)
 
+    def sync_paper_to_graph(self, paper_id, title, teacher, coauthors, keywords):
         query = """
         MERGE (t:Teacher {user_id: $teacher_user_id})
         SET t.name = $teacher_name
@@ -57,27 +60,123 @@ class Neo4jEngine:
         )
         """
 
-        safe_keywords = [keyword for keyword in keywords if keyword]
-        safe_coauthors = [coauthor for coauthor in coauthors if coauthor]
-
-        with self.driver.session() as session:
-            session.run(
-                query,
-                paper_id=str(paper_id),
-                title=title,
-                teacher_user_id=int(teacher['user_id']),
-                teacher_name=teacher['name'],
-                coauthors=safe_coauthors,
-                keywords=safe_keywords,
-            )
+        self._run(
+            query,
+            paper_id=str(paper_id),
+            title=title,
+            teacher_user_id=int(teacher['user_id']),
+            teacher_name=teacher['name'],
+            coauthors=[coauthor for coauthor in coauthors if coauthor],
+            keywords=[keyword for keyword in keywords if keyword],
+        )
 
     def delete_paper_from_graph(self, paper_id):
-        if not self.enabled or self.driver is None:
-            return
+        self._run("MATCH (p:Paper {paper_id: $paper_id}) DETACH DELETE p", paper_id=str(paper_id))
 
+    def sync_project_to_graph(self, project_id, title, teacher, level, role, status):
         query = """
-        MATCH (p:Paper {paper_id: $paper_id})
-        DETACH DELETE p
+        MERGE (t:Teacher {user_id: $teacher_user_id})
+        SET t.name = $teacher_name
+
+        MERGE (p:Project {project_id: $project_id})
+        SET p.title = $title,
+            p.level = $level,
+            p.role = $role,
+            p.status = $status
+
+        MERGE (t)-[:UNDERTAKES_PROJECT]->(p)
         """
-        with self.driver.session() as session:
-            session.run(query, paper_id=str(paper_id))
+        self._run(
+            query,
+            project_id=str(project_id),
+            title=title,
+            teacher_user_id=int(teacher['user_id']),
+            teacher_name=teacher['name'],
+            level=level,
+            role=role,
+            status=status,
+        )
+
+    def delete_project_from_graph(self, project_id):
+        self._run("MATCH (p:Project {project_id: $project_id}) DETACH DELETE p", project_id=str(project_id))
+
+    def sync_intellectual_property_to_graph(self, ip_id, title, teacher, ip_type, registration_number):
+        query = """
+        MERGE (t:Teacher {user_id: $teacher_user_id})
+        SET t.name = $teacher_name
+
+        MERGE (i:IntellectualProperty {ip_id: $ip_id})
+        SET i.title = $title,
+            i.ip_type = $ip_type,
+            i.registration_number = $registration_number
+
+        MERGE (t)-[:OWNS_IP]->(i)
+        """
+        self._run(
+            query,
+            ip_id=str(ip_id),
+            title=title,
+            teacher_user_id=int(teacher['user_id']),
+            teacher_name=teacher['name'],
+            ip_type=ip_type,
+            registration_number=registration_number,
+        )
+
+    def delete_intellectual_property_from_graph(self, ip_id):
+        self._run("MATCH (i:IntellectualProperty {ip_id: $ip_id}) DETACH DELETE i", ip_id=str(ip_id))
+
+    def sync_teaching_achievement_to_graph(self, teaching_id, title, teacher, achievement_type, level):
+        query = """
+        MERGE (t:Teacher {user_id: $teacher_user_id})
+        SET t.name = $teacher_name
+
+        MERGE (ta:TeachingAchievement {teaching_id: $teaching_id})
+        SET ta.title = $title,
+            ta.achievement_type = $achievement_type,
+            ta.level = $level
+
+        MERGE (t)-[:HAS_TEACHING_ACHIEVEMENT]->(ta)
+        """
+        self._run(
+            query,
+            teaching_id=str(teaching_id),
+            title=title,
+            teacher_user_id=int(teacher['user_id']),
+            teacher_name=teacher['name'],
+            achievement_type=achievement_type,
+            level=level,
+        )
+
+    def delete_teaching_achievement_from_graph(self, teaching_id):
+        self._run(
+            "MATCH (ta:TeachingAchievement {teaching_id: $teaching_id}) DETACH DELETE ta",
+            teaching_id=str(teaching_id),
+        )
+
+    def sync_academic_service_to_graph(self, service_id, title, teacher, service_type, organization):
+        query = """
+        MERGE (t:Teacher {user_id: $teacher_user_id})
+        SET t.name = $teacher_name
+
+        MERGE (s:AcademicService {service_id: $service_id})
+        SET s.title = $title,
+            s.service_type = $service_type,
+            s.organization = $organization
+
+        MERGE (t)-[:PROVIDES_SERVICE]->(s)
+        """
+        self._run(
+            query,
+            service_id=str(service_id),
+            title=title,
+            teacher_user_id=int(teacher['user_id']),
+            teacher_name=teacher['name'],
+            service_type=service_type,
+            organization=organization,
+        )
+
+    def delete_academic_service_from_graph(self, service_id):
+        self._run(
+            "MATCH (s:AcademicService {service_id: $service_id}) DETACH DELETE s",
+            service_id=str(service_id),
+        )

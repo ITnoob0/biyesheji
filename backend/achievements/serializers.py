@@ -1,7 +1,15 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import CoAuthor, Paper, PaperKeyword
+from .models import (
+    AcademicService,
+    CoAuthor,
+    IntellectualProperty,
+    Paper,
+    PaperKeyword,
+    Project,
+    TeachingAchievement,
+)
 
 
 class CoAuthorDetailSerializer(serializers.ModelSerializer):
@@ -10,7 +18,28 @@ class CoAuthorDetailSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'organization', 'is_internal', 'internal_teacher')
 
 
-class PaperSerializer(serializers.ModelSerializer):
+class TeacherOwnedAchievementSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.SerializerMethodField()
+
+    read_only_fields = ('id', 'teacher', 'teacher_name', 'created_at')
+
+    def validate_title(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError('标题至少需要 2 个字符。')
+        return cleaned
+
+    def validate(self, attrs):
+        date_acquired = attrs.get('date_acquired')
+        if date_acquired and date_acquired > timezone.now().date():
+            raise serializers.ValidationError({'date_acquired': '日期不能晚于今天。'})
+        return attrs
+
+    def get_teacher_name(self, obj):
+        return obj.teacher.real_name or obj.teacher.username
+
+
+class PaperSerializer(TeacherOwnedAchievementSerializer):
     coauthors = serializers.ListField(
         child=serializers.CharField(),
         write_only=True,
@@ -19,7 +48,6 @@ class PaperSerializer(serializers.ModelSerializer):
     )
     coauthor_details = CoAuthorDetailSerializer(source='coauthors', many=True, read_only=True)
     keywords = serializers.SerializerMethodField()
-    teacher_name = serializers.SerializerMethodField()
     paper_type_display = serializers.CharField(source='get_paper_type_display', read_only=True)
 
     class Meta:
@@ -43,13 +71,7 @@ class PaperSerializer(serializers.ModelSerializer):
             'coauthor_details',
             'keywords',
         )
-        read_only_fields = ('id', 'teacher', 'teacher_name', 'created_at', 'coauthor_details', 'keywords')
-
-    def validate_title(self, value):
-        cleaned = value.strip()
-        if len(cleaned) < 3:
-            raise serializers.ValidationError('论文标题至少需要 3 个字符。')
-        return cleaned
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('coauthor_details', 'keywords')
 
     def validate_journal_name(self, value):
         cleaned = value.strip()
@@ -71,13 +93,10 @@ class PaperSerializer(serializers.ModelSerializer):
         return normalized[:20]
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         request = self.context.get('request')
-        date_acquired = attrs.get('date_acquired')
-
-        if date_acquired and date_acquired > timezone.now().date():
-            raise serializers.ValidationError({'date_acquired': '发表日期不能晚于今天。'})
-
         doi = (attrs.get('doi') or '').strip()
+
         if doi and request and request.user and request.user.is_authenticated:
             existing = Paper.objects.filter(teacher=request.user, doi=doi)
             if self.instance:
@@ -113,10 +132,105 @@ class PaperSerializer(serializers.ModelSerializer):
         keyword_relations = PaperKeyword.objects.filter(paper=obj).select_related('keyword')
         return [relation.keyword.name for relation in keyword_relations]
 
-    def get_teacher_name(self, obj):
-        return obj.teacher.real_name or obj.teacher.username
-
     def _replace_coauthors(self, paper, coauthor_names):
         paper.coauthors.all().delete()
         for name in coauthor_names:
             CoAuthor.objects.create(paper=paper, name=name)
+
+
+class ProjectSerializer(TeacherOwnedAchievementSerializer):
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = Project
+        fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'title',
+            'date_acquired',
+            'level',
+            'level_display',
+            'role',
+            'role_display',
+            'funding_amount',
+            'status',
+            'created_at',
+        )
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('level_display', 'role_display')
+
+    def validate_funding_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError('项目经费不能为负数。')
+        return value
+
+
+class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
+    ip_type_display = serializers.CharField(source='get_ip_type_display', read_only=True)
+
+    class Meta:
+        model = IntellectualProperty
+        fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'title',
+            'date_acquired',
+            'ip_type',
+            'ip_type_display',
+            'registration_number',
+            'is_transformed',
+            'created_at',
+        )
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('ip_type_display',)
+
+    def validate_registration_number(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 3:
+            raise serializers.ValidationError('登记号不能为空。')
+        return cleaned
+
+
+class TeachingAchievementSerializer(TeacherOwnedAchievementSerializer):
+    achievement_type_display = serializers.CharField(source='get_achievement_type_display', read_only=True)
+
+    class Meta:
+        model = TeachingAchievement
+        fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'title',
+            'date_acquired',
+            'achievement_type',
+            'achievement_type_display',
+            'level',
+            'created_at',
+        )
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('achievement_type_display',)
+
+
+class AcademicServiceSerializer(TeacherOwnedAchievementSerializer):
+    service_type_display = serializers.CharField(source='get_service_type_display', read_only=True)
+
+    class Meta:
+        model = AcademicService
+        fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'title',
+            'date_acquired',
+            'service_type',
+            'service_type_display',
+            'organization',
+            'created_at',
+        )
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('service_type_display',)
+
+    def validate_organization(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError('服务机构不能为空。')
+        return cleaned

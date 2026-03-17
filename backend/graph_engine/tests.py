@@ -1,41 +1,73 @@
 from django.contrib.auth import get_user_model
 from django.test import override_settings
-from django.urls import reverse
-from rest_framework import status
 from rest_framework.test import APITestCase
 
-from achievements.models import CoAuthor, Paper, PaperKeyword, ResearchKeyword
+from achievements.models import Paper
+
+
+User = get_user_model()
 
 
 @override_settings(ENABLE_NEO4J=False)
-class AcademicGraphTopologyTests(APITestCase):
+class GraphTopologyFallbackTests(APITestCase):
     def setUp(self):
-        user_model = get_user_model()
-        self.user = user_model.objects.create_user(
-            username='teacher_graph',
-            password='Admin123456',
-            real_name='图谱教师',
+        self.user = User.objects.create_user(
+            id=100081,
+            username="100081",
+            password="teacher123456",
+            real_name="测试教师",
         )
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(self.user)
+        self.url = f"/api/graph/topology/{self.user.id}/"
 
-    def test_topology_falls_back_to_relational_data(self):
-        paper = Paper.objects.create(
+    def test_relational_topology_includes_meta_and_detail_fields(self):
+        Paper.objects.create(
             teacher=self.user,
-            title='科研画像与知识图谱',
-            abstract='这是一段足够长的摘要，用来验证学术社交拓扑图的关系库回退逻辑。',
-            date_acquired='2025-03-05',
-            paper_type='JOURNAL',
-            journal_name='软件学报',
+            title="高校教师科研画像数据融合方法研究",
+            abstract="围绕画像建模与知识组织展开研究。",
+            date_acquired="2026-03-01",
+            doi="10.1234/portrait-fallback-test",
+            paper_type="journal",
+            journal_name="教育信息化研究",
         )
-        CoAuthor.objects.create(paper=paper, name='张三')
-        keyword = ResearchKeyword.objects.create(name='知识图谱')
-        PaperKeyword.objects.create(paper=paper, keyword=keyword)
 
-        response = self.client.get(reverse('academic_graph_topology', kwargs={'user_id': self.user.id}))
+        response = self.client.get(self.url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(any(node['nodeType'] == 'CenterTeacher' for node in response.data['nodes']))
-        self.assertTrue(any(node['nodeType'] == 'Paper' for node in response.data['nodes']))
-        self.assertTrue(any(node['nodeType'] == 'ExternalScholar' for node in response.data['nodes']))
-        self.assertTrue(any(node['nodeType'] == 'Keyword' for node in response.data['nodes']))
-        self.assertTrue(any(link['name'] == 'published' for link in response.data['links']))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("nodes", response.data)
+        self.assertIn("links", response.data)
+        self.assertIn("meta", response.data)
+
+        meta = response.data["meta"]
+        self.assertEqual(meta["source"], "mysql")
+        self.assertTrue(meta["fallback_used"])
+        self.assertGreaterEqual(meta["node_count"], 2)
+        self.assertGreaterEqual(meta["link_count"], 1)
+
+        self.assertTrue(
+            any("nodeTypeLabel" in node for node in response.data["nodes"])
+        )
+        self.assertTrue(
+            any("detailLines" in node for node in response.data["nodes"])
+        )
+        self.assertTrue(
+            any(node.get("name") == "高校教师科研画像数据融合方法研究" for node in response.data["nodes"])
+        )
+
+        self.assertTrue(
+            any("relationLabel" in link for link in response.data["links"])
+        )
+        self.assertTrue(
+            any("description" in link for link in response.data["links"])
+        )
+
+    def test_empty_relational_topology_keeps_compatible_response_shape(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["nodes"], [])
+        self.assertEqual(response.data["links"], [])
+        self.assertIn("meta", response.data)
+        self.assertEqual(response.data["meta"]["source"], "mysql")
+        self.assertTrue(response.data["meta"]["fallback_used"])
+        self.assertIn("notice", response.data["meta"])
