@@ -16,7 +16,7 @@
           </el-result>
         </div>
 
-        <div v-else-if="!loading && isEmpty" class="state-layer">
+      <div v-else-if="!loading && isEmpty" class="state-layer">
           <el-empty description="当前教师暂无可展示的学术图谱数据，可先录入论文、项目、知识产权、教学成果或学术服务。" />
         </div>
       </div>
@@ -52,6 +52,50 @@
     </div>
 
     <aside class="graph-side">
+      <div class="side-section">
+        <p class="side-title">数据来源</p>
+        <div class="focus-card">
+          <strong>{{ sourceSummary.title }}</strong>
+          <span class="focus-type">{{ sourceSummary.source }}</span>
+          <p class="focus-desc">{{ sourceSummary.notice }}</p>
+          <p class="focus-desc">节点 {{ graphMeta?.node_count ?? 0 }} 个 · 关系 {{ graphMeta?.link_count ?? 0 }} 条</p>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">图分析亮点</p>
+        <div class="meta-grid">
+          <div v-for="item in graphAnalysis?.highlight_cards || []" :key="item.title" class="mini-card">
+            <span class="mini-label">{{ item.title }}</span>
+            <strong>{{ item.value }}</strong>
+            <p class="focus-desc">{{ item.detail }}</p>
+          </div>
+        </div>
+        <p class="focus-desc analysis-note">{{ graphAnalysis?.scope_note || '当前为轻量图分析展示。' }}</p>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">合作与主题热点</p>
+        <div class="focus-card">
+          <strong>合作最活跃学者</strong>
+          <div class="tag-row">
+            <el-tag v-for="item in graphAnalysis?.top_collaborators || []" :key="item.name" effect="plain" type="danger">
+              {{ item.name }} · {{ item.count }}
+            </el-tag>
+            <span v-if="!(graphAnalysis?.top_collaborators || []).length" class="focus-desc">暂无合作热点数据。</span>
+          </div>
+        </div>
+        <div class="focus-card">
+          <strong>高频研究主题</strong>
+          <div class="tag-row">
+            <el-tag v-for="item in graphAnalysis?.top_keywords || []" :key="item.name" effect="plain" type="warning">
+              {{ item.name }} · {{ item.count }}
+            </el-tag>
+            <span v-if="!(graphAnalysis?.top_keywords || []).length" class="focus-desc">暂无主题热点数据。</span>
+          </div>
+        </div>
+      </div>
+
       <div class="side-section">
         <p class="side-title">关系速览</p>
         <div class="mini-grid">
@@ -107,36 +151,9 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { buildGraphSourceSummary } from './graph/sourceState.js'
+import type { GraphLink, GraphNode, GraphNodeType, GraphTopologyAnalysis, GraphTopologyMeta, GraphTopologyResponse } from '../types/graph'
 import { ensureSessionUserContext } from '../utils/sessionAuth'
-
-type GraphNodeType =
-  | 'CenterTeacher'
-  | 'Paper'
-  | 'Keyword'
-  | 'ExternalScholar'
-  | 'Project'
-  | 'IntellectualProperty'
-  | 'TeachingAchievement'
-  | 'AcademicService'
-  | string
-
-type GraphNode = {
-  id: string
-  name: string
-  category: number
-  symbolSize: number
-  nodeType: GraphNodeType
-  nodeTypeLabel?: string
-  detailLines?: string[]
-}
-
-type GraphLink = {
-  source: string
-  target: string
-  name: string
-  relationLabel?: string
-  description?: string
-}
 
 const props = defineProps<{ userId: number | string }>()
 
@@ -148,11 +165,15 @@ const router = useRouter()
 
 const graphNodes = ref<GraphNode[]>([])
 const graphLinks = ref<GraphLink[]>([])
+const graphMeta = ref<GraphTopologyMeta | null>(null)
+const graphAnalysis = ref<GraphTopologyAnalysis | null>(null)
 const selectedNode = ref<GraphNode | null>(null)
 const selectedLink = ref<GraphLink | null>(null)
 const hiddenNodeTypes = ref<GraphNodeType[]>([])
 
 let chartInstance: echarts.ECharts | null = null
+
+const sourceSummary = computed(() => buildGraphSourceSummary(graphMeta.value))
 
 const nodeMeta: Record<string, { label: string; shortLabel: string; color: string; category: number }> = {
   CenterTeacher: { label: '中心教师：画像主体', shortLabel: '教师', color: '#2563eb', category: 0 },
@@ -204,14 +225,14 @@ const toggleNodeType = (type: GraphNodeType) => {
     : hiddenNodeTypes.value.filter(item => item !== type)
 }
 
-const fetchGraphData = async (userId: number | string) => {
+const fetchGraphData = async (userId: number | string): Promise<GraphTopologyResponse> => {
   const sessionUser = await ensureSessionUserContext()
   if (!sessionUser) {
     router.replace({ name: 'login' })
     return { nodes: [], links: [], meta: {} }
   }
 
-  const response = await axios.get(`/api/graph/topology/${userId}/`)
+  const response = await axios.get<GraphTopologyResponse>(`/api/graph/topology/${userId}/`)
   return response.data
 }
 
@@ -327,6 +348,8 @@ const loadGraph = async () => {
     const data = await fetchGraphData(props.userId)
     graphNodes.value = data.nodes || []
     graphLinks.value = data.links || []
+    graphMeta.value = data.meta || null
+    graphAnalysis.value = data.analysis || null
     hiddenNodeTypes.value = []
 
     if (!graphNodes.value.length) {
@@ -344,6 +367,8 @@ const loadGraph = async () => {
     hasError.value = true
     graphNodes.value = []
     graphLinks.value = []
+    graphMeta.value = null
+    graphAnalysis.value = null
     selectedNode.value = null
     selectedLink.value = null
     chartInstance?.clear()
@@ -477,6 +502,13 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
+.meta-grid,
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .side-section {
   padding: 18px;
   border-radius: 20px;
@@ -536,6 +568,10 @@ onBeforeUnmount(() => {
   margin: 0;
   color: #64748b;
   line-height: 1.7;
+}
+
+.analysis-note {
+  margin-top: 10px;
 }
 
 .legend-list {

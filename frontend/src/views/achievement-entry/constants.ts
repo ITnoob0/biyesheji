@@ -1,4 +1,4 @@
-import type { TabName } from './types'
+import type { AchievementQueryState, TabName } from '../../types/achievements'
 
 export const achievementEndpointMap: Record<TabName, string> = {
   papers: '/api/achievements/papers/',
@@ -55,6 +55,25 @@ export const createAchievementStatusMap = (): Record<TabName, boolean> => ({
   'intellectual-properties': false,
   'teaching-achievements': false,
   'academic-services': false,
+})
+
+export const createAchievementQueryState = (): AchievementQueryState => ({
+  papers: {
+    search: '',
+    paper_type: 'ALL',
+  },
+  projects: {
+    search: '',
+  },
+  'intellectual-properties': {
+    search: '',
+  },
+  'teaching-achievements': {
+    search: '',
+  },
+  'academic-services': {
+    search: '',
+  },
 })
 
 export const normalizeAchievementList = <T>(data: unknown): T[] =>

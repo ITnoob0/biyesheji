@@ -20,7 +20,7 @@ class ProjectGuideApiTests(APITestCase):
             id=100004,
             username='100004',
             password='teacher123456',
-            real_name='汪心蓝',
+            real_name='汪心蕾',
             department='教育技术学院',
             title='副教授',
             research_direction=['教育数据智能', '科研画像'],
@@ -121,9 +121,14 @@ class ProjectGuideApiTests(APITestCase):
         self.assertGreaterEqual(len(response.data['recommendations']), 1)
         top_item = response.data['recommendations'][0]
         self.assertTrue(top_item['recommendation_reasons'])
+        self.assertIn('match_category_tags', top_item)
+        self.assertIn('priority_label', top_item)
+        self.assertIn('recommendation_summary', top_item)
         self.assertIn('teacher_snapshot', response.data)
         self.assertIn('data_meta', response.data)
         self.assertIn('empty_state', response.data)
+        self.assertIn('sorting_note', response.data['data_meta'])
+        self.assertIn('current_strategy', response.data['data_meta'])
         self.assertEqual(top_item['title'], '教育数据智能专项指南')
 
     def test_teacher_sees_only_open_guides_in_list(self):
@@ -153,3 +158,38 @@ class ProjectGuideApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item['title'] for item in response.data], ['开放指南'])
+
+    def test_admin_can_request_recommendations_for_specified_teacher(self):
+        ProjectGuide.objects.create(
+            title='管理员指定教师推荐指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            summary='用于验证管理员可以按教师查看项目推荐。',
+            target_keywords=['科研画像'],
+            target_disciplines=['教育数据智能'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/project-guides/recommendations/', {'user_id': self.teacher.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['teacher_snapshot']['user_id'], self.teacher.id)
+        self.assertTrue(response.data['recommendations'])
+
+    def test_teacher_cannot_request_other_teacher_recommendations(self):
+        user_model = get_user_model()
+        other_teacher = user_model.objects.create_user(
+            id=100020,
+            username='100020',
+            password='teacher123456',
+            real_name='其他教师',
+            department='计算机学院',
+            title='讲师',
+        )
+
+        self.client.force_authenticate(self.teacher)
+        response = self.client.get('/api/project-guides/recommendations/', {'user_id': other_teacher.id})
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

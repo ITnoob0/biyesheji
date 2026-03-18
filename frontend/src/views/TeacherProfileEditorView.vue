@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
+import type { TeacherAccountResponse } from '../types/users'
 
 interface ProfileFormState {
   real_name: string
@@ -82,7 +83,7 @@ const saveProfile = async () => {
 
   loading.value = true
   try {
-    const response = await axios.patch('/api/users/me/', {
+    const response = await axios.patch<TeacherAccountResponse>('/api/users/me/', {
       ...profileForm,
       research_direction: toResearchDirection(profileForm.research_interests),
     })

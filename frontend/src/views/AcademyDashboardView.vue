@@ -22,6 +22,41 @@
     />
 
     <template v-else>
+      <section class="filter-shell">
+        <el-card class="filter-card" shadow="never">
+          <template #header>
+            <div class="section-head">
+              <span>筛选、钻取与导出</span>
+              <el-tag type="primary" effect="plain">第三轮增强</el-tag>
+            </div>
+          </template>
+
+          <div class="filter-grid">
+            <el-select v-model="selectedDepartment" clearable placeholder="按学院筛选" @change="loadOverview">
+              <el-option v-for="item in filterOptions.departments" :key="item" :label="item" :value="item" />
+            </el-select>
+
+            <el-select v-model="selectedYear" clearable placeholder="按年份筛选" @change="loadOverview">
+              <el-option v-for="item in filterOptions.years" :key="item" :label="`${item} 年`" :value="item" />
+            </el-select>
+
+            <el-select v-model="selectedTeacherId" clearable filterable placeholder="按教师筛选" @change="loadOverview">
+              <el-option
+                v-for="item in filterOptions.teachers"
+                :key="item.user_id"
+                :label="`${item.teacher_name}（${item.department}）`"
+                :value="item.user_id"
+              />
+            </el-select>
+
+            <div class="filter-actions">
+              <el-button plain @click="resetFilters">重置筛选</el-button>
+              <el-button type="success" plain @click="exportTopTeachersCsv">导出当前排行</el-button>
+            </div>
+          </div>
+        </el-card>
+      </section>
+
       <section class="metric-grid">
         <el-card v-for="item in statistics" :key="item.title" class="metric-card" shadow="hover">
           <div class="metric-top">
@@ -76,6 +111,12 @@
             <el-table-column prop="achievement_total" label="总成果" width="100" />
             <el-table-column prop="paper_count" label="论文" width="90" />
             <el-table-column prop="project_count" label="项目" width="90" />
+            <el-table-column label="钻取" width="170" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openTeacherProfile(row.user_id)">画像</el-button>
+                <el-button link type="success" @click="openTeacherRecommendations(row.user_id)">推荐</el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
 
@@ -136,6 +177,8 @@ import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth
 import {
   buildAcademyTrendOption,
   buildDepartmentDistributionOption,
+  type AcademyActiveFilters,
+  type AcademyFilterOptions,
   type AcademyOverviewResponse,
   type AcademyStatisticItem,
   type CollaborationOverview,
@@ -151,6 +194,16 @@ const statistics = ref<AcademyStatisticItem[]>([])
 const yearlyTrend = ref<YearlyTrendRecord[]>([])
 const departmentDistribution = ref<DepartmentDistributionRecord[]>([])
 const topActiveTeachers = ref<TopActiveTeacherRecord[]>([])
+const filterOptions = ref<AcademyFilterOptions>({
+  departments: [],
+  teachers: [],
+  years: [],
+})
+const activeFilters = ref<AcademyActiveFilters>({
+  department: '',
+  teacher_id: null,
+  year: null,
+})
 const collaborationOverview = ref<CollaborationOverview>({
   coauthor_relation_total: 0,
   teachers_with_collaboration: 0,
@@ -167,6 +220,9 @@ const trendChartRef = ref<HTMLElement | null>(null)
 const departmentChartRef = ref<HTMLElement | null>(null)
 let trendChart: echarts.ECharts | null = null
 let departmentChart: echarts.ECharts | null = null
+const selectedDepartment = ref('')
+const selectedYear = ref<number | undefined>(undefined)
+const selectedTeacherId = ref<number | undefined>(undefined)
 
 const renderCharts = () => {
   if (trendChartRef.value) {
@@ -187,13 +243,20 @@ const renderCharts = () => {
 const loadOverview = async () => {
   loading.value = true
   try {
-    const { data } = await axios.get<AcademyOverviewResponse>('/api/achievements/academy-overview/')
+    const params = {
+      department: selectedDepartment.value || undefined,
+      year: selectedYear.value || undefined,
+      teacher_id: selectedTeacherId.value || undefined,
+    }
+    const { data } = await axios.get<AcademyOverviewResponse>('/api/achievements/academy-overview/', { params })
     statistics.value = data.statistics || []
     yearlyTrend.value = data.yearly_trend || []
     departmentDistribution.value = data.department_distribution || []
     topActiveTeachers.value = data.top_active_teachers || []
     collaborationOverview.value = data.collaboration_overview || collaborationOverview.value
     dataMeta.value = data.data_meta || dataMeta.value
+    filterOptions.value = data.filter_options || filterOptions.value
+    activeFilters.value = data.active_filters || activeFilters.value
     renderCharts()
   } catch (error: any) {
     console.error(error)
@@ -206,6 +269,50 @@ const loadOverview = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const resetFilters = async () => {
+  selectedDepartment.value = ''
+  selectedYear.value = undefined
+  selectedTeacherId.value = undefined
+  await loadOverview()
+}
+
+const openTeacherProfile = (userId: number) => {
+  router.push(`/profile/${userId}`)
+}
+
+const openTeacherRecommendations = (userId: number) => {
+  router.push({
+    name: 'project-recommendations',
+    query: { user_id: String(userId) },
+  })
+}
+
+const exportTopTeachersCsv = () => {
+  const rows = [
+    ['教师', '院系', '总成果', '论文', '项目'],
+    ...topActiveTeachers.value.map(item => [
+      item.teacher_name,
+      item.department,
+      String(item.achievement_total),
+      String(item.paper_count),
+      String(item.project_count),
+    ]),
+  ]
+  const content =
+    '\uFEFF' +
+    rows
+      .map(row => row.map(value => `"${String(value).split('"').join('""')}"`).join(','))
+      .join('\n')
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'academy-dashboard-top-teachers.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('已导出当前排行 CSV')
 }
 
 const handleResize = () => {
@@ -286,6 +393,28 @@ h1 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.filter-shell {
+  margin-bottom: 20px;
+}
+
+.filter-card {
+  border: none;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 12px;
 }
 
 .metric-card,
@@ -394,6 +523,7 @@ h1 {
 }
 
 @media (max-width: 1180px) {
+  .filter-grid,
   .metric-grid,
   .chart-grid,
   .bottom-grid,

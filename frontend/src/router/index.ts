@@ -9,6 +9,8 @@ import ForgotPasswordView from '../views/ForgotPasswordView.vue'
 import ProjectGuideManagementView from '../views/ProjectGuideManagementView.vue'
 import ProjectRecommendationView from '../views/ProjectRecommendationView.vue'
 import AcademyDashboardView from '../views/AcademyDashboardView.vue'
+import AssistantDemoView from '../views/AssistantDemoView.vue'
+import { initializeHttpClient } from '../utils/http'
 import { clearSessionAuth, ensureSessionUserContext } from '../utils/sessionAuth'
 
 const router = createRouter({
@@ -86,8 +88,16 @@ const router = createRouter({
       component: AcademyDashboardView,
       meta: { requiresAuth: true, requiresAdmin: true },
     },
+    {
+      path: '/assistant-demo',
+      name: 'assistant-demo',
+      component: AssistantDemoView,
+      meta: { requiresAuth: true },
+    },
   ],
 })
+
+initializeHttpClient(router)
 
 router.beforeEach(async to => {
   if (to.meta.guestOnly) {

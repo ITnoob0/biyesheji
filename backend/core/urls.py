@@ -10,4 +10,5 @@ urlpatterns = [
     path('api/achievements/', include('achievements.urls')),
     path('api/project-guides/', include('project_guides.urls')),
     path('api/graph/', include('graph_engine.urls')),
+    path('api/ai-assistant/', include('ai_assistant.urls')),
 ]

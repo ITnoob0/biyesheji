@@ -34,6 +34,7 @@
       <div class="hero-actions">
         <el-button type="primary" icon="DocumentAdd" @click="router.push('/entry')">录入成果</el-button>
         <el-button icon="Promotion" @click="openRecommendationPage">项目推荐</el-button>
+        <el-button icon="ChatDotRound" @click="openAssistantDemo">智能问答</el-button>
         <el-button icon="Edit" @click="openTeacherProfileEditor">编辑基础档案</el-button>
         <el-button v-if="currentUser?.is_admin" icon="User" @click="router.push('/teachers')">教师管理</el-button>
         <el-button v-if="currentUser?.is_admin" icon="DataAnalysis" @click="router.push('/academy-dashboard')">学院看板</el-button>
@@ -222,6 +223,7 @@ import { ElMessage } from 'element-plus'
 import AcademicGraph from './AcademicGraph.vue'
 import RadarChart from '../components/RadarChart.vue'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import type { TeacherAccountResponse } from '../types/users'
 import {
   buildLatestActiveYear,
   buildPaperTypeSummary,
@@ -320,7 +322,7 @@ const ensureUser = async (): Promise<SessionUser | null> => {
 }
 
 const loadTeacherDetail = async () => {
-  const response = await axios.get(`/api/users/teachers/${userId.value}/`)
+  const response = await axios.get<TeacherAccountResponse>(`/api/users/teachers/${userId.value}/`)
   teacherInfo.value = {
     ...response.data,
     name: response.data.real_name || response.data.username,
@@ -382,6 +384,13 @@ const openTeacherProfileEditor = () => {
 const openRecommendationPage = () => {
   router.push({
     name: 'project-recommendations',
+    query: currentUser.value?.is_admin ? { user_id: String(userId.value) } : undefined,
+  })
+}
+
+const openAssistantDemo = () => {
+  router.push({
+    name: 'assistant-demo',
     query: currentUser.value?.is_admin ? { user_id: String(userId.value) } : undefined,
   })
 }

@@ -4,6 +4,7 @@ import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import type { TeacherCreateResponse } from '../types/users'
 
 interface RegisterFormState {
   employee_id: string
@@ -20,7 +21,7 @@ interface RegisterFormState {
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const registerResult = ref<{ username: string; employee_id: number } | null>(null)
+const registerResult = ref<Pick<TeacherCreateResponse, 'username' | 'employee_id'> | null>(null)
 
 const form = reactive<RegisterFormState>({
   employee_id: '',
@@ -58,7 +59,7 @@ const handleRegister = async () => {
   loading.value = true
 
   try {
-    const response = await axios.post('/api/users/register/', {
+    const response = await axios.post<TeacherCreateResponse>('/api/users/register/', {
       ...form,
       research_direction: toResearchDirection(form.research_interests),
       h_index: 0,

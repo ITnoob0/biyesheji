@@ -108,6 +108,7 @@ SIMPLE_JWT = {
  
 # 7. Neo4j 图数据库配置示例
 ENABLE_NEO4J = os.environ.get('ENABLE_NEO4J', '0') == '1'
+GRAPH_SIGNAL_SYNC_ENABLED = os.environ.get('GRAPH_SIGNAL_SYNC_ENABLED', '0') == '1'
 NEO4J_URI = os.environ.get('NEO4J_URI', 'neo4j://127.0.0.1:7687')
 NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
 NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'liujianlei')

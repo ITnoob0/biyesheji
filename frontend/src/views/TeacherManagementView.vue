@@ -5,12 +5,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
+import type {
+  TeacherAccountResponse,
+  TeacherCreateResponse,
+  TeacherPasswordResetResponse,
+} from '../types/users'
 
-interface TeacherRecord extends SessionUser {
-  employee_id: number
-  discipline?: string | null
-  research_interests?: string | null
-  h_index?: number
+interface TeacherRecord extends TeacherAccountResponse {
   initial_password?: string
 }
 
@@ -36,7 +37,9 @@ const teachers = ref<TeacherRecord[]>([])
 const createLoading = ref(false)
 const listLoading = ref(false)
 const resetLoadingId = ref<number | null>(null)
-const lastCreatedAccount = ref<{ employee_id: number; username: string; initial_password?: string } | null>(null)
+const lastCreatedAccount = ref<Pick<TeacherCreateResponse, 'employee_id' | 'username' | 'initial_password'> | null>(
+  null,
+)
 const editDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const editFormRef = ref<FormInstance>()
@@ -129,7 +132,7 @@ const ensureAdminUser = async (): Promise<SessionUser | null> => {
 const loadTeachers = async () => {
   listLoading.value = true
   try {
-    const response = await axios.get('/api/users/teachers/')
+    const response = await axios.get<TeacherAccountResponse[]>('/api/users/teachers/')
     teachers.value = response.data
     await nextTick()
     focusTeacherRow()
@@ -147,7 +150,7 @@ const createTeacher = async () => {
 
   createLoading.value = true
   try {
-    const response = await axios.post('/api/users/teachers/', {
+    const response = await axios.post<TeacherCreateResponse>('/api/users/teachers/', {
       ...createTeacherForm,
       research_direction: toResearchDirection(createTeacherForm.research_interests),
     })
@@ -185,7 +188,7 @@ const saveTeacherEdit = async () => {
   if (!valid) return
 
   try {
-    const response = await axios.patch(`/api/users/teachers/${editTeacher.id}/`, {
+    const response = await axios.patch<TeacherAccountResponse>(`/api/users/teachers/${editTeacher.id}/`, {
       real_name: editTeacher.real_name,
       department: editTeacher.department,
       title: editTeacher.title,
@@ -198,8 +201,7 @@ const saveTeacherEdit = async () => {
     })
 
     if (currentUser.value?.id === editTeacher.id) {
-      setSessionUser(response.data)
-      currentUser.value = response.data
+      currentUser.value = setSessionUser(response.data)
     }
 
     ElMessage.success('教师资料已更新')
@@ -217,7 +219,7 @@ const resetPassword = async (teacher: TeacherRecord) => {
 
   resetLoadingId.value = teacher.id
   try {
-    const response = await axios.post(`/api/users/teachers/${teacher.id}/reset-password/`)
+    const response = await axios.post<TeacherPasswordResetResponse>(`/api/users/teachers/${teacher.id}/reset-password/`)
     ElMessage.success(`已将 ${teacher.real_name || teacher.username} 的密码重置为 ${response.data.password}`)
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.detail || '密码重置失败')

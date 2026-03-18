@@ -4,29 +4,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from achievements.models import TeacherProfile
+from .services import get_teacher_profile, sync_teacher_profile, update_teacher_account_and_profile
 
 DEFAULT_TEACHER_PASSWORD = 'teacher123456'
-
-
-def sync_teacher_profile(user, profile_data):
-    TeacherProfile.objects.update_or_create(
-        user=user,
-        defaults={
-            'department': profile_data.get('department', user.department or ''),
-            'title': profile_data.get('title', user.title or ''),
-            'discipline': profile_data.get('discipline', ''),
-            'research_interests': profile_data.get('research_interests', ''),
-            'h_index': profile_data.get('h_index', 0),
-        },
-    )
-
-
-def get_teacher_profile(user):
-    try:
-        return user.profile
-    except TeacherProfile.DoesNotExist:
-        return None
 
 
 class TeacherAccountSerializer(serializers.ModelSerializer):
@@ -99,15 +79,10 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
         research_interests = validated_data.pop('research_interests', profile.research_interests if profile else '')
         h_index = validated_data.pop('h_index', profile.h_index if profile else 0)
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        sync_teacher_profile(
+        update_teacher_account_and_profile(
             instance,
+            validated_data,
             {
-                'department': instance.department or '',
-                'title': instance.title or '',
                 'discipline': discipline,
                 'research_interests': research_interests,
                 'h_index': h_index,

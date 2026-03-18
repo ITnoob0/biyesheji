@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ai_assistant.utils import AcademicAI
-from graph_engine.utils import Neo4jEngine
+from graph_engine.services import AcademicGraphSyncService
 
 from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes
 from .import_serializers import BibtexConfirmImportSerializer, BibtexPreviewRequestSerializer
@@ -322,32 +322,16 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     def sync_graph(self, instance):
         keywords = self._extract_keywords(instance)
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.sync_paper_to_graph(
-                paper_id=instance.id,
-                title=instance.title,
-                teacher=self.teacher_payload(instance),
-                coauthors=[coauthor.name for coauthor in instance.coauthors.all()],
-                keywords=keywords,
-            )
-        except Exception as exc:
-            print(f'Failed to sync paper to graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.sync_paper(
+            paper_id=instance.id,
+            title=instance.title,
+            teacher=self.teacher_payload(instance),
+            coauthors=[coauthor.name for coauthor in instance.coauthors.all()],
+            keywords=keywords,
+        )
 
     def delete_graph_snapshot(self, identifier):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.delete_paper_from_graph(identifier)
-        except Exception as exc:
-            print(f'Failed to delete paper from graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.delete_paper(identifier)
 
     def _extract_keywords(self, instance):
         PaperKeyword.objects.filter(paper=instance).delete()
@@ -371,33 +355,17 @@ class ProjectViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'status')
 
     def sync_graph(self, instance):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.sync_project_to_graph(
-                project_id=instance.id,
-                title=instance.title,
-                teacher=self.teacher_payload(instance),
-                level=instance.level,
-                role=instance.role,
-                status=instance.status,
-            )
-        except Exception as exc:
-            print(f'Failed to sync project to graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.sync_project(
+            project_id=instance.id,
+            title=instance.title,
+            teacher=self.teacher_payload(instance),
+            level=instance.level,
+            role=instance.role,
+            status=instance.status,
+        )
 
     def delete_graph_snapshot(self, identifier):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.delete_project_from_graph(identifier)
-        except Exception as exc:
-            print(f'Failed to delete project from graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.delete_project(identifier)
 
 
 class IntellectualPropertyViewSet(TeacherOwnedAchievementViewSet):
@@ -406,32 +374,16 @@ class IntellectualPropertyViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'registration_number')
 
     def sync_graph(self, instance):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.sync_intellectual_property_to_graph(
-                ip_id=instance.id,
-                title=instance.title,
-                teacher=self.teacher_payload(instance),
-                ip_type=instance.ip_type,
-                registration_number=instance.registration_number,
-            )
-        except Exception as exc:
-            print(f'Failed to sync intellectual property to graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.sync_intellectual_property(
+            ip_id=instance.id,
+            title=instance.title,
+            teacher=self.teacher_payload(instance),
+            ip_type=instance.ip_type,
+            registration_number=instance.registration_number,
+        )
 
     def delete_graph_snapshot(self, identifier):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.delete_intellectual_property_from_graph(identifier)
-        except Exception as exc:
-            print(f'Failed to delete intellectual property from graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.delete_intellectual_property(identifier)
 
 
 class TeachingAchievementViewSet(TeacherOwnedAchievementViewSet):
@@ -440,32 +392,16 @@ class TeachingAchievementViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'level')
 
     def sync_graph(self, instance):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.sync_teaching_achievement_to_graph(
-                teaching_id=instance.id,
-                title=instance.title,
-                teacher=self.teacher_payload(instance),
-                achievement_type=instance.achievement_type,
-                level=instance.level,
-            )
-        except Exception as exc:
-            print(f'Failed to sync teaching achievement to graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.sync_teaching_achievement(
+            teaching_id=instance.id,
+            title=instance.title,
+            teacher=self.teacher_payload(instance),
+            achievement_type=instance.achievement_type,
+            level=instance.level,
+        )
 
     def delete_graph_snapshot(self, identifier):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.delete_teaching_achievement_from_graph(identifier)
-        except Exception as exc:
-            print(f'Failed to delete teaching achievement from graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.delete_teaching_achievement(identifier)
 
 
 class AcademicServiceViewSet(TeacherOwnedAchievementViewSet):
@@ -474,32 +410,16 @@ class AcademicServiceViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'organization')
 
     def sync_graph(self, instance):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.sync_academic_service_to_graph(
-                service_id=instance.id,
-                title=instance.title,
-                teacher=self.teacher_payload(instance),
-                service_type=instance.service_type,
-                organization=instance.organization,
-            )
-        except Exception as exc:
-            print(f'Failed to sync academic service to graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.sync_academic_service(
+            service_id=instance.id,
+            title=instance.title,
+            teacher=self.teacher_payload(instance),
+            service_type=instance.service_type,
+            organization=instance.organization,
+        )
 
     def delete_graph_snapshot(self, identifier):
-        graph = None
-        try:
-            graph = Neo4jEngine()
-            graph.delete_academic_service_from_graph(identifier)
-        except Exception as exc:
-            print(f'Failed to delete academic service from graph database: {exc}')
-        finally:
-            if graph is not None:
-                graph.close()
+        AcademicGraphSyncService.delete_academic_service(identifier)
 
 
 class TeacherDashboardStatsView(APIView):

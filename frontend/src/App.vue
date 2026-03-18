@@ -9,6 +9,7 @@
       <div class="session-actions">
         <el-button text @click="router.push('/dashboard')">画像主页</el-button>
         <el-button text @click="router.push('/profile-editor')">基础档案</el-button>
+        <el-button text @click="router.push('/assistant-demo')">智能问答</el-button>
         <el-button
           v-if="currentUser?.is_admin"
           text

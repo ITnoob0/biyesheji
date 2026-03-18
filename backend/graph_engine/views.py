@@ -5,7 +5,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from django.db.models import Count
+
+from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
 
 
 NODE_TYPE_META = {
@@ -75,11 +77,88 @@ class AcademicGraphTopologyView(APIView):
             'description': description,
         }
 
-    def _finalize_response(self, nodes, links, source: str, fallback_used: bool, notice: str):
+    def _build_analysis(self, teacher):
+        paper_queryset = Paper.objects.filter(teacher=teacher)
+        collaborator_ranking = list(
+            paper_queryset
+            .filter(coauthors__isnull=False)
+            .values('coauthors__name')
+            .annotate(count=Count('coauthors__id'))
+            .order_by('-count', 'coauthors__name')[:5]
+        )
+        keyword_ranking = list(
+            PaperKeyword.objects.filter(paper__teacher=teacher)
+            .values('keyword__name')
+            .annotate(count=Count('keyword_id'))
+            .order_by('-count', 'keyword__name')[:5]
+        )
+
+        top_collaborators = [
+            {
+                'name': item['coauthors__name'],
+                'count': item['count'],
+            }
+            for item in collaborator_ranking
+            if item['coauthors__name']
+        ]
+        top_keywords = [
+            {
+                'name': item['keyword__name'],
+                'count': item['count'],
+            }
+            for item in keyword_ranking
+            if item['keyword__name']
+        ]
+
+        highlight_cards = [
+            {
+                'title': '合作最活跃学者',
+                'value': top_collaborators[0]['name'] if top_collaborators else '暂无',
+                'detail': (
+                    f"共同关联 {top_collaborators[0]['count']} 篇论文"
+                    if top_collaborators
+                    else '录入合作作者后会自动形成分析结果。'
+                ),
+            },
+            {
+                'title': '高频研究主题',
+                'value': top_keywords[0]['name'] if top_keywords else '暂无',
+                'detail': (
+                    f"在关键词中出现 {top_keywords[0]['count']} 次"
+                    if top_keywords
+                    else '录入论文摘要并提取关键词后会自动形成主题分析。'
+                ),
+            },
+        ]
+
+        return {
+            'top_collaborators': top_collaborators,
+            'top_keywords': top_keywords,
+            'network_overview': {
+                'paper_count': paper_queryset.count(),
+                'collaborator_total': len(top_collaborators),
+                'keyword_total': len(top_keywords),
+            },
+            'highlight_cards': highlight_cards,
+            'scope_note': '当前属于轻量图分析展示，侧重合作与主题热点，不构成完整图挖掘平台。',
+        }
+
+    def _finalize_response(self, teacher, nodes, links, source: str, fallback_used: bool, notice: str):
         return {
             'nodes': nodes,
             'links': links,
             'meta': self._build_meta(source, fallback_used, len(nodes), len(links), notice),
+            'analysis': self._build_analysis(teacher) if teacher else {
+                'top_collaborators': [],
+                'top_keywords': [],
+                'network_overview': {
+                    'paper_count': 0,
+                    'collaborator_total': 0,
+                    'keyword_total': 0,
+                },
+                'highlight_cards': [],
+                'scope_note': '当前无可用数据，尚未形成轻量图分析结果。',
+            },
         }
 
     def _build_neo4j_topology(self, user_id: int):
@@ -135,12 +214,14 @@ class AcademicGraphTopologyView(APIView):
                     nodes.append(node)
                     node_map.add(node['id'])
 
-                teacher = record['t']
+                teacher_node = record['t']
+                user_model = get_user_model()
+                teacher = user_model.objects.filter(id=user_id).first()
                 teacher_id = f'teacher_{user_id}'
                 add_node(
                     self._make_node(
                         teacher_id,
-                        teacher.get('name', f'教师 {user_id}'),
+                        teacher_node.get('name', f'教师 {user_id}'),
                         'CenterTeacher',
                         detail_lines=['图谱中心节点', '当前教师画像的核心主体'],
                     )
@@ -265,6 +346,7 @@ class AcademicGraphTopologyView(APIView):
                     return None
 
                 return self._finalize_response(
+                    teacher,
                     nodes,
                     links,
                     source='neo4j',
@@ -283,6 +365,7 @@ class AcademicGraphTopologyView(APIView):
             teacher = user_model.objects.get(id=user_id)
         except user_model.DoesNotExist:
             return self._finalize_response(
+                None,
                 [],
                 [],
                 source='mysql',
@@ -302,6 +385,7 @@ class AcademicGraphTopologyView(APIView):
 
         if not any([papers, projects, ips, teachings, services]):
             return self._finalize_response(
+                teacher,
                 [],
                 [],
                 source='mysql',
@@ -434,6 +518,7 @@ class AcademicGraphTopologyView(APIView):
             links.append(self._make_link(teacher_node_id, service_node_id, 'provides_service'))
 
         return self._finalize_response(
+            teacher,
             nodes,
             links,
             source='mysql',

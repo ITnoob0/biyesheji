@@ -12,8 +12,58 @@
       </div>
       <div class="hero-actions">
         <el-button plain @click="router.push('/dashboard')">返回画像主页</el-button>
+        <el-button plain @click="openAssistantDemo">问答说明</el-button>
         <el-button type="primary" :loading="loading" @click="loadRecommendations">刷新推荐</el-button>
       </div>
+    </section>
+
+    <section class="content-shell control-shell">
+      <el-card shadow="never">
+        <template #header>
+          <div class="section-head">
+            <span>推荐筛选与排序</span>
+            <el-tag type="success" effect="plain">第三轮展示增强</el-tag>
+          </div>
+        </template>
+
+        <div class="control-grid">
+          <el-select
+            v-if="currentUser?.is_admin"
+            v-model="selectedTeacherId"
+            clearable
+            filterable
+            placeholder="管理员可切换教师视角"
+            @change="handleTeacherChanged"
+          >
+            <el-option
+              v-for="teacher in teacherOptions"
+              :key="teacher.id"
+              :label="`${teacher.real_name || teacher.username}（${teacher.department || '未填写院系'}）`"
+              :value="teacher.id"
+            />
+          </el-select>
+
+          <el-input
+            v-model="searchKeyword"
+            clearable
+            placeholder="按指南标题 / 发布单位 / 摘要搜索"
+          />
+
+          <el-select v-model="selectedFocusTag" clearable placeholder="按推荐类型筛选">
+            <el-option v-for="tag in focusTagOptions" :key="tag" :label="tag" :value="tag" />
+          </el-select>
+
+          <el-select v-model="selectedSort" placeholder="排序方式">
+            <el-option v-for="item in sortOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
+
+        <div class="tag-list">
+          <el-tag type="info" effect="plain">{{ recommendationData?.data_meta.current_strategy || '规则增强型推荐' }}</el-tag>
+          <el-tag type="warning" effect="plain">{{ recommendationData?.data_meta.sorting_note || '默认按推荐分数排序' }}</el-tag>
+          <el-tag type="success" effect="plain">结果数 {{ recommendationItems.length }}</el-tag>
+        </div>
+      </el-card>
     </section>
 
     <section class="snapshot-grid content-shell">
@@ -64,6 +114,10 @@
             <strong>后续扩展接口预留</strong>
             <p>{{ recommendationData?.data_meta.future_extension_hint || '后续可在本接口基础上扩展智能推荐能力。' }}</p>
           </div>
+          <div class="meta-item">
+            <strong>当前路线说明</strong>
+            <p>{{ recommendationData?.data_meta.current_strategy || '当前仍以规则增强路线为主，未进入复杂模型推荐。' }}</p>
+          </div>
         </div>
       </el-card>
     </section>
@@ -78,17 +132,35 @@
           <div>
             <div class="title-row">
               <h2>{{ item.title }}</h2>
-              <el-tag type="success" effect="plain">匹配度 {{ item.recommendation_score }}</el-tag>
+              <div class="tag-list compact-row">
+                <el-tag type="success" effect="plain">匹配度 {{ item.recommendation_score }}</el-tag>
+                <el-tag type="primary" effect="plain">{{ item.priority_label }}</el-tag>
+              </div>
             </div>
             <p class="subline">
               {{ item.issuing_agency }} · {{ item.guide_level_display }} · {{ item.status_display }}
               <span v-if="item.application_deadline"> · 截止 {{ item.application_deadline }}</span>
             </p>
           </div>
-          <el-button v-if="item.source_url" link type="primary" @click="openGuide(item.source_url)">查看来源</el-button>
+          <div class="compact-row">
+            <el-button link type="success" @click="openAssistantDemo(item.id)">智能解读</el-button>
+            <el-button v-if="item.source_url" link type="primary" @click="openGuide(item.source_url)">查看来源</el-button>
+          </div>
         </div>
 
         <p class="summary">{{ item.summary }}</p>
+
+        <div class="tag-section">
+          <span class="tag-label">推荐概括</span>
+          <p class="summary">{{ item.recommendation_summary }}</p>
+        </div>
+
+        <div class="tag-section">
+          <span class="tag-label">推荐类型</span>
+          <div class="tag-list">
+            <el-tag v-for="tag in item.match_category_tags" :key="tag" type="primary" effect="plain">{{ tag }}</el-tag>
+          </div>
+        </div>
 
         <div class="tag-section">
           <span class="tag-label">主题关键词</span>
@@ -128,6 +200,8 @@ import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import type { TeacherAccountResponse } from '../types/users'
+import { buildRecommendationSortOptions, filterRecommendationItems, sortRecommendationItems } from './project-guides/recommendationHelpers.js'
 import type { RecommendationItem, RecommendationResponse } from './project-guides/types'
 
 const route = useRoute()
@@ -135,15 +209,44 @@ const router = useRouter()
 const currentUser = ref<SessionUser | null>(null)
 const loading = ref(false)
 const recommendationData = ref<RecommendationResponse | null>(null)
+const teacherOptions = ref<TeacherAccountResponse[]>([])
+const selectedTeacherId = ref<number | undefined>(undefined)
+const searchKeyword = ref('')
+const selectedFocusTag = ref('')
+const selectedSort = ref('score')
 
-const recommendationItems = computed<RecommendationItem[]>(() => recommendationData.value?.recommendations || [])
+const sortOptions = buildRecommendationSortOptions()
+
+const focusTagOptions = computed(() => {
+  const tags = new Set<string>()
+  ;(recommendationData.value?.recommendations || []).forEach(item => {
+    ;(item.match_category_tags || []).forEach(tag => tags.add(tag))
+  })
+  return [...tags]
+})
+
+const recommendationItems = computed<RecommendationItem[]>(() => {
+  const filtered = filterRecommendationItems(
+    recommendationData.value?.recommendations || [],
+    searchKeyword.value,
+    selectedFocusTag.value,
+  )
+  return sortRecommendationItems(filtered, selectedSort.value)
+})
+
+const loadTeacherOptions = async () => {
+  if (!currentUser.value?.is_admin) return
+
+  const { data } = await axios.get<TeacherAccountResponse[]>('/api/users/teachers/')
+  teacherOptions.value = data || []
+}
 
 const loadRecommendations = async () => {
   loading.value = true
   try {
     const params =
-      currentUser.value?.is_admin && route.query.user_id
-        ? { user_id: Number(route.query.user_id) }
+      currentUser.value?.is_admin && (selectedTeacherId.value || route.query.user_id)
+        ? { user_id: Number(selectedTeacherId.value || route.query.user_id) }
         : undefined
 
     const { data } = await axios.get<RecommendationResponse>('/api/project-guides/recommendations/', { params })
@@ -160,8 +263,34 @@ const openGuide = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+const handleTeacherChanged = async () => {
+  await loadRecommendations()
+}
+
+const openAssistantDemo = (guideId?: number) => {
+  const query: Record<string, string> = {}
+
+  const targetTeacherId = selectedTeacherId.value || Number(route.query.user_id) || currentUser.value?.id
+  if (targetTeacherId) {
+    query.user_id = String(targetTeacherId)
+  }
+  if (guideId) {
+    query.guide_id = String(guideId)
+    query.question_type = 'guide_reason'
+  }
+
+  router.push({
+    name: 'assistant-demo',
+    query,
+  })
+}
+
 onMounted(async () => {
   currentUser.value = await ensureSessionUserContext()
+  if (currentUser.value?.is_admin && route.query.user_id) {
+    selectedTeacherId.value = Number(route.query.user_id)
+  }
+  await loadTeacherOptions()
   await loadRecommendations()
 })
 </script>
@@ -251,6 +380,23 @@ h2 {
   margin: 0 auto;
 }
 
+.control-shell {
+  margin-bottom: 20px;
+}
+
+.control-shell :deep(.el-card) {
+  border: none;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .snapshot-grid {
   display: grid;
   grid-template-columns: 0.9fr 1.1fr;
@@ -327,7 +473,15 @@ h2 {
   gap: 18px;
 }
 
+.compact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1080px) {
+  .control-grid,
   .snapshot-grid,
   .hero-panel,
   .hero-actions,

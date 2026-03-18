@@ -23,7 +23,7 @@
           <el-card shadow="never">
             <template #header>
               <div class="card-header">
-                <span>论文录入</span>
+                <span>{{ isEditing('papers') ? editingLabelMap.papers.edit : editingLabelMap.papers.create }}</span>
                 <el-button type="primary" plain @click="bibtexDialogVisible = true">BibTeX 批量导入</el-button>
               </div>
             </template>
@@ -72,17 +72,35 @@
                 />
               </el-form-item>
               <div class="actions">
-                <el-button @click="resetPaperForm">重置</el-button>
-                <el-button type="primary" :loading="submittingMap.papers" @click="submitPaper">提交论文</el-button>
+                <el-button v-if="isEditing('papers')" @click="resetPaperForm">取消编辑</el-button>
+                <el-button v-else @click="resetPaperForm">重置</el-button>
+                <el-button type="primary" :loading="submittingMap.papers" @click="submitPaper">
+                  {{ isEditing('papers') ? editingLabelMap.papers.submitEdit : editingLabelMap.papers.submitCreate }}
+                </el-button>
               </div>
             </el-form>
           </el-card>
 
           <el-card shadow="never">
             <template #header>
-              <div class="card-header">
+              <div class="card-header card-header-wrap">
                 <span>我的论文记录</span>
-                <el-tag type="info">{{ papers.length }} 篇</el-tag>
+                <div class="header-tools">
+                  <el-input
+                    v-model="queryMap.papers.search"
+                    clearable
+                    placeholder="按题目 / 期刊 / DOI 搜索"
+                    class="filter-input"
+                    @keyup.enter="fetchRecords('papers')"
+                    @clear="fetchRecords('papers')"
+                  />
+                  <el-select v-model="queryMap.papers.paper_type" class="filter-select" @change="fetchRecords('papers')">
+                    <el-option label="全部类型" value="ALL" />
+                    <el-option v-for="option in paperTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                  <el-button plain @click="clearFilters('papers')">清空筛选</el-button>
+                  <el-tag type="info">{{ papers.length }} 篇</el-tag>
+                </div>
               </div>
             </template>
             <el-table :data="papers" v-loading="loadingMap.papers" empty-text="暂无论文成果">
@@ -97,8 +115,9 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="startEditRecord('papers', row)">编辑</el-button>
                   <el-button link type="danger" @click="removeRecord('papers', row.id)">删除</el-button>
                 </template>
               </el-table-column>
@@ -110,7 +129,7 @@
       <el-tab-pane label="科研项目" name="projects">
         <div class="entry-grid">
           <el-card shadow="never">
-            <template #header>项目录入</template>
+            <template #header>{{ isEditing('projects') ? editingLabelMap.projects.edit : editingLabelMap.projects.create }}</template>
             <el-form ref="projectFormRef" :model="projectForm" :rules="projectRules" label-position="top">
               <el-form-item label="项目名称" prop="title">
                 <el-input v-model="projectForm.title" placeholder="请输入项目名称" />
@@ -139,17 +158,31 @@
                 <el-input v-model="projectForm.status" placeholder="如 ONGOING、COMPLETED" />
               </el-form-item>
               <div class="actions">
-                <el-button @click="resetProjectForm">重置</el-button>
-                <el-button type="primary" :loading="submittingMap.projects" @click="submitProject">提交项目</el-button>
+                <el-button v-if="isEditing('projects')" @click="resetProjectForm">取消编辑</el-button>
+                <el-button v-else @click="resetProjectForm">重置</el-button>
+                <el-button type="primary" :loading="submittingMap.projects" @click="submitProject">
+                  {{ isEditing('projects') ? editingLabelMap.projects.submitEdit : editingLabelMap.projects.submitCreate }}
+                </el-button>
               </div>
             </el-form>
           </el-card>
 
           <el-card shadow="never">
             <template #header>
-              <div class="card-header">
+              <div class="card-header card-header-wrap">
                 <span>我的项目记录</span>
-                <el-tag type="success">{{ projects.length }} 项</el-tag>
+                <div class="header-tools">
+                  <el-input
+                    v-model="queryMap.projects.search"
+                    clearable
+                    placeholder="按项目名称 / 状态搜索"
+                    class="filter-input"
+                    @keyup.enter="fetchRecords('projects')"
+                    @clear="fetchRecords('projects')"
+                  />
+                  <el-button plain @click="clearFilters('projects')">清空筛选</el-button>
+                  <el-tag type="success">{{ projects.length }} 项</el-tag>
+                </div>
               </div>
             </template>
             <el-table :data="projects" v-loading="loadingMap.projects" empty-text="暂无科研项目">
@@ -159,8 +192,9 @@
               <el-table-column prop="funding_amount" label="经费(万元)" width="120" />
               <el-table-column prop="status" label="状态" width="120" />
               <el-table-column prop="date_acquired" label="时间" width="120" />
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="startEditRecord('projects', row)">编辑</el-button>
                   <el-button link type="danger" @click="removeRecord('projects', row.id)">删除</el-button>
                 </template>
               </el-table-column>
@@ -172,7 +206,7 @@
       <el-tab-pane label="知识产权" name="intellectual-properties">
         <div class="entry-grid">
           <el-card shadow="never">
-            <template #header>知识产权录入</template>
+            <template #header>{{ isEditing('intellectual-properties') ? editingLabelMap['intellectual-properties'].edit : editingLabelMap['intellectual-properties'].create }}</template>
             <el-form ref="ipFormRef" :model="ipForm" :rules="ipRules" label-position="top">
               <el-form-item label="成果名称" prop="title">
                 <el-input v-model="ipForm.title" placeholder="请输入知识产权名称" />
@@ -194,17 +228,35 @@
                 <el-switch v-model="ipForm.is_transformed" active-text="已成果转化" inactive-text="未成果转化" />
               </el-form-item>
               <div class="actions">
-                <el-button @click="resetIpForm">重置</el-button>
-                <el-button type="primary" :loading="submittingMap['intellectual-properties']" @click="submitIp">提交知识产权</el-button>
+                <el-button v-if="isEditing('intellectual-properties')" @click="resetIpForm">取消编辑</el-button>
+                <el-button v-else @click="resetIpForm">重置</el-button>
+                <el-button type="primary" :loading="submittingMap['intellectual-properties']" @click="submitIp">
+                  {{
+                    isEditing('intellectual-properties')
+                      ? editingLabelMap['intellectual-properties'].submitEdit
+                      : editingLabelMap['intellectual-properties'].submitCreate
+                  }}
+                </el-button>
               </div>
             </el-form>
           </el-card>
 
           <el-card shadow="never">
             <template #header>
-              <div class="card-header">
+              <div class="card-header card-header-wrap">
                 <span>我的知识产权</span>
-                <el-tag type="warning">{{ intellectualProperties.length }} 项</el-tag>
+                <div class="header-tools">
+                  <el-input
+                    v-model="queryMap['intellectual-properties'].search"
+                    clearable
+                    placeholder="按名称 / 登记号搜索"
+                    class="filter-input"
+                    @keyup.enter="fetchRecords('intellectual-properties')"
+                    @clear="fetchRecords('intellectual-properties')"
+                  />
+                  <el-button plain @click="clearFilters('intellectual-properties')">清空筛选</el-button>
+                  <el-tag type="warning">{{ intellectualProperties.length }} 项</el-tag>
+                </div>
               </div>
             </template>
             <el-table :data="intellectualProperties" v-loading="loadingMap['intellectual-properties']" empty-text="暂无知识产权成果">
@@ -217,8 +269,9 @@
                 </template>
               </el-table-column>
               <el-table-column prop="date_acquired" label="时间" width="120" />
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="startEditRecord('intellectual-properties', row)">编辑</el-button>
                   <el-button link type="danger" @click="removeRecord('intellectual-properties', row.id)">删除</el-button>
                 </template>
               </el-table-column>
@@ -230,7 +283,7 @@
       <el-tab-pane label="教学成果" name="teaching-achievements">
         <div class="entry-grid">
           <el-card shadow="never">
-            <template #header>教学成果录入</template>
+            <template #header>{{ isEditing('teaching-achievements') ? editingLabelMap['teaching-achievements'].edit : editingLabelMap['teaching-achievements'].create }}</template>
             <el-form ref="teachingFormRef" :model="teachingForm" :rules="teachingRules" label-position="top">
               <el-form-item label="成果名称" prop="title">
                 <el-input v-model="teachingForm.title" placeholder="请输入教学成果名称" />
@@ -249,17 +302,35 @@
                 <el-input v-model="teachingForm.level" placeholder="如 国家级、省级、校级" />
               </el-form-item>
               <div class="actions">
-                <el-button @click="resetTeachingForm">重置</el-button>
-                <el-button type="primary" :loading="submittingMap['teaching-achievements']" @click="submitTeaching">提交教学成果</el-button>
+                <el-button v-if="isEditing('teaching-achievements')" @click="resetTeachingForm">取消编辑</el-button>
+                <el-button v-else @click="resetTeachingForm">重置</el-button>
+                <el-button type="primary" :loading="submittingMap['teaching-achievements']" @click="submitTeaching">
+                  {{
+                    isEditing('teaching-achievements')
+                      ? editingLabelMap['teaching-achievements'].submitEdit
+                      : editingLabelMap['teaching-achievements'].submitCreate
+                  }}
+                </el-button>
               </div>
             </el-form>
           </el-card>
 
           <el-card shadow="never">
             <template #header>
-              <div class="card-header">
+              <div class="card-header card-header-wrap">
                 <span>我的教学成果</span>
-                <el-tag>{{ teachingAchievements.length }} 项</el-tag>
+                <div class="header-tools">
+                  <el-input
+                    v-model="queryMap['teaching-achievements'].search"
+                    clearable
+                    placeholder="按名称 / 级别搜索"
+                    class="filter-input"
+                    @keyup.enter="fetchRecords('teaching-achievements')"
+                    @clear="fetchRecords('teaching-achievements')"
+                  />
+                  <el-button plain @click="clearFilters('teaching-achievements')">清空筛选</el-button>
+                  <el-tag>{{ teachingAchievements.length }} 项</el-tag>
+                </div>
               </div>
             </template>
             <el-table :data="teachingAchievements" v-loading="loadingMap['teaching-achievements']" empty-text="暂无教学成果">
@@ -267,8 +338,9 @@
               <el-table-column prop="achievement_type_display" label="类型" width="140" />
               <el-table-column prop="level" label="级别" width="120" />
               <el-table-column prop="date_acquired" label="时间" width="120" />
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="startEditRecord('teaching-achievements', row)">编辑</el-button>
                   <el-button link type="danger" @click="removeRecord('teaching-achievements', row.id)">删除</el-button>
                 </template>
               </el-table-column>
@@ -280,7 +352,7 @@
       <el-tab-pane label="学术服务" name="academic-services">
         <div class="entry-grid">
           <el-card shadow="never">
-            <template #header>学术服务录入</template>
+            <template #header>{{ isEditing('academic-services') ? editingLabelMap['academic-services'].edit : editingLabelMap['academic-services'].create }}</template>
             <el-form ref="serviceFormRef" :model="serviceForm" :rules="serviceRules" label-position="top">
               <el-form-item label="服务名称" prop="title">
                 <el-input v-model="serviceForm.title" placeholder="请输入服务事项或报告名称" />
@@ -299,17 +371,35 @@
                 <el-input v-model="serviceForm.organization" placeholder="请输入期刊、会议或机构名称" />
               </el-form-item>
               <div class="actions">
-                <el-button @click="resetServiceForm">重置</el-button>
-                <el-button type="primary" :loading="submittingMap['academic-services']" @click="submitService">提交学术服务</el-button>
+                <el-button v-if="isEditing('academic-services')" @click="resetServiceForm">取消编辑</el-button>
+                <el-button v-else @click="resetServiceForm">重置</el-button>
+                <el-button type="primary" :loading="submittingMap['academic-services']" @click="submitService">
+                  {{
+                    isEditing('academic-services')
+                      ? editingLabelMap['academic-services'].submitEdit
+                      : editingLabelMap['academic-services'].submitCreate
+                  }}
+                </el-button>
               </div>
             </el-form>
           </el-card>
 
           <el-card shadow="never">
             <template #header>
-              <div class="card-header">
+              <div class="card-header card-header-wrap">
                 <span>我的学术服务</span>
-                <el-tag type="danger">{{ academicServices.length }} 项</el-tag>
+                <div class="header-tools">
+                  <el-input
+                    v-model="queryMap['academic-services'].search"
+                    clearable
+                    placeholder="按事项 / 服务机构搜索"
+                    class="filter-input"
+                    @keyup.enter="fetchRecords('academic-services')"
+                    @clear="fetchRecords('academic-services')"
+                  />
+                  <el-button plain @click="clearFilters('academic-services')">清空筛选</el-button>
+                  <el-tag type="danger">{{ academicServices.length }} 项</el-tag>
+                </div>
               </div>
             </template>
             <el-table :data="academicServices" v-loading="loadingMap['academic-services']" empty-text="暂无学术服务">
@@ -317,8 +407,9 @@
               <el-table-column prop="service_type_display" label="类型" width="140" />
               <el-table-column prop="organization" label="服务机构" min-width="180" />
               <el-table-column prop="date_acquired" label="时间" width="120" />
-              <el-table-column label="操作" width="90" fixed="right">
+              <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
+                  <el-button link type="primary" @click="startEditRecord('academic-services', row)">编辑</el-button>
                   <el-button link type="danger" @click="removeRecord('academic-services', row.id)">删除</el-button>
                 </template>
               </el-table-column>
@@ -333,18 +424,19 @@
 </template>
 
 <script setup lang="ts">
-import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PaperBibtexImportDialog from './achievement-entry/PaperBibtexImportDialog.vue'
+import { createAchievement, deleteAchievement, fetchAchievementList, updateAchievement } from './achievement-entry/api'
+import { removeAchievementRecord, upsertAchievementRecord } from './achievement-entry/recordState.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import {
   achievementEndpointMap,
+  createAchievementQueryState,
   createAchievementStatusMap,
   ipTypeOptions,
-  normalizeAchievementList,
   paperTypeOptions,
   parseCoauthorInput,
   projectLevelOptions,
@@ -353,11 +445,18 @@ import {
   teachingTypeOptions,
 } from './achievement-entry/constants'
 import type {
+  AchievementMutationPayloadMap,
+  AchievementQueryState,
+  IpFormState,
   IpRecord,
+  PaperFormState,
   PaperRecord,
+  ProjectFormState,
   ProjectRecord,
+  ServiceFormState,
   ServiceRecord,
   TabName,
+  TeachingFormState,
   TeachingRecord,
 } from './achievement-entry/types'
 
@@ -381,8 +480,16 @@ const academicServices = ref<ServiceRecord[]>([])
 
 const loadingMap = reactive<Record<TabName, boolean>>(createAchievementStatusMap())
 const submittingMap = reactive<Record<TabName, boolean>>(createAchievementStatusMap())
+const editingMap = reactive<Record<TabName, number | null>>({
+  papers: null,
+  projects: null,
+  'intellectual-properties': null,
+  'teaching-achievements': null,
+  'academic-services': null,
+})
+const queryMap = reactive<AchievementQueryState>(createAchievementQueryState())
 
-const paperForm = reactive({
+const paperForm = reactive<PaperFormState>({
   title: '',
   abstract: '',
   date_acquired: '',
@@ -395,7 +502,7 @@ const paperForm = reactive({
   coauthorInput: '',
 })
 
-const projectForm = reactive({
+const projectForm = reactive<ProjectFormState>({
   title: '',
   date_acquired: '',
   level: 'NATIONAL',
@@ -404,7 +511,7 @@ const projectForm = reactive({
   status: 'ONGOING',
 })
 
-const ipForm = reactive({
+const ipForm = reactive<IpFormState>({
   title: '',
   date_acquired: '',
   ip_type: 'PATENT_INVENTION',
@@ -412,14 +519,14 @@ const ipForm = reactive({
   is_transformed: false,
 })
 
-const teachingForm = reactive({
+const teachingForm = reactive<TeachingFormState>({
   title: '',
   date_acquired: '',
   achievement_type: 'COMPETITION',
   level: '',
 })
 
-const serviceForm = reactive({
+const serviceForm = reactive<ServiceFormState>({
   title: '',
   date_acquired: '',
   service_type: 'EDITOR',
@@ -435,6 +542,41 @@ const teacherLabel = computed(() => {
 })
 
 const requiredRule = (message: string) => [{ required: true, message, trigger: 'blur' }]
+
+const isEditing = (tab: TabName): boolean => editingMap[tab] !== null
+
+const editingLabelMap: Record<TabName, { create: string; edit: string; submitCreate: string; submitEdit: string }> = {
+  papers: {
+    create: '论文录入',
+    edit: '论文编辑',
+    submitCreate: '提交论文',
+    submitEdit: '保存论文',
+  },
+  projects: {
+    create: '项目录入',
+    edit: '项目编辑',
+    submitCreate: '提交项目',
+    submitEdit: '保存项目',
+  },
+  'intellectual-properties': {
+    create: '知识产权录入',
+    edit: '知识产权编辑',
+    submitCreate: '提交知识产权',
+    submitEdit: '保存知识产权',
+  },
+  'teaching-achievements': {
+    create: '教学成果录入',
+    edit: '教学成果编辑',
+    submitCreate: '提交教学成果',
+    submitEdit: '保存教学成果',
+  },
+  'academic-services': {
+    create: '学术服务录入',
+    edit: '学术服务编辑',
+    submitCreate: '提交学术服务',
+    submitEdit: '保存学术服务',
+  },
+}
 
 const paperRules: FormRules = {
   title: requiredRule('请输入论文题目'),
@@ -477,8 +619,7 @@ const serviceRules: FormRules = {
 const fetchRecords = async (tab: TabName): Promise<void> => {
   loadingMap[tab] = true
   try {
-    const response = await axios.get(achievementEndpointMap[tab])
-    const items = normalizeAchievementList(response.data)
+    const items = await fetchAchievementList(tab, queryMap[tab])
 
     if (tab === 'papers') papers.value = items as PaperRecord[]
     if (tab === 'projects') projects.value = items as ProjectRecord[]
@@ -506,6 +647,7 @@ const resetPaperForm = (): void => {
   paperForm.citation_count = 0
   paperForm.is_first_author = true
   paperForm.coauthorInput = ''
+  editingMap.papers = null
 }
 
 const resetProjectForm = (): void => {
@@ -514,31 +656,128 @@ const resetProjectForm = (): void => {
   projectForm.role = 'PI'
   projectForm.funding_amount = 0
   projectForm.status = 'ONGOING'
+  editingMap.projects = null
 }
 
 const resetIpForm = (): void => {
   ipFormRef.value?.resetFields()
   ipForm.ip_type = 'PATENT_INVENTION'
   ipForm.is_transformed = false
+  editingMap['intellectual-properties'] = null
 }
 
 const resetTeachingForm = (): void => {
   teachingFormRef.value?.resetFields()
   teachingForm.achievement_type = 'COMPETITION'
+  editingMap['teaching-achievements'] = null
 }
 
 const resetServiceForm = (): void => {
   serviceFormRef.value?.resetFields()
   serviceForm.service_type = 'EDITOR'
+  editingMap['academic-services'] = null
+}
+
+const clearFilters = async (tab: TabName): Promise<void> => {
+  if (tab === 'papers') {
+    queryMap.papers.paper_type = 'ALL'
+  }
+  queryMap[tab].search = ''
+  await fetchRecords(tab)
+}
+
+const populatePaperForm = (record: PaperRecord): void => {
+  paperForm.title = record.title
+  paperForm.abstract = record.abstract
+  paperForm.date_acquired = record.date_acquired
+  paperForm.paper_type = record.paper_type
+  paperForm.journal_name = record.journal_name
+  paperForm.journal_level = record.journal_level
+  paperForm.citation_count = record.citation_count
+  paperForm.is_first_author = record.is_first_author
+  paperForm.doi = record.doi
+  paperForm.coauthorInput = record.coauthor_details.map(item => item.name).join('，')
+}
+
+const populateProjectForm = (record: ProjectRecord): void => {
+  projectForm.title = record.title
+  projectForm.date_acquired = record.date_acquired
+  projectForm.level = record.level
+  projectForm.role = record.role
+  projectForm.funding_amount = Number(record.funding_amount)
+  projectForm.status = record.status
+}
+
+const populateIpForm = (record: IpRecord): void => {
+  ipForm.title = record.title
+  ipForm.date_acquired = record.date_acquired
+  ipForm.ip_type = record.ip_type
+  ipForm.registration_number = record.registration_number
+  ipForm.is_transformed = record.is_transformed
+}
+
+const populateTeachingForm = (record: TeachingRecord): void => {
+  teachingForm.title = record.title
+  teachingForm.date_acquired = record.date_acquired
+  teachingForm.achievement_type = record.achievement_type
+  teachingForm.level = record.level
+}
+
+const populateServiceForm = (record: ServiceRecord): void => {
+  serviceForm.title = record.title
+  serviceForm.date_acquired = record.date_acquired
+  serviceForm.service_type = record.service_type
+  serviceForm.organization = record.organization
+}
+
+const startEditRecord = (tab: TabName, record: PaperRecord | ProjectRecord | IpRecord | TeachingRecord | ServiceRecord): void => {
+  editingMap[tab] = record.id
+  activeTab.value = tab
+
+  if (tab === 'papers') populatePaperForm(record as PaperRecord)
+  if (tab === 'projects') populateProjectForm(record as ProjectRecord)
+  if (tab === 'intellectual-properties') populateIpForm(record as IpRecord)
+  if (tab === 'teaching-achievements') populateTeachingForm(record as TeachingRecord)
+  if (tab === 'academic-services') populateServiceForm(record as ServiceRecord)
+}
+
+const submitAchievement = async <T extends TabName>(
+  tab: T,
+  payload: AchievementMutationPayloadMap[T],
+  onReset: () => void,
+): Promise<void> => {
+  submittingMap[tab] = true
+
+  try {
+    const savedRecord = editingMap[tab]
+      ? await updateAchievement(tab, editingMap[tab] as number, payload)
+      : await createAchievement(tab, payload)
+
+    if (editingMap[tab]) {
+      ElMessage.success(`${editingLabelMap[tab].edit}已保存`)
+    } else {
+      ElMessage.success(`${editingLabelMap[tab].create}已提交`)
+    }
+
+    if (tab === 'papers') papers.value = upsertAchievementRecord(papers.value, savedRecord as PaperRecord)
+    if (tab === 'projects') projects.value = upsertAchievementRecord(projects.value, savedRecord as ProjectRecord)
+    if (tab === 'intellectual-properties') intellectualProperties.value = upsertAchievementRecord(intellectualProperties.value, savedRecord as IpRecord)
+    if (tab === 'teaching-achievements') teachingAchievements.value = upsertAchievementRecord(teachingAchievements.value, savedRecord as TeachingRecord)
+    if (tab === 'academic-services') academicServices.value = upsertAchievementRecord(academicServices.value, savedRecord as ServiceRecord)
+
+    onReset()
+  } finally {
+    submittingMap[tab] = false
+  }
 }
 
 const submitPaper = async (): Promise<void> => {
   const valid = await paperFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  submittingMap.papers = true
-  try {
-    await axios.post(achievementEndpointMap.papers, {
+  await submitAchievement(
+    'papers',
+    {
       title: paperForm.title,
       abstract: paperForm.abstract,
       date_acquired: paperForm.date_acquired,
@@ -549,73 +788,37 @@ const submitPaper = async (): Promise<void> => {
       is_first_author: paperForm.is_first_author,
       doi: paperForm.doi,
       coauthors: parseCoauthorInput(paperForm.coauthorInput),
-    })
-    ElMessage.success('论文成果已录入')
-    resetPaperForm()
-    await fetchRecords('papers')
-  } finally {
-    submittingMap.papers = false
-  }
+    },
+    resetPaperForm,
+  )
 }
 
 const submitProject = async (): Promise<void> => {
   const valid = await projectFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  submittingMap.projects = true
-  try {
-    await axios.post(achievementEndpointMap.projects, { ...projectForm })
-    ElMessage.success('科研项目已录入')
-    resetProjectForm()
-    await fetchRecords('projects')
-  } finally {
-    submittingMap.projects = false
-  }
+  await submitAchievement('projects', { ...projectForm }, resetProjectForm)
 }
 
 const submitIp = async (): Promise<void> => {
   const valid = await ipFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  submittingMap['intellectual-properties'] = true
-  try {
-    await axios.post(achievementEndpointMap['intellectual-properties'], { ...ipForm })
-    ElMessage.success('知识产权成果已录入')
-    resetIpForm()
-    await fetchRecords('intellectual-properties')
-  } finally {
-    submittingMap['intellectual-properties'] = false
-  }
+  await submitAchievement('intellectual-properties', { ...ipForm }, resetIpForm)
 }
 
 const submitTeaching = async (): Promise<void> => {
   const valid = await teachingFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  submittingMap['teaching-achievements'] = true
-  try {
-    await axios.post(achievementEndpointMap['teaching-achievements'], { ...teachingForm })
-    ElMessage.success('教学成果已录入')
-    resetTeachingForm()
-    await fetchRecords('teaching-achievements')
-  } finally {
-    submittingMap['teaching-achievements'] = false
-  }
+  await submitAchievement('teaching-achievements', { ...teachingForm }, resetTeachingForm)
 }
 
 const submitService = async (): Promise<void> => {
   const valid = await serviceFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
-  submittingMap['academic-services'] = true
-  try {
-    await axios.post(achievementEndpointMap['academic-services'], { ...serviceForm })
-    ElMessage.success('学术服务已录入')
-    resetServiceForm()
-    await fetchRecords('academic-services')
-  } finally {
-    submittingMap['academic-services'] = false
-  }
+  await submitAchievement('academic-services', { ...serviceForm }, resetServiceForm)
 }
 
 const removeRecord = async (tab: TabName, id: number): Promise<void> => {
@@ -623,9 +826,20 @@ const removeRecord = async (tab: TabName, id: number): Promise<void> => {
     type: 'warning',
   })
 
-  await axios.delete(`${achievementEndpointMap[tab]}${id}/`)
+  await deleteAchievement(tab, id)
   ElMessage.success('记录已删除')
-  await fetchRecords(tab)
+  if (editingMap[tab] === id) {
+    if (tab === 'papers') resetPaperForm()
+    if (tab === 'projects') resetProjectForm()
+    if (tab === 'intellectual-properties') resetIpForm()
+    if (tab === 'teaching-achievements') resetTeachingForm()
+    if (tab === 'academic-services') resetServiceForm()
+  }
+  if (tab === 'papers') papers.value = removeAchievementRecord(papers.value, id)
+  if (tab === 'projects') projects.value = removeAchievementRecord(projects.value, id)
+  if (tab === 'intellectual-properties') intellectualProperties.value = removeAchievementRecord(intellectualProperties.value, id)
+  if (tab === 'teaching-achievements') teachingAchievements.value = removeAchievementRecord(teachingAchievements.value, id)
+  if (tab === 'academic-services') academicServices.value = removeAchievementRecord(academicServices.value, id)
 }
 
 const handleBibtexImported = async (): Promise<void> => {
@@ -675,6 +889,25 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.card-header-wrap {
+  align-items: flex-start;
+}
+
+.header-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.filter-input {
+  width: min(280px, 100%);
+}
+
+.filter-select {
+  width: 150px;
 }
 
 .eyebrow {
@@ -751,6 +984,10 @@ h1 {
   .actions {
     display: flex;
   }
+
+  .header-tools {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 768px) {
@@ -759,9 +996,16 @@ h1 {
   }
 
   .hero-panel,
-  .hero-actions {
+  .hero-actions,
+  .card-header,
+  .header-tools {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .filter-input,
+  .filter-select {
+    width: 100%;
   }
 }
 </style>

@@ -85,6 +85,9 @@ class ProjectGuideRecommendationSerializer(serializers.ModelSerializer):
     recommendation_reasons = serializers.ListField(child=serializers.CharField(), read_only=True)
     matched_keywords = serializers.ListField(child=serializers.CharField(), read_only=True)
     matched_disciplines = serializers.ListField(child=serializers.CharField(), read_only=True)
+    match_category_tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    priority_label = serializers.CharField(read_only=True)
+    recommendation_summary = serializers.CharField(read_only=True)
 
     class Meta:
         model = ProjectGuide
@@ -107,6 +110,9 @@ class ProjectGuideRecommendationSerializer(serializers.ModelSerializer):
             'recommendation_reasons',
             'matched_keywords',
             'matched_disciplines',
+            'match_category_tags',
+            'priority_label',
+            'recommendation_summary',
         )
 
 

@@ -1,54 +1,17 @@
 import type { EChartsOption } from 'echarts'
+import type { DepartmentDistributionRecord, YearlyTrendRecord } from '../../types/academy'
 
-export type AcademyStatisticItem = {
-  title: string
-  value: number
-  suffix?: string
-  icon: string
-  iconClass: string
-  helper?: string
-}
-
-export type YearlyTrendRecord = {
-  year: number
-  paper_count: number
-  project_count: number
-  achievement_total: number
-}
-
-export type DepartmentDistributionRecord = {
-  name: string
-  value: number
-}
-
-export type TopActiveTeacherRecord = {
-  user_id: number
-  teacher_name: string
-  department: string
-  paper_count: number
-  project_count: number
-  achievement_total: number
-}
-
-export type CollaborationOverview = {
-  coauthor_relation_total: number
-  teachers_with_collaboration: number
-  paper_with_collaboration: number
-  average_coauthors_per_paper: number
-}
-
-export type AcademyOverviewResponse = {
-  statistics: AcademyStatisticItem[]
-  yearly_trend: YearlyTrendRecord[]
-  department_distribution: DepartmentDistributionRecord[]
-  top_active_teachers: TopActiveTeacherRecord[]
-  collaboration_overview: CollaborationOverview
-  data_meta: {
-    source_note: string
-    acceptance_scope: string
-    future_extension_hint: string
-  }
-}
+export type {
+  AcademyActiveFilters,
+  AcademyDataMeta,
+  AcademyFilterOptions,
+  AcademyOverviewResponse,
+  AcademyStatisticItem,
+  CollaborationOverview,
+  DepartmentDistributionRecord,
+  TopActiveTeacherRecord,
+  YearlyTrendRecord,
+} from '../../types/academy'
 
 export const buildAcademyTrendOption = (records: YearlyTrendRecord[], echarts: any): EChartsOption => ({
   tooltip: { trigger: 'axis' },

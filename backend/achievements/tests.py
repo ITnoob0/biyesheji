@@ -25,9 +25,9 @@ class AchievementEntryApiTests(APITestCase):
         )
         self.client.force_authenticate(user=self.user)
 
-    @patch('achievements.views.Neo4jEngine')
+    @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
-    def test_paper_flow_keeps_working_with_keywords_and_coauthors(self, academic_ai_cls, neo4j_engine_cls):
+    def test_paper_flow_keeps_working_with_keywords_and_coauthors(self, academic_ai_cls, graph_sync_service):
         academic_ai_cls.return_value.extract_tags.return_value = ['教师画像', '智能辅助']
 
         payload = {
@@ -51,11 +51,11 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['teacher_name'], '汪心蓝')
         self.assertEqual(len(response.data['coauthor_details']), 2)
         self.assertEqual(response.data['keywords'], ['教师画像', '智能辅助'])
-        neo4j_engine_cls.return_value.sync_paper_to_graph.assert_called_once()
+        graph_sync_service.sync_paper.assert_called_once()
 
-    @patch('achievements.views.Neo4jEngine')
+    @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
-    def test_paper_list_is_still_isolated_by_current_teacher(self, academic_ai_cls, neo4j_engine_cls):
+    def test_paper_list_is_still_isolated_by_current_teacher(self, academic_ai_cls, graph_sync_service):
         academic_ai_cls.return_value.extract_tags.return_value = []
 
         Paper.objects.create(
@@ -82,9 +82,9 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data[0]['title'], '我的论文')
         self.assertEqual(response.data[0]['teacher'], 100004)
 
-    @patch('achievements.views.Neo4jEngine')
+    @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
-    def test_duplicate_doi_for_same_teacher_is_rejected(self, academic_ai_cls, neo4j_engine_cls):
+    def test_duplicate_doi_for_same_teacher_is_rejected(self, academic_ai_cls, graph_sync_service):
         academic_ai_cls.return_value.extract_tags.return_value = []
 
         Paper.objects.create(
@@ -160,9 +160,9 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['entries'][2]['preview_status'], 'invalid')
         self.assertEqual(response.data['entries'][0]['coauthors'], ['李晨'])
 
-    @patch('achievements.views.Neo4jEngine')
+    @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
-    def test_bibtex_confirm_import_reuses_existing_paper_write_flow(self, academic_ai_cls, neo4j_engine_cls):
+    def test_bibtex_confirm_import_reuses_existing_paper_write_flow(self, academic_ai_cls, graph_sync_service):
         academic_ai_cls.return_value.extract_tags.return_value = ['BibTeX 导入', '画像联动']
 
         response = self.client.post(
@@ -215,11 +215,11 @@ class AchievementEntryApiTests(APITestCase):
 
         imported_paper = Paper.objects.get(teacher=self.user, doi='10.1000/imported-bibtex-paper')
         self.assertEqual(imported_paper.coauthors.count(), 2)
-        neo4j_engine_cls.return_value.sync_paper_to_graph.assert_called_once()
+        graph_sync_service.sync_paper.assert_called_once()
 
-    @patch('achievements.views.Neo4jEngine')
+    @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
-    def test_teacher_can_complete_full_achievement_entry_flow(self, academic_ai_cls, neo4j_engine_cls):
+    def test_teacher_can_complete_full_achievement_entry_flow(self, academic_ai_cls, graph_sync_service):
         academic_ai_cls.return_value.extract_tags.return_value = ['科研画像', '知识图谱']
 
         paper_response = self.client.post(
@@ -294,14 +294,14 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(TeachingAchievement.objects.filter(teacher_id=100004).count(), 1)
         self.assertEqual(AcademicService.objects.filter(teacher_id=100004).count(), 1)
 
-        neo4j_engine_cls.return_value.sync_paper_to_graph.assert_called_once()
-        neo4j_engine_cls.return_value.sync_project_to_graph.assert_called_once()
-        neo4j_engine_cls.return_value.sync_intellectual_property_to_graph.assert_called_once()
-        neo4j_engine_cls.return_value.sync_teaching_achievement_to_graph.assert_called_once()
-        neo4j_engine_cls.return_value.sync_academic_service_to_graph.assert_called_once()
+        graph_sync_service.sync_paper.assert_called_once()
+        graph_sync_service.sync_project.assert_called_once()
+        graph_sync_service.sync_intellectual_property.assert_called_once()
+        graph_sync_service.sync_teaching_achievement.assert_called_once()
+        graph_sync_service.sync_academic_service.assert_called_once()
 
-    @patch('achievements.views.Neo4jEngine')
-    def test_new_achievement_types_are_listed_for_current_teacher_only(self, neo4j_engine_cls):
+    @patch('achievements.views.AcademicGraphSyncService')
+    def test_new_achievement_types_are_listed_for_current_teacher_only(self, graph_sync_service):
         project = Project.objects.create(
             teacher=self.user,
             title='项目 A',
@@ -380,8 +380,8 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual([item['title'] for item in teaching_response.data], ['教学成果 A'])
         self.assertEqual([item['title'] for item in services_response.data], ['学术服务 A'])
 
-    @patch('achievements.views.Neo4jEngine')
-    def test_new_achievement_types_can_be_deleted_and_sync_graph_cleanup(self, neo4j_engine_cls):
+    @patch('achievements.views.AcademicGraphSyncService')
+    def test_new_achievement_types_can_be_deleted_and_sync_graph_cleanup(self, graph_sync_service):
         project = Project.objects.create(
             teacher=self.user,
             title='待删除项目',
@@ -429,10 +429,10 @@ class AchievementEntryApiTests(APITestCase):
         self.assertFalse(TeachingAchievement.objects.filter(id=teaching.id).exists())
         self.assertFalse(AcademicService.objects.filter(id=service.id).exists())
 
-        neo4j_engine_cls.return_value.delete_project_from_graph.assert_called_once_with(project.id)
-        neo4j_engine_cls.return_value.delete_intellectual_property_from_graph.assert_called_once_with(ip_record.id)
-        neo4j_engine_cls.return_value.delete_teaching_achievement_from_graph.assert_called_once_with(teaching.id)
-        neo4j_engine_cls.return_value.delete_academic_service_from_graph.assert_called_once_with(service.id)
+        graph_sync_service.delete_project.assert_called_once_with(project.id)
+        graph_sync_service.delete_intellectual_property.assert_called_once_with(ip_record.id)
+        graph_sync_service.delete_teaching_achievement.assert_called_once_with(teaching.id)
+        graph_sync_service.delete_academic_service.assert_called_once_with(service.id)
 
     def test_dashboard_stats_includes_multi_achievement_overview_and_recent_items(self):
         Paper.objects.create(
@@ -542,6 +542,39 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['achievement_overview']['paper_count'], 1)
         self.assertEqual(response.data['achievement_overview']['total_achievements'], 1)
 
+    def test_admin_can_list_papers_for_specified_teacher(self):
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=1,
+            username='admin',
+            password='Admin123456',
+            real_name='绯荤粺绠＄悊鍛?',
+        )
+        Paper.objects.create(
+            teacher=self.user,
+            title='绠＄悊鍛樻煡鐪嬬殑璁烘枃',
+            abstract='杩欐槸涓€涓冻澶熼暱鐨勬憳瑕侊紝鐢ㄤ簬楠岃瘉绠＄悊鍛樺彲浠ユ寜鏁欏笀杩囨护璁烘枃鍒楄〃銆?',
+            date_acquired='2025-04-01',
+            paper_type='JOURNAL',
+            journal_name='娴嬭瘯鏈熷垔',
+        )
+        Paper.objects.create(
+            teacher=self.other_user,
+            title='鍏朵粬鏁欏笀鐨勮鏂?',
+            abstract='杩欐槸鍙︿竴涓冻澶熼暱鐨勬憳瑕侊紝鐢ㄤ簬楠岃瘉 teacher_id 杩囨护鍙繑鍥炵洰鏍囨暀甯堟暟鎹€?',
+            date_acquired='2025-04-02',
+            paper_type='CONFERENCE',
+            journal_name='娴嬭瘯浼氳',
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get('/api/achievements/papers/', {'teacher_id': self.user.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['teacher'], self.user.id)
+        self.assertEqual(response.data[0]['title'], '绠＄悊鍛樻煡鐪嬬殑璁烘枃')
+
     def test_non_admin_cannot_access_academy_overview_dashboard(self):
         response = self.client.get('/api/achievements/academy-overview/')
 
@@ -585,3 +618,139 @@ class AchievementEntryApiTests(APITestCase):
         self.assertTrue(response.data['top_active_teachers'])
         self.assertIn('collaboration_overview', response.data)
         self.assertIn('data_meta', response.data)
+        self.assertIn('filter_options', response.data)
+        self.assertIn('active_filters', response.data)
+
+    @patch('achievements.views.AcademicGraphSyncService')
+    @patch('achievements.views.AcademicAI')
+    def test_teacher_can_search_and_update_paper_records(self, academic_ai_cls, graph_sync_service):
+        academic_ai_cls.return_value.extract_tags.return_value = ['科研画像']
+
+        paper = Paper.objects.create(
+            teacher=self.user,
+            title='待更新论文',
+            abstract='这是一个足够长的摘要，用于验证论文编辑和搜索链路在第二轮开发后仍可正常使用。',
+            date_acquired='2025-01-01',
+            paper_type='JOURNAL',
+            journal_name='教育技术研究',
+            doi='10.1000/paper-edit-search',
+        )
+        Paper.objects.create(
+            teacher=self.user,
+            title='无关论文',
+            abstract='这是另一个足够长的摘要，用于验证搜索结果会按关键词过滤。',
+            date_acquired='2025-01-02',
+            paper_type='CONFERENCE',
+            journal_name='测试会议',
+            doi='10.1000/paper-search-other',
+        )
+
+        update_response = self.client.patch(
+            f'/api/achievements/papers/{paper.id}/',
+            {
+                'title': '已更新论文',
+                'abstract': '这是一个足够长的摘要，用于验证论文编辑在当前教师名下可以正确更新。',
+                'date_acquired': '2025-01-03',
+                'paper_type': 'CONFERENCE',
+                'journal_name': '教育技术论坛',
+                'journal_level': 'CCF-C',
+                'citation_count': 4,
+                'is_first_author': False,
+                'doi': '10.1000/paper-edit-search',
+                'coauthors': ['李晨'],
+            },
+            format='json',
+        )
+        search_response = self.client.get('/api/achievements/papers/', {'search': '已更新'})
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        paper.refresh_from_db()
+        self.assertEqual(paper.title, '已更新论文')
+        self.assertEqual(paper.paper_type, 'CONFERENCE')
+        self.assertEqual(paper.coauthors.count(), 1)
+
+        self.assertEqual(search_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(search_response.data), 1)
+        self.assertEqual(search_response.data[0]['title'], '已更新论文')
+
+    @patch('achievements.views.AcademicGraphSyncService')
+    def test_teacher_can_search_projects_by_title_or_status(self, graph_sync_service):
+        Project.objects.create(
+            teacher=self.user,
+            title='画像平台二期项目',
+            date_acquired='2025-02-01',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='12.00',
+            status='ONGOING',
+        )
+        Project.objects.create(
+            teacher=self.user,
+            title='已结题项目',
+            date_acquired='2025-02-02',
+            level='NATIONAL',
+            role='CO_PI',
+            funding_amount='18.00',
+            status='COMPLETED',
+        )
+
+        response = self.client.get('/api/achievements/projects/', {'search': 'ONGOING'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], '画像平台二期项目')
+
+    def test_admin_can_filter_academy_dashboard_by_department_and_year(self):
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=1,
+            username='admin',
+            password='Admin123456',
+            real_name='系统管理员',
+        )
+        teacher_in_scope = user_model.objects.create_user(
+            id=100090,
+            username='100090',
+            password='teacher123456',
+            real_name='院系内教师',
+            department='人工智能学院',
+            title='讲师',
+        )
+        teacher_out_scope = user_model.objects.create_user(
+            id=100091,
+            username='100091',
+            password='teacher123456',
+            real_name='院系外教师',
+            department='计算机学院',
+            title='讲师',
+        )
+
+        Paper.objects.create(
+            teacher=teacher_in_scope,
+            title='2025 年院系内论文',
+            abstract='这是一个足够长的摘要，用于验证学院看板支持按院系和年份过滤。',
+            date_acquired='2025-03-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+        )
+        Paper.objects.create(
+            teacher=teacher_out_scope,
+            title='2024 年院系外论文',
+            abstract='这是另一个足够长的摘要，用于验证过滤条件不会误包含其他教师数据。',
+            date_acquired='2024-03-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(
+            '/api/achievements/academy-overview/',
+            {'department': '人工智能学院', 'year': 2025},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['active_filters']['department'], '人工智能学院')
+        self.assertEqual(response.data['active_filters']['year'], 2025)
+        self.assertEqual(response.data['statistics'][1]['value'], 1)
+        self.assertEqual(len(response.data['top_active_teachers']), 1)
+        self.assertEqual(response.data['top_active_teachers'][0]['user_id'], teacher_in_scope.id)

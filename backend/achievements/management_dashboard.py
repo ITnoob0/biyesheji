@@ -24,6 +24,16 @@ def build_management_data_meta():
     }
 
 
+def normalize_year(raw_value):
+    if raw_value in (None, ''):
+        return None
+
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
 class AcademyOverviewDashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -32,15 +42,41 @@ class AcademyOverviewDashboardView(APIView):
 
         user_model = get_user_model()
         teachers = user_model.objects.filter(is_superuser=False)
+        department = request.query_params.get('department', '').strip()
+        teacher_id = request.query_params.get('teacher_id', '').strip()
+        year = normalize_year(request.query_params.get('year'))
+
+        if department:
+            teachers = teachers.filter(department=department)
+
+        if teacher_id:
+            teachers = teachers.filter(id=teacher_id)
+
+        teacher_ids = list(teachers.values_list('id', flat=True))
+
+        paper_queryset = Paper.objects.filter(teacher_id__in=teacher_ids)
+        project_queryset = Project.objects.filter(teacher_id__in=teacher_ids)
+        ip_queryset = IntellectualProperty.objects.filter(teacher_id__in=teacher_ids)
+        teaching_queryset = TeachingAchievement.objects.filter(teacher_id__in=teacher_ids)
+        service_queryset = AcademicService.objects.filter(teacher_id__in=teacher_ids)
+        collaboration_queryset = CoAuthor.objects.filter(paper__teacher_id__in=teacher_ids)
+
+        if year:
+            paper_queryset = paper_queryset.filter(date_acquired__year=year)
+            project_queryset = project_queryset.filter(date_acquired__year=year)
+            ip_queryset = ip_queryset.filter(date_acquired__year=year)
+            teaching_queryset = teaching_queryset.filter(date_acquired__year=year)
+            service_queryset = service_queryset.filter(date_acquired__year=year)
+            collaboration_queryset = collaboration_queryset.filter(paper__date_acquired__year=year)
 
         teacher_total = teachers.count()
-        paper_total = Paper.objects.count()
-        project_total = Project.objects.count()
-        ip_total = IntellectualProperty.objects.count()
-        teaching_total = TeachingAchievement.objects.count()
-        service_total = AcademicService.objects.count()
+        paper_total = paper_queryset.count()
+        project_total = project_queryset.count()
+        ip_total = ip_queryset.count()
+        teaching_total = teaching_queryset.count()
+        service_total = service_queryset.count()
         achievement_total = paper_total + project_total + ip_total + teaching_total + service_total
-        collaboration_total = CoAuthor.objects.count()
+        collaboration_total = collaboration_queryset.count()
 
         statistics = [
             {
@@ -87,11 +123,11 @@ class AcademyOverviewDashboardView(APIView):
 
         yearly_counter = defaultdict(lambda: {'paper': 0, 'project': 0, 'achievement_total': 0})
         for model_name, queryset in (
-            ('paper', Paper.objects.all()),
-            ('project', Project.objects.all()),
-            ('ip', IntellectualProperty.objects.all()),
-            ('teaching', TeachingAchievement.objects.all()),
-            ('service', AcademicService.objects.all()),
+            ('paper', paper_queryset),
+            ('project', project_queryset),
+            ('ip', ip_queryset),
+            ('teaching', teaching_queryset),
+            ('service', service_queryset),
         ):
             for item in queryset.values_list('date_acquired', flat=True):
                 if not item:
@@ -128,19 +164,24 @@ class AcademyOverviewDashboardView(APIView):
 
         teacher_rank = []
         for teacher in teachers:
+            teacher_papers = paper_queryset.filter(teacher=teacher)
+            teacher_projects = project_queryset.filter(teacher=teacher)
+            teacher_ips = ip_queryset.filter(teacher=teacher)
+            teacher_teaching = teaching_queryset.filter(teacher=teacher)
+            teacher_services = service_queryset.filter(teacher=teacher)
             teacher_rank.append(
                 {
                     'user_id': teacher.id,
                     'teacher_name': teacher.real_name or teacher.username,
                     'department': teacher.department or '未填写院系',
-                    'paper_count': Paper.objects.filter(teacher=teacher).count(),
-                    'project_count': Project.objects.filter(teacher=teacher).count(),
+                    'paper_count': teacher_papers.count(),
+                    'project_count': teacher_projects.count(),
                     'achievement_total': (
-                        Paper.objects.filter(teacher=teacher).count()
-                        + Project.objects.filter(teacher=teacher).count()
-                        + IntellectualProperty.objects.filter(teacher=teacher).count()
-                        + TeachingAchievement.objects.filter(teacher=teacher).count()
-                        + AcademicService.objects.filter(teacher=teacher).count()
+                        teacher_papers.count()
+                        + teacher_projects.count()
+                        + teacher_ips.count()
+                        + teacher_teaching.count()
+                        + teacher_services.count()
                     ),
                 }
             )
@@ -150,12 +191,41 @@ class AcademyOverviewDashboardView(APIView):
             reverse=True,
         )
 
-        teachers_with_collaboration = Paper.objects.filter(coauthors__isnull=False).values('teacher').distinct().count()
+        teachers_with_collaboration = paper_queryset.filter(coauthors__isnull=False).values('teacher').distinct().count()
         collaboration_overview = {
             'coauthor_relation_total': collaboration_total,
             'teachers_with_collaboration': teachers_with_collaboration,
-            'paper_with_collaboration': Paper.objects.filter(coauthors__isnull=False).distinct().count(),
+            'paper_with_collaboration': paper_queryset.filter(coauthors__isnull=False).distinct().count(),
             'average_coauthors_per_paper': round(collaboration_total / paper_total, 2) if paper_total else 0,
+        }
+
+        filter_options = {
+            'departments': sorted(
+                {
+                    item
+                    for item in user_model.objects.filter(is_superuser=False).values_list('department', flat=True)
+                    if item
+                }
+            ),
+            'teachers': [
+                {
+                    'user_id': teacher.id,
+                    'teacher_name': teacher.real_name or teacher.username,
+                    'department': teacher.department or '未填写院系',
+                }
+                for teacher in user_model.objects.filter(is_superuser=False).order_by('department', 'id')
+            ],
+            'years': sorted(
+                {
+                    item.year
+                    for item in list(Paper.objects.values_list('date_acquired', flat=True))
+                    + list(Project.objects.values_list('date_acquired', flat=True))
+                    + list(IntellectualProperty.objects.values_list('date_acquired', flat=True))
+                    + list(TeachingAchievement.objects.values_list('date_acquired', flat=True))
+                    + list(AcademicService.objects.values_list('date_acquired', flat=True))
+                    if item
+                }
+            ),
         }
 
         return Response(
@@ -166,6 +236,12 @@ class AcademyOverviewDashboardView(APIView):
                 'top_active_teachers': teacher_rank[:8],
                 'collaboration_overview': collaboration_overview,
                 'data_meta': build_management_data_meta(),
+                'active_filters': {
+                    'department': department,
+                    'teacher_id': int(teacher_id) if teacher_id else None,
+                    'year': year,
+                },
+                'filter_options': filter_options,
             },
             status=status.HTTP_200_OK,
         )

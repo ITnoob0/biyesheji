@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
-from users.serializers import get_teacher_profile
+from users.services import get_teacher_profile
 
 from .models import ProjectGuide
 
@@ -97,27 +97,33 @@ class ProjectGuideRecommendationService:
 
         score = 0
         reasons: list[str] = []
+        match_category_tags: list[str] = []
 
         if matched_keywords:
             score += min(40, 14 + len(matched_keywords) * 8)
             reasons.append(f"指南主题与教师研究标签匹配：{', '.join(matched_keywords[:3])}。")
+            match_category_tags.append('主题匹配型')
 
         if matched_disciplines:
             score += min(25, 10 + len(matched_disciplines) * 6)
             reasons.append(f"指南面向方向与教师所属学科/院系贴合：{', '.join(matched_disciplines[:2])}。")
+            match_category_tags.append('学科匹配型')
 
         if teacher_pack['recent_activity_count'] >= 2:
             score += 18
             reasons.append(f"教师在{teacher_pack['recent_cutoff_label']}保持成果活跃，具备持续申报基础。")
+            match_category_tags.append('活跃度支撑型')
         elif teacher_pack['recent_activity_count'] == 1:
             score += 10
             reasons.append(f"教师在{teacher_pack['recent_cutoff_label']}已有成果沉淀，可结合现有方向尝试申报。")
+            match_category_tags.append('活跃度支撑型')
 
         if guide.application_deadline:
             days_left = (guide.application_deadline - timezone.now().date()).days
             if days_left >= 0:
                 score += 8
                 reasons.append(f"指南仍在申报窗口内，距离截止约 {days_left} 天。")
+                match_category_tags.append('窗口友好型')
 
         if guide.support_amount:
             score += 4
@@ -126,11 +132,23 @@ class ProjectGuideRecommendationService:
         if not reasons:
             reasons.append('当前教师画像与该指南尚无显著匹配特征，建议仅作备选参考。')
 
+        if score >= 70:
+            priority_label = '重点关注'
+        elif score >= 45:
+            priority_label = '建议关注'
+        else:
+            priority_label = '可作备选'
+
+        recommendation_summary = '；'.join(reasons[:2])
+
         return {
             'score': score,
             'reasons': reasons[:4],
             'matched_keywords': matched_keywords[:6],
             'matched_disciplines': matched_disciplines[:4],
+            'match_category_tags': match_category_tags[:4],
+            'priority_label': priority_label,
+            'recommendation_summary': recommendation_summary,
         }
 
     @classmethod
@@ -148,6 +166,9 @@ class ProjectGuideRecommendationService:
             guide.recommendation_reasons = scored['reasons']
             guide.matched_keywords = scored['matched_keywords']
             guide.matched_disciplines = scored['matched_disciplines']
+            guide.match_category_tags = scored['match_category_tags']
+            guide.priority_label = scored['priority_label']
+            guide.recommendation_summary = scored['recommendation_summary']
             recommendation_items.append(guide)
 
         recommendation_items.sort(
@@ -172,6 +193,8 @@ class ProjectGuideRecommendationService:
                 'source_note': '推荐规则基于教师研究方向、研究兴趣、论文关键词、学科信息与近三年成果活跃度实时计算，不依赖 RAG 或外部抓取。',
                 'acceptance_scope': '本能力属于当前阶段扩展方向，以最小可用实现交付。',
                 'future_extension_hint': '后续可在本接口基础上接入更复杂的智能推荐、政策解析或 RAG 检索层。',
+                'sorting_note': '默认按推荐分数、申报截止时间与最近更新时间综合排序，当前仍是规则增强路线。',
+                'current_strategy': '规则增强型推荐（非复杂模型）',
             },
             'empty_state': '当前暂无明显匹配的项目指南，建议先完善研究方向标签或录入最新成果后再查看推荐。',
         }

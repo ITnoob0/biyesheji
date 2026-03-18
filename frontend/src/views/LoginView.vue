@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import axios from 'axios'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { clearSessionAuth, fetchCurrentSessionUser, setSessionToken } from '../utils/sessionAuth'
+import type { TokenObtainPairResponse } from '../types/auth'
+import { resolvePostLoginRedirect } from '../utils/sessionFlow.js'
+import {
+  clearSessionAuth,
+  consumeAuthRedirectTarget,
+  consumeSessionExpiredReason,
+  fetchCurrentSessionUser,
+  setSessionToken,
+} from '../utils/sessionAuth'
 
 const username = ref('')
 const password = ref('')
@@ -16,18 +24,18 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const response = await axios.post('/api/token/', {
+    const response = await axios.post<TokenObtainPairResponse>('/api/token/', {
       username: username.value.trim(),
       password: password.value,
     })
 
-    setSessionToken(response.data.access)
+    setSessionToken(response.data.access, response.data.refresh)
     await fetchCurrentSessionUser()
 
-    const redirectTarget =
-      typeof route.query.redirect === 'string' && route.query.redirect !== '/login'
-        ? route.query.redirect
-        : '/dashboard'
+    const redirectTarget = resolvePostLoginRedirect(
+      typeof route.query.redirect === 'string' ? route.query.redirect : '',
+      consumeAuthRedirectTarget(),
+    )
 
     router.push(redirectTarget)
     ElMessage.success('登录成功')
@@ -38,6 +46,13 @@ const handleLogin = async () => {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  const expiredReason = consumeSessionExpiredReason()
+  if (expiredReason) {
+    ElMessage.warning(expiredReason)
+  }
+})
 </script>
 
 <template>
