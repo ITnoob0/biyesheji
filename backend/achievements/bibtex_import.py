@@ -212,6 +212,11 @@ def normalize_identity(value: str) -> str:
     return re.sub(r'[\s\-_.]', '', (value or '').strip().lower())
 
 
+def normalize_duplicate_signature(*parts: str) -> str:
+    cleaned_parts = [re.sub(r'[\W_]+', '', (part or '').strip().lower()) for part in parts if part]
+    return '::'.join(filter(None, cleaned_parts))
+
+
 def parse_authors(author_field: str) -> list[str]:
     if not author_field:
         return []
@@ -258,6 +263,10 @@ def normalize_bibtex_paper_entry(entry: dict[str, Any], user) -> dict[str, Any]:
     abstract = clean_bibtex_value(fields.get('abstract', ''))
     journal_name = clean_bibtex_value(fields.get('journal', '') or fields.get('booktitle', ''))
     journal_level = clean_bibtex_value(fields.get('journal_level', '') or fields.get('note', ''))
+    published_volume = clean_bibtex_value(fields.get('volume', ''))
+    published_issue = clean_bibtex_value(fields.get('number', ''))
+    pages = clean_bibtex_value(fields.get('pages', ''))
+    source_url = clean_bibtex_value(fields.get('url', '') or fields.get('ee', ''))
     doi = clean_bibtex_value(fields.get('doi', '')).lower()
     date_acquired, date_issues = resolve_date(fields)
     authors = parse_authors(fields.get('author', ''))
@@ -288,8 +297,13 @@ def normalize_bibtex_paper_entry(entry: dict[str, Any], user) -> dict[str, Any]:
         'paper_type': paper_type,
         'journal_name': journal_name,
         'journal_level': journal_level,
+        'published_volume': published_volume,
+        'published_issue': published_issue,
+        'pages': pages,
+        'source_url': source_url,
         'citation_count': 0,
         'is_first_author': is_first_author,
+        'is_representative': False,
         'doi': doi,
         'coauthors': coauthors,
         'issues': date_issues,
@@ -306,13 +320,23 @@ def build_bibtex_preview_entries(raw_text: str, user) -> dict[str, Any]:
         for doi in Paper.objects.filter(teacher=user).exclude(doi='').values_list('doi', flat=True)
         if doi
     }
+    existing_title_signatures = {
+        normalize_duplicate_signature(paper.title, paper.journal_name, str(paper.date_acquired.year))
+        for paper in Paper.objects.filter(teacher=user).only('title', 'journal_name', 'date_acquired')
+    }
     batch_dois: set[str] = set()
+    batch_title_signatures: set[str] = set()
     preview_entries: list[dict[str, Any]] = []
 
     for index, entry in enumerate(parsed_entries, start=1):
         normalized = normalize_bibtex_paper_entry(entry, user)
         issues = list(normalized.pop('issues', []))
         doi = normalized.get('doi', '')
+        title_signature = normalize_duplicate_signature(
+            normalized.get('title', ''),
+            normalized.get('journal_name', ''),
+            normalized.get('date_acquired', '')[:4],
+        )
 
         if not normalized['title']:
             issues.append('缺少论文题目。')
@@ -328,11 +352,19 @@ def build_bibtex_preview_entries(raw_text: str, user) -> dict[str, Any]:
         elif doi and doi in batch_dois:
             preview_status = 'duplicate'
             issues.append('当前批次中存在重复 DOI。')
+        elif title_signature and title_signature in existing_title_signatures:
+            preview_status = 'duplicate'
+            issues.append('题目、期刊/会议与年份和已有论文高度重复，请先核对是否重复录入。')
+        elif title_signature and title_signature in batch_title_signatures:
+            preview_status = 'duplicate'
+            issues.append('当前批次中存在题目、期刊/会议与年份高度重复的论文。')
         elif issues:
             preview_status = 'invalid'
 
         if doi:
             batch_dois.add(doi)
+        if title_signature:
+            batch_title_signatures.add(title_signature)
 
         preview_entries.append(
             {

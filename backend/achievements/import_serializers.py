@@ -25,8 +25,13 @@ class BibtexImportEntrySerializer(serializers.Serializer):
     paper_type = serializers.ChoiceField(choices=('JOURNAL', 'CONFERENCE'))
     journal_name = serializers.CharField(allow_blank=True)
     journal_level = serializers.CharField(required=False, allow_blank=True, default='')
+    published_volume = serializers.CharField(required=False, allow_blank=True, default='')
+    published_issue = serializers.CharField(required=False, allow_blank=True, default='')
+    pages = serializers.CharField(required=False, allow_blank=True, default='')
+    source_url = serializers.CharField(required=False, allow_blank=True, default='')
     citation_count = serializers.IntegerField(required=False, min_value=0, default=0)
     is_first_author = serializers.BooleanField(required=False, default=True)
+    is_representative = serializers.BooleanField(required=False, default=False)
     doi = serializers.CharField(required=False, allow_blank=True, default='')
     coauthors = serializers.ListField(
         child=serializers.CharField(),

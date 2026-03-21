@@ -1,13 +1,13 @@
 <template>
-  <div class="dashboard-page">
-    <section class="hero-shell">
+  <div class="dashboard-page workspace-page">
+    <section class="hero-shell workspace-hero workspace-hero--brand">
       <div class="hero-main">
         <div class="avatar-block">
           <div class="avatar-badge">{{ portraitInitial }}</div>
           <div class="avatar-meta">
-            <p class="eyebrow">Research Portrait</p>
-            <h1>{{ teacherInfo.name || '教师画像' }}</h1>
-            <p class="subtitle">
+            <p class="eyebrow workspace-hero__eyebrow">Research Portrait</p>
+            <h1 class="workspace-hero__title">{{ teacherInfo.name || '教师画像' }}</h1>
+            <p class="subtitle workspace-hero__text">
               {{ teacherInfo.department || '未设置学院' }} · {{ teacherInfo.title || '未设置职称' }}
             </p>
             <div class="hero-tags">
@@ -31,7 +31,7 @@
         </div>
       </div>
 
-      <div class="hero-actions">
+      <div class="hero-actions workspace-page-actions">
         <el-button type="primary" icon="DocumentAdd" @click="router.push('/entry')">录入成果</el-button>
         <el-button icon="Promotion" @click="openRecommendationPage">项目推荐</el-button>
         <el-button icon="ChatDotRound" @click="openAssistantDemo">智能问答</el-button>
@@ -43,7 +43,7 @@
     </section>
 
     <section class="metric-grid">
-      <el-card v-for="item in statistics" :key="item.title" class="metric-card" shadow="hover">
+      <el-card v-for="item in statistics" :key="item.title" class="metric-card workspace-surface-card" shadow="hover">
         <div class="metric-top">
           <span class="metric-label">{{ item.title }}</span>
           <el-icon :class="item.iconClass" :size="22">
@@ -63,9 +63,9 @@
     </section>
 
     <section class="portrait-grid">
-      <el-card class="insight-card" shadow="never">
+      <el-card class="insight-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>画像标签</span>
             <el-tag type="warning" effect="plain">{{ achievementOverview.total_achievements }} 项成果联动</el-tag>
           </div>
@@ -111,9 +111,9 @@
         </div>
       </el-card>
 
-      <el-card class="radar-card" shadow="never">
+      <el-card class="radar-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>综合能力雷达评估</span>
             <el-tag type="success" effect="plain">多成果联动</el-tag>
           </div>
@@ -125,13 +125,55 @@
             <p>{{ item.description }}</p>
           </div>
         </div>
+
+        <div class="dimension-insight-grid">
+          <div v-for="item in dimensionInsights" :key="item.key" class="dimension-insight-item">
+            <div class="dimension-insight-head">
+              <strong>{{ item.name }}</strong>
+              <el-tag size="small" effect="plain" :type="item.level === '优势维度' ? 'success' : item.level === '稳定维度' ? 'info' : 'warning'">
+                {{ item.level }}
+              </el-tag>
+            </div>
+            <p class="dimension-score-text">评分 {{ item.value }} · 权重 {{ item.weight }}%</p>
+            <p>{{ item.formula_note }}</p>
+            <div class="interest-tags">
+              <el-tag v-for="evidence in item.evidence" :key="evidence" size="small" effect="plain" type="info">
+                {{ evidence }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+      </el-card>
+    </section>
+
+    <section class="analysis-grid">
+      <el-card class="trend-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>画像维度变化趋势</span>
+            <el-tag type="primary" effect="plain">按成果年份回溯估算</el-tag>
+          </div>
+        </template>
+        <p class="chart-note workspace-chart-note">{{ dimensionTrendNarrative }}</p>
+        <div ref="dimensionTrendChartRef" class="trend-chart"></div>
+      </el-card>
+
+      <el-card class="structure-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>近年成果结构</span>
+            <el-tag type="warning" effect="plain">多成果结构视图</el-tag>
+          </div>
+        </template>
+        <p class="chart-note workspace-chart-note">按论文、项目、知识产权、教学成果和学术服务拆解近年成果结构，更容易观察画像重心的变化。</p>
+        <div ref="structureChartRef" class="trend-chart"></div>
       </el-card>
     </section>
 
     <section class="chart-grid">
-      <el-card class="graph-card" shadow="never">
+      <el-card class="graph-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>学术社交拓扑图</span>
             <el-tag type="primary" effect="plain">实时关系网络</el-tag>
           </div>
@@ -139,9 +181,9 @@
         <AcademicGraph :userId="userId" />
       </el-card>
 
-      <el-card class="trend-card" shadow="never">
+      <el-card class="trend-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>科研产出时间轴</span>
             <el-tag type="info" effect="plain">当前仍基于论文时间序列</el-tag>
           </div>
@@ -150,16 +192,84 @@
       </el-card>
     </section>
 
-    <section class="bottom-grid">
-      <el-card class="paper-card" shadow="never">
+    <section class="explain-grid">
+      <el-card class="keyword-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
+            <span>关键词演化与主题聚焦</span>
+            <el-tag type="success" effect="plain">{{ themeFocusSummary.label }}</el-tag>
+          </div>
+        </template>
+
+        <div class="focus-panel">
+          <div class="focus-score">
+            <strong>{{ themeFocusSummary.ratio }}%</strong>
+            <span>Top3 关键词集中度</span>
+          </div>
+          <p>{{ themeFocusSummary.description }}</p>
+          <div class="interest-tags">
+            <el-tag v-for="item in themeFocusSummary.topKeywords" :key="item.name" type="warning" effect="plain">
+              {{ item.name }} × {{ item.count }}
+            </el-tag>
+            <span v-if="!themeFocusSummary.topKeywords.length" class="muted">暂无关键词演化数据，补充论文摘要后会逐步形成。</span>
+          </div>
+        </div>
+
+        <div class="keyword-evolution-list">
+          <div v-for="item in keywordEvolution" :key="item.year" class="keyword-year-item">
+            <div class="keyword-year-head">
+              <strong>{{ item.year }} 年</strong>
+              <span>{{ item.paperCount }} 篇论文参与</span>
+            </div>
+            <div class="interest-tags">
+              <el-tag v-for="keyword in item.keywords" :key="`${item.year}-${keyword.name}`" size="small" effect="plain" type="success">
+                {{ keyword.name }} × {{ keyword.count }}
+              </el-tag>
+              <span v-if="!item.keywords.length" class="muted">当年暂无可用关键词。</span>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
+      <el-card class="link-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>画像如何形成</span>
+            <el-tag type="warning" effect="plain">透明解释</el-tag>
+          </div>
+        </template>
+
+        <div class="meta-panel">
+          <div class="meta-item">
+            <strong>分析总览</strong>
+            <p>{{ portraitExplanation?.overview || '当前教师画像基于基础档案与多成果实时聚合形成。' }}</p>
+          </div>
+          <div class="meta-item">
+            <strong>形成步骤</strong>
+            <p v-for="step in portraitExplanation?.formation_steps || []" :key="step">{{ step }}</p>
+          </div>
+          <div class="meta-item">
+            <strong>趋势口径</strong>
+            <p>{{ portraitExplanation?.trend_note || '当前趋势主要按成果年份回溯计算。' }}</p>
+          </div>
+          <div class="meta-item">
+            <strong>未来快照边界</strong>
+            <p>{{ portraitExplanation?.snapshot_boundary_note || '未来如引入快照，需要单独定义冻结口径和版本说明。' }}</p>
+          </div>
+        </div>
+      </el-card>
+    </section>
+
+    <section class="bottom-grid">
+      <el-card class="paper-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="section-head workspace-section-head">
             <span>代表性成果</span>
             <el-tag type="success" effect="plain">{{ recentAchievements.length }} 条</el-tag>
           </div>
         </template>
 
-        <div v-if="!recentAchievements.length" class="empty-text">暂无成果记录，可先前往成果录入页补充数据。</div>
+        <div v-if="!recentAchievements.length" class="empty-text workspace-muted">暂无成果记录，可先前往成果录入页补充数据。</div>
 
         <div v-for="item in recentAchievements" :key="`${item.type}-${item.id}`" class="achievement-item">
           <div class="achievement-head">
@@ -171,9 +281,9 @@
         </div>
       </el-card>
 
-      <el-card class="link-card" shadow="never">
+      <el-card class="link-card workspace-surface-card" shadow="never">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>画像说明</span>
             <el-tag type="warning" effect="plain">数据透明</el-tag>
           </div>
@@ -191,6 +301,10 @@
           <div class="meta-item">
             <strong>当前阶段验收</strong>
             <p>{{ portraitDataMeta?.acceptance_scope || '本页增强纳入当前阶段验收。' }}</p>
+          </div>
+          <div class="meta-item">
+            <strong>透明性说明</strong>
+            <p>{{ portraitExplanation?.transparency_note || '当前画像各项说明均可追溯到现有档案与成果数据。' }}</p>
           </div>
         </div>
 
@@ -224,7 +338,10 @@ import AcademicGraph from './AcademicGraph.vue'
 import RadarChart from '../components/RadarChart.vue'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
+import { buildDimensionTrendNarrative, buildKeywordEvolution, buildThemeFocusSummary } from './dashboard/portraitInsights.js'
 import {
+  buildAchievementStructureOption,
+  buildDimensionTrendOption,
   buildLatestActiveYear,
   buildPaperTypeSummary,
   buildPortraitUpdatedLabel,
@@ -234,11 +351,15 @@ import {
   buildTrendOption,
   type AchievementOverview,
   type DashboardStatsResponse,
+  type DimensionInsight,
+  type DimensionTrendPoint,
   type DimensionSource,
   type PaperRecord,
   type PortraitDataMeta,
+  type PortraitExplanation,
   type RadarResponse,
   type RecentAchievementRecord,
+  type RecentStructurePoint,
   type StatisticItem,
   type TeacherDetail,
 } from './dashboard/portrait'
@@ -251,9 +372,13 @@ const userId = ref<number>(0)
 const statistics = ref<StatisticItem[]>([])
 const radarData = ref<Array<{ name: string; value: number }>>([])
 const dimensionSources = ref<DimensionSource[]>([])
+const dimensionInsights = ref<DimensionInsight[]>([])
 const papers = ref<PaperRecord[]>([])
 const recentAchievements = ref<RecentAchievementRecord[]>([])
 const portraitDataMeta = ref<PortraitDataMeta | null>(null)
+const dimensionTrend = ref<DimensionTrendPoint[]>([])
+const recentStructure = ref<RecentStructurePoint[]>([])
+const portraitExplanation = ref<PortraitExplanation | null>(null)
 const achievementOverview = ref<AchievementOverview>({
   paper_count: 0,
   project_count: 0,
@@ -280,7 +405,11 @@ const teacherInfo = ref<TeacherDetail>({
 })
 
 const trendChartRef = ref<HTMLElement | null>(null)
+const dimensionTrendChartRef = ref<HTMLElement | null>(null)
+const structureChartRef = ref<HTMLElement | null>(null)
 let trendChartInstance: echarts.ECharts | null = null
+let dimensionTrendChartInstance: echarts.ECharts | null = null
+let structureChartInstance: echarts.ECharts | null = null
 
 const defaultBio = '当前教师尚未完善人物简介，可前往教师基础信息页补充更加完整的研究背景和个人概况。'
 
@@ -295,6 +424,9 @@ const topCollaborators = computed(() => buildTopCollaborators(papers.value))
 const paperTypeSummary = computed(() => buildPaperTypeSummary(papers.value))
 const latestActiveYear = computed(() => buildLatestActiveYear(papers.value))
 const portraitUpdatedLabel = computed(() => buildPortraitUpdatedLabel(portraitDataMeta.value))
+const keywordEvolution = computed(() => buildKeywordEvolution(papers.value))
+const themeFocusSummary = computed(() => buildThemeFocusSummary(papers.value))
+const dimensionTrendNarrative = computed(() => buildDimensionTrendNarrative(dimensionTrend.value))
 
 const achievementMixSummary = computed(
   () =>
@@ -337,6 +469,10 @@ const loadDashboardData = async () => {
 
   statistics.value = response.data.statistics ?? []
   recentAchievements.value = response.data.recent_achievements ?? []
+  dimensionTrend.value = response.data.dimension_trend ?? []
+  recentStructure.value = response.data.recent_structure ?? []
+  portraitExplanation.value = response.data.portrait_explanation ?? null
+  dimensionInsights.value = response.data.dimension_insights ?? []
   portraitDataMeta.value = response.data.data_meta ?? null
   achievementOverview.value = response.data.achievement_overview ?? achievementOverview.value
 }
@@ -345,6 +481,7 @@ const loadRadarData = async () => {
   const response = await axios.get<RadarResponse>(`/api/achievements/radar/${userId.value}/`)
   radarData.value = response.data.radar_dimensions ?? []
   dimensionSources.value = response.data.dimension_sources ?? []
+  dimensionInsights.value = response.data.dimension_insights ?? dimensionInsights.value
 }
 
 const loadPapers = async () => {
@@ -364,6 +501,26 @@ const renderTrendChart = () => {
   trendChartInstance.setOption(buildTrendOption(papers.value, echarts))
 }
 
+const renderDimensionTrendChart = () => {
+  if (!dimensionTrendChartRef.value) return
+
+  if (!dimensionTrendChartInstance) {
+    dimensionTrendChartInstance = markRaw(echarts.init(dimensionTrendChartRef.value))
+  }
+
+  dimensionTrendChartInstance.setOption(buildDimensionTrendOption(dimensionTrend.value, echarts))
+}
+
+const renderStructureChart = () => {
+  if (!structureChartRef.value) return
+
+  if (!structureChartInstance) {
+    structureChartInstance = markRaw(echarts.init(structureChartRef.value))
+  }
+
+  structureChartInstance.setOption(buildAchievementStructureOption(recentStructure.value, echarts))
+}
+
 const refreshPortrait = async () => {
   const sessionUser = await ensureUser()
   if (!sessionUser) return
@@ -371,6 +528,8 @@ const refreshPortrait = async () => {
   try {
     await Promise.all([loadTeacherDetail(), loadDashboardData(), loadRadarData(), loadPapers()])
     renderTrendChart()
+    renderDimensionTrendChart()
+    renderStructureChart()
   } catch (error) {
     console.error(error)
     ElMessage.error('画像数据加载失败，请检查后端接口状态。')
@@ -408,6 +567,8 @@ const resolveAchievementTagType = (type: string): 'success' | 'warning' | 'info'
 
 const handleResize = () => {
   trendChartInstance?.resize()
+  dimensionTrendChartInstance?.resize()
+  structureChartInstance?.resize()
 }
 
 watch(
@@ -425,6 +586,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   trendChartInstance?.dispose()
+  dimensionTrendChartInstance?.dispose()
+  structureChartInstance?.dispose()
 })
 </script>
 
@@ -539,6 +702,8 @@ onUnmounted(() => {
 .radar-card,
 .graph-card,
 .trend-card,
+.structure-card,
+.keyword-card,
 .paper-card,
 .link-card {
   border: none;
@@ -605,7 +770,9 @@ onUnmounted(() => {
 }
 
 .portrait-grid,
+.analysis-grid,
 .chart-grid,
+.explain-grid,
 .bottom-grid {
   display: grid;
   gap: 20px;
@@ -618,6 +785,11 @@ onUnmounted(() => {
 
 .chart-grid {
   grid-template-columns: 1.15fr 0.85fr;
+}
+
+.analysis-grid,
+.explain-grid {
+  grid-template-columns: 1fr 1fr;
 }
 
 .bottom-grid {
@@ -663,6 +835,7 @@ onUnmounted(() => {
 }
 
 .dimension-source-list,
+.dimension-insight-grid,
 .meta-panel,
 .link-list {
   display: grid;
@@ -671,6 +844,27 @@ onUnmounted(() => {
 
 .dimension-source-list {
   margin-top: 18px;
+}
+
+.dimension-insight-grid {
+  margin-top: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dimension-insight-item {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.dimension-insight-head,
+.keyword-year-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .dimension-source-item strong,
@@ -682,6 +876,8 @@ onUnmounted(() => {
 }
 
 .dimension-source-item p,
+.chart-note,
+.dimension-score-text,
 .meta-item p,
 .link-item p,
 .empty-text,
@@ -691,6 +887,48 @@ onUnmounted(() => {
   margin: 0;
   color: #64748b;
   line-height: 1.7;
+}
+
+.chart-note {
+  margin-bottom: 14px;
+}
+
+.focus-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+}
+
+.focus-score {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.focus-score strong {
+  font-size: 32px;
+  color: #0f172a;
+}
+
+.focus-score span,
+.keyword-year-head span {
+  color: #64748b;
+}
+
+.keyword-evolution-list {
+  display: grid;
+  gap: 14px;
+}
+
+.keyword-year-item {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fafc;
+  display: grid;
+  gap: 12px;
 }
 
 .trend-chart {
@@ -744,7 +982,9 @@ onUnmounted(() => {
 @media (max-width: 1180px) {
   .metric-grid,
   .portrait-grid,
+  .analysis-grid,
   .chart-grid,
+  .explain-grid,
   .bottom-grid,
   .hero-main {
     grid-template-columns: 1fr;
@@ -766,7 +1006,8 @@ onUnmounted(() => {
   }
 
   .metric-grid,
-  .insight-mini-grid {
+  .insight-mini-grid,
+  .dimension-insight-grid {
     grid-template-columns: 1fr;
   }
 }

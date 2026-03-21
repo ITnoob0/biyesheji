@@ -1,0 +1,209 @@
+:root {
+  --workspace-max-width: 1180px;
+  --workspace-card-radius: 24px;
+  --workspace-panel-radius: 28px;
+  --workspace-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  --workspace-shadow-strong: 0 26px 56px rgba(15, 23, 42, 0.14);
+  --workspace-surface: rgba(255, 255, 255, 0.96);
+  --workspace-muted: #64748b;
+  --workspace-title: #0f172a;
+  --workspace-soft: #f8fafc;
+  --workspace-soft-blue: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  --workspace-brand-gradient:
+    radial-gradient(circle at top left, rgba(120, 164, 255, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(102, 188, 212, 0.12), transparent 28%),
+    linear-gradient(135deg, #0f172a 0%, #1d4ed8 62%, #0f766e 100%);
+}
+
+.workspace-page {
+  min-height: 100vh;
+}
+
+.workspace-content-shell {
+  max-width: var(--workspace-max-width);
+  margin: 0 auto;
+}
+
+.workspace-hero {
+  position: relative;
+  max-width: var(--workspace-max-width);
+  margin: 0 auto 22px;
+  padding: 28px 32px;
+  border-radius: var(--workspace-panel-radius);
+  color: #fff;
+  box-shadow: var(--workspace-shadow-strong);
+  overflow: hidden;
+}
+
+.workspace-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(191, 214, 255, 0.12);
+  pointer-events: none;
+}
+
+.workspace-hero--brand {
+  background: var(--workspace-brand-gradient);
+}
+
+.workspace-hero__eyebrow {
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.workspace-hero__title {
+  margin: 0;
+  color: #fff;
+}
+
+.workspace-hero__text {
+  margin: 12px 0 0;
+  max-width: 760px;
+  color: rgba(255, 255, 255, 0.88);
+  line-height: 1.8;
+}
+
+.workspace-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.workspace-page-actions .el-button {
+  min-height: 42px;
+  border-radius: 14px;
+  font-weight: 600;
+  padding-inline: 18px;
+  box-shadow: none;
+}
+
+.workspace-page-actions .el-button--default,
+.workspace-page-actions .el-button.is-plain {
+  border-color: rgba(191, 214, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fbff;
+}
+
+.workspace-page-actions .el-button--default:hover,
+.workspace-page-actions .el-button.is-plain:hover {
+  border-color: rgba(191, 214, 255, 0.38);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.workspace-page-actions .el-button--primary {
+  box-shadow: 0 12px 24px rgba(23, 74, 183, 0.22);
+}
+
+.workspace-surface-card.el-card,
+.workspace-surface-card {
+  border: none !important;
+  border-radius: var(--workspace-card-radius) !important;
+  background: var(--workspace-surface) !important;
+  box-shadow: var(--workspace-shadow) !important;
+}
+
+.workspace-surface-card .el-card__header {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+}
+
+.workspace-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.workspace-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.workspace-filter-strip {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-filter-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-note,
+.workspace-chart-note,
+.workspace-muted {
+  color: var(--workspace-muted);
+  line-height: 1.7;
+}
+
+.workspace-chart-note {
+  margin: 0 0 14px;
+}
+
+.workspace-status-result .el-result,
+.workspace-empty-state .el-empty {
+  padding: 28px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px dashed rgba(148, 163, 184, 0.36);
+}
+
+.workspace-meta-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-meta-item {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.workspace-meta-item strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--workspace-title);
+}
+
+.workspace-meta-item p {
+  margin: 0;
+  color: var(--workspace-muted);
+  line-height: 1.7;
+}
+
+.workspace-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 1180px) {
+  .workspace-hero {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 768px) {
+  .workspace-hero {
+    padding: 22px 20px;
+  }
+
+  .workspace-page-actions,
+  .workspace-section-head,
+  .workspace-toolbar {
+    align-items: stretch;
+  }
+
+  .workspace-page-actions .el-button {
+    width: 100%;
+  }
+}

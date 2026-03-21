@@ -1,16 +1,16 @@
 <template>
-  <div class="recommendation-page">
-    <section class="hero-panel">
+  <div class="recommendation-page workspace-page">
+    <section class="hero-panel workspace-hero workspace-hero--brand">
       <div>
-        <p class="eyebrow">Guide Recommendation</p>
-        <h1>项目指南推荐</h1>
-        <p class="hero-text">
+        <p class="eyebrow workspace-hero__eyebrow">Guide Recommendation</p>
+        <h1 class="workspace-hero__title">项目指南推荐</h1>
+        <p class="hero-text workspace-hero__text">
           面向
           <strong>{{ recommendationData?.teacher_snapshot.teacher_name || currentUser?.real_name || currentUser?.username || '当前教师' }}</strong>
           的轻量推荐结果，强调可解释规则，不依赖 RAG 或复杂模型。
         </p>
       </div>
-      <div class="hero-actions">
+      <div class="hero-actions workspace-page-actions">
         <el-button plain @click="router.push('/dashboard')">返回画像主页</el-button>
         <el-button plain @click="openAssistantDemo">问答说明</el-button>
         <el-button type="primary" :loading="loading" @click="loadRecommendations">刷新推荐</el-button>
@@ -18,9 +18,9 @@
     </section>
 
     <section class="content-shell control-shell">
-      <el-card shadow="never">
+      <el-card shadow="never" class="workspace-surface-card">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>推荐筛选与排序</span>
             <el-tag type="success" effect="plain">第三轮展示增强</el-tag>
           </div>
@@ -43,6 +43,22 @@
             />
           </el-select>
 
+          <el-select
+            v-if="currentUser?.is_admin"
+            v-model="compareTeacherId"
+            clearable
+            filterable
+            placeholder="管理员可选择第二位教师对比"
+            @change="handleCompareTeacherChanged"
+          >
+            <el-option
+              v-for="teacher in teacherOptions.filter(item => item.id !== selectedTeacherId)"
+              :key="teacher.id"
+              :label="`${teacher.real_name || teacher.username}（${teacher.department || '未填写院系'}）`"
+              :value="teacher.id"
+            />
+          </el-select>
+
           <el-input
             v-model="searchKeyword"
             clearable
@@ -53,23 +69,40 @@
             <el-option v-for="tag in focusTagOptions" :key="tag" :label="tag" :value="tag" />
           </el-select>
 
+          <el-select v-model="selectedGuideLevel" clearable placeholder="按指南级别筛选">
+            <el-option v-for="item in guideLevelOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+
+          <el-select v-model="selectedPriority" clearable placeholder="按关注等级筛选">
+            <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
+          </el-select>
+
+          <el-select v-model="selectedLabel" clearable placeholder="按推荐标签筛选">
+            <el-option v-for="tag in labelOptions" :key="tag" :label="tag" :value="tag" />
+          </el-select>
+
           <el-select v-model="selectedSort" placeholder="排序方式">
             <el-option v-for="item in sortOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
+
+          <el-switch v-model="favoritesOnly" active-text="仅看已收藏" inactive-text="全部结果" />
         </div>
 
         <div class="tag-list">
           <el-tag type="info" effect="plain">{{ recommendationData?.data_meta.current_strategy || '规则增强型推荐' }}</el-tag>
           <el-tag type="warning" effect="plain">{{ recommendationData?.data_meta.sorting_note || '默认按推荐分数排序' }}</el-tag>
           <el-tag type="success" effect="plain">结果数 {{ recommendationItems.length }}</el-tag>
+          <el-tag v-if="recommendationData?.comparison_teacher_snapshot" type="primary" effect="plain">
+            已开启教师对比
+          </el-tag>
         </div>
       </el-card>
     </section>
 
     <section class="snapshot-grid content-shell">
-      <el-card shadow="never">
+      <el-card shadow="never" class="workspace-surface-card">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
             <span>教师画像摘要</span>
             <el-tag type="primary" effect="plain">推荐输入</el-tag>
           </div>
@@ -90,13 +123,71 @@
         </div>
         <div class="snapshot-block">
           <strong>近三年成果活跃度</strong>
-          <p class="muted">{{ recommendationData?.teacher_snapshot.recent_activity_count ?? 0 }} 项</p>
+          <p class="muted">
+            {{ recommendationData?.teacher_snapshot.recent_activity_count ?? 0 }} 项
+            <span v-if="recommendationData?.teacher_snapshot.activity_level"> · {{ recommendationData?.teacher_snapshot.activity_level }}</span>
+          </p>
         </div>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card v-if="recommendationData?.comparison_teacher_snapshot" shadow="never" class="workspace-surface-card">
         <template #header>
-          <div class="section-head">
+          <div class="section-head workspace-section-head">
+            <span>对比教师摘要</span>
+            <el-tag type="success" effect="plain">管理员对比</el-tag>
+          </div>
+        </template>
+        <div class="snapshot-block">
+          <strong>{{ recommendationData?.comparison_teacher_snapshot?.teacher_name }}</strong>
+          <div class="tag-list">
+            <el-tag
+              v-for="tag in recommendationData?.comparison_teacher_snapshot?.keywords || []"
+              :key="`compare-kw-${tag}`"
+              type="warning"
+              effect="plain"
+            >
+              {{ tag }}
+            </el-tag>
+          </div>
+        </div>
+        <div class="snapshot-block">
+          <strong>学科/院系</strong>
+          <div class="tag-list">
+            <el-tag
+              v-for="tag in recommendationData?.comparison_teacher_snapshot?.disciplines || []"
+              :key="`compare-dis-${tag}`"
+              type="success"
+              effect="plain"
+            >
+              {{ tag }}
+            </el-tag>
+          </div>
+        </div>
+        <div class="snapshot-block">
+          <strong>近三年成果活跃度</strong>
+          <p class="muted">
+            {{ recommendationData?.comparison_teacher_snapshot?.recent_activity_count ?? 0 }} 项
+            <span v-if="recommendationData?.comparison_teacher_snapshot?.activity_level">
+              · {{ recommendationData?.comparison_teacher_snapshot?.activity_level }}
+            </span>
+          </p>
+        </div>
+        <div class="snapshot-block">
+          <strong>对比摘要</strong>
+          <p class="muted">
+            当前教师更优 {{ recommendationData?.comparison_summary?.primary_better_count ?? 0 }} 条
+            · 对比教师更优 {{ recommendationData?.comparison_summary?.compare_better_count ?? 0 }} 条
+            · 持平 {{ recommendationData?.comparison_summary?.tie_count ?? 0 }} 条
+          </p>
+          <p class="muted" v-if="recommendationData?.comparison_summary?.biggest_gap_title">
+            差异最大：{{ recommendationData?.comparison_summary?.biggest_gap_title }}
+          </p>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
             <span>推荐说明</span>
             <el-tag type="warning" effect="plain">可解释规则</el-tag>
           </div>
@@ -122,12 +213,43 @@
       </el-card>
     </section>
 
-    <div v-if="!loading && !recommendationItems.length" class="content-shell empty-shell">
+    <section v-if="currentUser?.is_admin && adminAnalysisCards.length" class="content-shell admin-shell">
+      <el-card shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>管理员推荐分析</span>
+            <el-tag type="primary" effect="plain">管理视角增强</el-tag>
+          </div>
+        </template>
+        <div class="admin-card-grid">
+          <div v-for="item in adminAnalysisCards" :key="item.label" class="admin-card">
+            <strong>{{ item.value }}</strong>
+            <span>{{ item.label }}</span>
+            <p>{{ item.helper }}</p>
+          </div>
+        </div>
+        <div class="tag-section">
+          <span class="tag-label">高频推荐标签</span>
+          <div class="tag-list">
+            <el-tag
+              v-for="item in recommendationData?.admin_analysis?.top_labels || []"
+              :key="item.label"
+              type="success"
+              effect="plain"
+            >
+              {{ item.label }} · {{ item.count }}
+            </el-tag>
+          </div>
+        </div>
+      </el-card>
+    </section>
+
+    <div v-if="!loading && !recommendationItems.length" class="content-shell empty-shell workspace-empty-state">
       <el-empty :description="recommendationData?.empty_state || '当前暂无匹配的项目指南推荐。'" />
     </div>
 
     <section v-else class="recommendation-list content-shell">
-      <el-card v-for="item in recommendationItems" :key="item.id" class="recommendation-card" shadow="hover">
+      <el-card v-for="item in recommendationItems" :key="item.id" class="recommendation-card workspace-surface-card" shadow="hover">
         <div class="recommendation-head">
           <div>
             <div class="title-row">
@@ -135,6 +257,7 @@
               <div class="tag-list compact-row">
                 <el-tag type="success" effect="plain">匹配度 {{ item.recommendation_score }}</el-tag>
                 <el-tag type="primary" effect="plain">{{ item.priority_label }}</el-tag>
+                <el-tag type="warning" effect="plain">{{ item.rule_profile_display }}</el-tag>
               </div>
             </div>
             <p class="subline">
@@ -143,6 +266,9 @@
             </p>
           </div>
           <div class="compact-row">
+            <el-button link :type="isFavorited(item.id) ? 'warning' : 'info'" @click="toggleFavorite(item.id)">
+              {{ isFavorited(item.id) ? '取消收藏' : '收藏' }}
+            </el-button>
             <el-button link type="success" @click="openAssistantDemo(item.id)">智能解读</el-button>
             <el-button v-if="item.source_url" link type="primary" @click="openGuide(item.source_url)">查看来源</el-button>
           </div>
@@ -163,6 +289,14 @@
         </div>
 
         <div class="tag-section">
+          <span class="tag-label">推荐标签</span>
+          <div class="tag-list">
+            <el-tag v-for="tag in item.recommendation_labels" :key="tag" type="success" effect="plain">{{ tag }}</el-tag>
+            <el-tag v-for="tag in item.recommendation_tags" :key="`guide-${tag}`" effect="plain">{{ tag }}</el-tag>
+          </div>
+        </div>
+
+        <div class="tag-section">
           <span class="tag-label">主题关键词</span>
           <div class="tag-list">
             <el-tag v-for="tag in item.target_keywords" :key="tag" effect="plain">{{ tag }}</el-tag>
@@ -177,12 +311,35 @@
         </div>
 
         <div class="tag-section">
+          <span class="tag-label">解释维度</span>
+          <div class="dimension-grid">
+            <div v-for="dimension in item.explanation_dimensions" :key="dimension.key" class="dimension-card">
+              <strong>{{ dimension.label }}</strong>
+              <span>+{{ dimension.score }}</span>
+              <p>{{ dimension.detail }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tag-section">
           <span class="tag-label">匹配命中</span>
           <div class="tag-list">
             <el-tag v-for="tag in item.matched_keywords" :key="`kw-${tag}`" type="warning" effect="plain">{{ tag }}</el-tag>
             <el-tag v-for="tag in item.matched_disciplines" :key="`dis-${tag}`" type="success" effect="plain">{{ tag }}</el-tag>
             <span v-if="!item.matched_keywords.length && !item.matched_disciplines.length" class="muted">当前推荐更多基于成果活跃度与申报窗口判断。</span>
           </div>
+        </div>
+
+        <div v-if="recommendationData?.comparison_teacher_snapshot" class="tag-section">
+          <span class="tag-label">教师对比</span>
+          <div class="compare-panel">
+            <el-tag type="primary" effect="plain">当前教师 {{ item.recommendation_score }} 分</el-tag>
+            <el-tag type="success" effect="plain">{{ recommendationData?.comparison_teacher_snapshot?.teacher_name }} {{ item.compare_score }} 分</el-tag>
+            <el-tag :type="item.compare_delta >= 0 ? 'warning' : 'danger'" effect="plain">
+              差值 {{ item.compare_delta >= 0 ? '+' : '' }}{{ item.compare_delta }}
+            </el-tag>
+          </div>
+          <p class="muted">{{ item.comparison_summary }}</p>
         </div>
 
         <div class="footer-line">
@@ -201,7 +358,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
-import { buildRecommendationSortOptions, filterRecommendationItems, sortRecommendationItems } from './project-guides/recommendationHelpers.js'
+import { loadFavoriteGuideIds, toggleFavoriteGuideId } from './project-guides/recommendationState.js'
+import { buildDistributionCards, buildRecommendationSortOptions, filterRecommendationItems, sortRecommendationItems } from './project-guides/recommendationHelpers.js'
 import type { RecommendationItem, RecommendationResponse } from './project-guides/types'
 
 const route = useRoute()
@@ -211,9 +369,15 @@ const loading = ref(false)
 const recommendationData = ref<RecommendationResponse | null>(null)
 const teacherOptions = ref<TeacherAccountResponse[]>([])
 const selectedTeacherId = ref<number | undefined>(undefined)
+const compareTeacherId = ref<number | undefined>(undefined)
 const searchKeyword = ref('')
 const selectedFocusTag = ref('')
+const selectedGuideLevel = ref('')
+const selectedPriority = ref('')
+const selectedLabel = ref('')
+const favoritesOnly = ref(false)
 const selectedSort = ref('score')
+const favoriteGuideIds = ref<number[]>([])
 
 const sortOptions = buildRecommendationSortOptions()
 
@@ -225,11 +389,37 @@ const focusTagOptions = computed(() => {
   return [...tags]
 })
 
+const labelOptions = computed(() => {
+  const labels = new Set<string>()
+  ;(recommendationData.value?.recommendations || []).forEach(item => {
+    ;(item.recommendation_labels || []).forEach(label => labels.add(label))
+  })
+  return [...labels]
+})
+
+const priorityOptions = ['重点关注', '建议关注', '可作备选']
+
+const guideLevelOptions = [
+  { label: '国家级', value: 'NATIONAL' },
+  { label: '省部级', value: 'PROVINCIAL' },
+  { label: '市厅级', value: 'MUNICIPAL' },
+  { label: '企业合作', value: 'ENTERPRISE' },
+]
+
+const adminAnalysisCards = computed(() => buildDistributionCards(recommendationData.value?.admin_analysis || null))
+
 const recommendationItems = computed<RecommendationItem[]>(() => {
   const filtered = filterRecommendationItems(
     recommendationData.value?.recommendations || [],
     searchKeyword.value,
     selectedFocusTag.value,
+    {
+      level: selectedGuideLevel.value,
+      priority: selectedPriority.value,
+      label: selectedLabel.value,
+      favoritesOnly: favoritesOnly.value,
+      favoriteIds: favoriteGuideIds.value,
+    },
   )
   return sortRecommendationItems(filtered, selectedSort.value)
 })
@@ -244,13 +434,17 @@ const loadTeacherOptions = async () => {
 const loadRecommendations = async () => {
   loading.value = true
   try {
-    const params =
-      currentUser.value?.is_admin && (selectedTeacherId.value || route.query.user_id)
-        ? { user_id: Number(selectedTeacherId.value || route.query.user_id) }
+    const params: Record<string, number> | undefined =
+      currentUser.value?.is_admin && (selectedTeacherId.value || route.query.user_id || compareTeacherId.value)
+        ? {
+            ...(selectedTeacherId.value || route.query.user_id ? { user_id: Number(selectedTeacherId.value || route.query.user_id) } : {}),
+            ...(compareTeacherId.value ? { compare_user_id: Number(compareTeacherId.value) } : {}),
+          }
         : undefined
 
     const { data } = await axios.get<RecommendationResponse>('/api/project-guides/recommendations/', { params })
     recommendationData.value = data
+    favoriteGuideIds.value = loadFavoriteGuideIds(data.teacher_snapshot.user_id)
   } catch (error) {
     console.error(error)
     ElMessage.error('项目指南推荐加载失败，请稍后重试。')
@@ -266,6 +460,19 @@ const openGuide = (url: string) => {
 const handleTeacherChanged = async () => {
   await loadRecommendations()
 }
+
+const handleCompareTeacherChanged = async () => {
+  await loadRecommendations()
+}
+
+const toggleFavorite = (guideId: number) => {
+  const teacherId = recommendationData.value?.teacher_snapshot.user_id || currentUser.value?.id
+  if (!teacherId) return
+
+  favoriteGuideIds.value = toggleFavoriteGuideId(teacherId, guideId)
+}
+
+const isFavorited = (guideId: number) => favoriteGuideIds.value.includes(guideId)
 
 const openAssistantDemo = (guideId?: number) => {
   const query: Record<string, string> = {}
@@ -289,6 +496,9 @@ onMounted(async () => {
   currentUser.value = await ensureSessionUserContext()
   if (currentUser.value?.is_admin && route.query.user_id) {
     selectedTeacherId.value = Number(route.query.user_id)
+  }
+  if (currentUser.value?.is_admin && route.query.compare_user_id) {
+    compareTeacherId.value = Number(route.query.compare_user_id)
   }
   await loadTeacherOptions()
   await loadRecommendations()
@@ -393,7 +603,7 @@ h2 {
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -405,6 +615,49 @@ h2 {
 
 .empty-shell {
   padding: 32px 0 8px;
+}
+
+.admin-shell {
+  margin-top: 20px;
+}
+
+.admin-shell :deep(.el-card) {
+  border: none;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+}
+
+.admin-card-grid,
+.dimension-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.admin-card,
+.dimension-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f7faf9;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-card strong,
+.dimension-card strong {
+  color: #16362c;
+}
+
+.admin-card p,
+.dimension-card p {
+  margin: 0;
+  color: #557068;
+  line-height: 1.7;
 }
 
 .snapshot-block + .snapshot-block {
@@ -473,6 +726,12 @@ h2 {
   gap: 18px;
 }
 
+.compare-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .compact-row {
   display: flex;
   align-items: center;
@@ -483,6 +742,7 @@ h2 {
 @media (max-width: 1080px) {
   .control-grid,
   .snapshot-grid,
+  .admin-card-grid,
   .hero-panel,
   .hero-actions,
   .recommendation-head,

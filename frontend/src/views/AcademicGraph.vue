@@ -5,6 +5,20 @@
         <el-button size="small" @click="loadGraph">刷新图谱</el-button>
       </div>
 
+      <el-alert
+        v-if="!loading && graphMeta?.fallback_used"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="fallback-alert"
+      >
+        <template #title>{{ sourceSummary.title }} · {{ sourceSummary.badge }}</template>
+        <template #default>
+          <p>{{ sourceSummary.notice }}</p>
+          <p>{{ sourceSummary.fallbackTip }}</p>
+        </template>
+      </el-alert>
+
       <div class="chart-area">
         <div v-loading="loading" ref="chartRef" class="graph-canvas"></div>
 
@@ -58,6 +72,8 @@
           <strong>{{ sourceSummary.title }}</strong>
           <span class="focus-type">{{ sourceSummary.source }}</span>
           <p class="focus-desc">{{ sourceSummary.notice }}</p>
+          <p class="focus-desc">{{ sourceSummary.calculationNote }}</p>
+          <p class="focus-desc">{{ sourceSummary.fallbackTip }}</p>
           <p class="focus-desc">节点 {{ graphMeta?.node_count ?? 0 }} 个 · 关系 {{ graphMeta?.link_count ?? 0 }} 条</p>
         </div>
       </div>
@@ -72,6 +88,7 @@
           </div>
         </div>
         <p class="focus-desc analysis-note">{{ graphAnalysis?.scope_note || '当前为轻量图分析展示。' }}</p>
+        <p class="focus-desc">{{ graphAnalysis?.analysis_method_note || '当前图分析基于现有关系数据与轻量统计口径生成。' }}</p>
       </div>
 
       <div class="side-section">
@@ -93,6 +110,78 @@
             </el-tag>
             <span v-if="!(graphAnalysis?.top_keywords || []).length" class="focus-desc">暂无主题热点数据。</span>
           </div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">合作网络概览</p>
+        <div class="mini-grid">
+          <div class="mini-card">
+            <span class="mini-label">合作作者</span>
+            <strong>{{ graphAnalysis?.collaboration_overview?.collaborator_total ?? 0 }}</strong>
+          </div>
+          <div class="mini-card">
+            <span class="mini-label">合作边</span>
+            <strong>{{ graphAnalysis?.collaboration_overview?.collaboration_links ?? 0 }}</strong>
+          </div>
+          <div class="mini-card">
+            <span class="mini-label">篇均合作者</span>
+            <strong>{{ graphAnalysis?.collaboration_overview?.average_collaborators_per_paper ?? 0 }}</strong>
+          </div>
+          <div class="mini-card">
+            <span class="mini-label">最强合作</span>
+            <strong>{{ graphAnalysis?.collaboration_overview?.strongest_collaborator?.name || '暂无' }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">合作者类型分析</p>
+        <div class="focus-card">
+          <strong>内外部合作分布</strong>
+          <p class="focus-desc">
+            校内 {{ graphAnalysis?.collaborator_type_breakdown?.internal_count ?? 0 }} 位
+            · 校外 {{ graphAnalysis?.collaborator_type_breakdown?.external_count ?? 0 }} 位
+          </p>
+          <p class="focus-desc">
+            校内占比 {{ graphAnalysis?.collaborator_type_breakdown?.internal_ratio ?? 0 }}%
+            · 校外占比 {{ graphAnalysis?.collaborator_type_breakdown?.external_ratio ?? 0 }}%
+          </p>
+          <p class="focus-desc">{{ graphAnalysis?.collaborator_type_breakdown?.description || '当前暂无可用的合作者类型分析数据。' }}</p>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">研究主题热点分析</p>
+        <div class="focus-card">
+          <strong>{{ graphAnalysis?.theme_hotspots?.focus_label || '暂无' }}</strong>
+          <p class="focus-desc">Top3 关键词集中度 {{ graphAnalysis?.theme_hotspots?.focus_ratio ?? 0 }}%</p>
+          <p class="focus-desc">{{ graphAnalysis?.theme_hotspots?.description || '当前暂无可用的研究主题热点分析数据。' }}</p>
+        </div>
+        <div class="yearly-focus-list">
+          <div
+            v-for="item in graphAnalysis?.theme_hotspots?.yearly_focus || []"
+            :key="item.year"
+            class="focus-card yearly-focus-card"
+          >
+            <strong>{{ item.year }} 年</strong>
+            <div class="tag-row">
+              <el-tag v-for="keyword in item.keywords" :key="`${item.year}-${keyword.name}`" size="small" effect="plain" type="success">
+                {{ keyword.name }} · {{ keyword.count }}
+              </el-tag>
+              <span v-if="!item.keywords.length" class="focus-desc">当年暂无可识别主题热点。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">图谱侧栏说明</p>
+        <div class="focus-card">
+          <strong>当前计算口径</strong>
+          <p class="focus-desc">合作网络概览基于教师论文与合作作者关系统计。</p>
+          <p class="focus-desc">合作者类型按是否标记为内部教师账号进行区分。</p>
+          <p class="focus-desc">研究主题热点基于论文关键词出现频次，不包含路径分析、合作圈层分析或主题聚类。</p>
         </div>
       </div>
 
@@ -449,6 +538,16 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 
+.fallback-alert {
+  margin-bottom: 12px;
+  border-radius: 16px;
+}
+
+.fallback-alert :deep(p) {
+  margin: 0;
+  line-height: 1.7;
+}
+
 .chart-area {
   position: relative;
 }
@@ -572,6 +671,16 @@ onBeforeUnmount(() => {
 
 .analysis-note {
   margin-top: 10px;
+}
+
+.yearly-focus-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.yearly-focus-card {
+  gap: 10px;
 }
 
 .legend-list {

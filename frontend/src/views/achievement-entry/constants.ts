@@ -13,6 +13,8 @@ export const paperImportEndpointMap = {
   bibtexConfirm: '/api/achievements/papers/import/bibtex-confirm/',
 }
 
+export const paperSummaryEndpoint = '/api/achievements/papers/summary/'
+
 export const paperTypeOptions = [
   { label: '期刊论文', value: 'JOURNAL' },
   { label: '会议论文', value: 'CONFERENCE' },
@@ -61,6 +63,9 @@ export const createAchievementQueryState = (): AchievementQueryState => ({
   papers: {
     search: '',
     paper_type: 'ALL',
+    year: 'ALL',
+    is_representative: 'ALL',
+    sort_by: 'date_desc',
   },
   projects: {
     search: '',
@@ -84,3 +89,19 @@ export const parseCoauthorInput = (raw: string): string[] =>
     .split(/[\n,，、]+/)
     .map(item => item.trim())
     .filter(Boolean)
+
+export const paperRepresentativeOptions = [
+  { label: '全部记录', value: 'ALL' },
+  { label: '仅代表作', value: 'true' },
+  { label: '仅非代表作', value: 'false' },
+]
+
+export const paperSortOptions = [
+  { label: '按时间从新到旧', value: 'date_desc' },
+  { label: '按引用次数从高到低', value: 'citation_desc' },
+  { label: '按时间从旧到新', value: 'date_asc' },
+  { label: '按引用次数从低到高', value: 'citation_asc' },
+  { label: '按题目 A-Z', value: 'title_asc' },
+  { label: '按题目 Z-A', value: 'title_desc' },
+  { label: '按创建时间从新到旧', value: 'created_desc' },
+]

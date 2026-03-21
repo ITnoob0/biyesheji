@@ -4,4 +4,7 @@ export function buildGraphSourceSummary(meta: GraphTopologyMeta | null | undefin
   title: string
   source: string
   notice: string
+  badge: string
+  calculationNote: string
+  fallbackTip: string
 }

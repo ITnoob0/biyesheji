@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { TokenObtainPairResponse } from '../types/auth'
 import { resolvePostLoginRedirect } from '../utils/sessionFlow.js'
+import { buildPasswordSecurityNotice, resolveLoginFailureMessage } from '../utils/authPresentation.js'
 import {
   clearSessionAuth,
   consumeAuthRedirectTarget,
@@ -19,6 +20,12 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 
+const redirectHint = computed(() =>
+  typeof route.query.redirect === 'string' && route.query.redirect.trim()
+    ? '登录成功后将回到你刚才访问的受保护页面。'
+    : '',
+)
+
 const handleLogin = async () => {
   clearSessionAuth()
   loading.value = true
@@ -30,7 +37,11 @@ const handleLogin = async () => {
     })
 
     setSessionToken(response.data.access, response.data.refresh)
-    await fetchCurrentSessionUser()
+    const sessionUser = await fetchCurrentSessionUser()
+
+    if (sessionUser.password_reset_required) {
+      ElMessage.warning(buildPasswordSecurityNotice(sessionUser))
+    }
 
     const redirectTarget = resolvePostLoginRedirect(
       typeof route.query.redirect === 'string' ? route.query.redirect : '',
@@ -39,9 +50,9 @@ const handleLogin = async () => {
 
     router.push(redirectTarget)
     ElMessage.success('登录成功')
-  } catch {
+  } catch (error: any) {
     clearSessionAuth()
-    ElMessage.error('登录失败，请检查工号和密码')
+    ElMessage.error(resolveLoginFailureMessage(error))
   } finally {
     loading.value = false
   }
@@ -61,10 +72,25 @@ onMounted(() => {
       <p class="eyebrow">Teacher Research Profile</p>
       <h1>登录系统</h1>
       <p class="description">
-        管理员使用 `admin` 登录，教师请使用 6 位工号作为登录用户名。
+        管理员继续使用 <code>admin</code> 登录，教师继续使用 6 位工号作为登录用户名。
       </p>
 
-      <el-input v-model="username" placeholder="工号 / 用户名" size="large" />
+      <el-alert
+        v-if="redirectHint"
+        :title="redirectHint"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+
+      <el-alert
+        title="若密码由管理员初始化或重置，登录后请尽快在“基础档案”页修改密码。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
+      <el-input v-model="username" placeholder="工号 / 管理员账号" size="large" />
       <el-input
         v-model="password"
         type="password"

@@ -13,6 +13,7 @@ from achievements.models import (
     TeachingAchievement,
 )
 from users.serializers import DEFAULT_TEACHER_PASSWORD, sync_teacher_profile
+from users.services import set_user_password
 
 
 class Command(BaseCommand):
@@ -255,8 +256,8 @@ class Command(BaseCommand):
         admin_user.is_staff = True
         admin_user.is_superuser = True
         admin_user.is_active = True
-        admin_user.set_password('Admin123456')
         admin_user.save()
+        set_user_password(admin_user, 'Admin123456', require_password_change=False)
 
     def _create_or_update_teacher(self, user_model, data):
         login_account = str(data['id'])
@@ -280,8 +281,8 @@ class Command(BaseCommand):
         user.bio = data['bio']
         user.research_direction = data['research_direction']
         user.is_active = True
-        user.set_password(DEFAULT_TEACHER_PASSWORD)
         user.save()
+        set_user_password(user, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
 
         sync_teacher_profile(
             user,

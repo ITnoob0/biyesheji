@@ -5,9 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from django.db.models import Count
-
-from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
+from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from .analysis import build_graph_analysis
 
 
 NODE_TYPE_META = {
@@ -77,78 +76,21 @@ class AcademicGraphTopologyView(APIView):
             'description': description,
         }
 
-    def _build_analysis(self, teacher):
-        paper_queryset = Paper.objects.filter(teacher=teacher)
-        collaborator_ranking = list(
-            paper_queryset
-            .filter(coauthors__isnull=False)
-            .values('coauthors__name')
-            .annotate(count=Count('coauthors__id'))
-            .order_by('-count', 'coauthors__name')[:5]
-        )
-        keyword_ranking = list(
-            PaperKeyword.objects.filter(paper__teacher=teacher)
-            .values('keyword__name')
-            .annotate(count=Count('keyword_id'))
-            .order_by('-count', 'keyword__name')[:5]
-        )
-
-        top_collaborators = [
-            {
-                'name': item['coauthors__name'],
-                'count': item['count'],
-            }
-            for item in collaborator_ranking
-            if item['coauthors__name']
-        ]
-        top_keywords = [
-            {
-                'name': item['keyword__name'],
-                'count': item['count'],
-            }
-            for item in keyword_ranking
-            if item['keyword__name']
-        ]
-
-        highlight_cards = [
-            {
-                'title': '合作最活跃学者',
-                'value': top_collaborators[0]['name'] if top_collaborators else '暂无',
-                'detail': (
-                    f"共同关联 {top_collaborators[0]['count']} 篇论文"
-                    if top_collaborators
-                    else '录入合作作者后会自动形成分析结果。'
-                ),
-            },
-            {
-                'title': '高频研究主题',
-                'value': top_keywords[0]['name'] if top_keywords else '暂无',
-                'detail': (
-                    f"在关键词中出现 {top_keywords[0]['count']} 次"
-                    if top_keywords
-                    else '录入论文摘要并提取关键词后会自动形成主题分析。'
-                ),
-            },
-        ]
-
-        return {
-            'top_collaborators': top_collaborators,
-            'top_keywords': top_keywords,
-            'network_overview': {
-                'paper_count': paper_queryset.count(),
-                'collaborator_total': len(top_collaborators),
-                'keyword_total': len(top_keywords),
-            },
-            'highlight_cards': highlight_cards,
-            'scope_note': '当前属于轻量图分析展示，侧重合作与主题热点，不构成完整图挖掘平台。',
-        }
-
     def _finalize_response(self, teacher, nodes, links, source: str, fallback_used: bool, notice: str):
         return {
             'nodes': nodes,
             'links': links,
-            'meta': self._build_meta(source, fallback_used, len(nodes), len(links), notice),
-            'analysis': self._build_analysis(teacher) if teacher else {
+            'meta': {
+                **self._build_meta(source, fallback_used, len(nodes), len(links), notice),
+                'analysis_level': 'lightweight-analysis',
+                'calculation_note': '当前图分析主要依据教师成果、合作作者与论文关键词进行轻量统计，便于解释与演示。',
+                'fallback_tip': (
+                    '若 Neo4j 不可用，图谱会自动改用 MySQL 关系数据；基础图谱展示与轻量分析仍保持可用，但不提供复杂图计算。'
+                    if fallback_used
+                    else '当前已使用 Neo4j 图谱读取；若图数据库异常，系统会自动回退到 MySQL 关系数据。'
+                ),
+            },
+            'analysis': build_graph_analysis(teacher) if teacher else {
                 'top_collaborators': [],
                 'top_keywords': [],
                 'network_overview': {
@@ -156,8 +98,31 @@ class AcademicGraphTopologyView(APIView):
                     'collaborator_total': 0,
                     'keyword_total': 0,
                 },
+                'collaboration_overview': {
+                    'paper_count': 0,
+                    'collaborator_total': 0,
+                    'collaboration_links': 0,
+                    'average_collaborators_per_paper': 0,
+                    'strongest_collaborator': None,
+                },
+                'collaborator_type_breakdown': {
+                    'internal_count': 0,
+                    'external_count': 0,
+                    'internal_ratio': 0,
+                    'external_ratio': 0,
+                    'description': '当前尚未形成可用的合作者类型分析数据。',
+                },
+                'theme_hotspots': {
+                    'top_keywords': [],
+                    'focus_ratio': 0,
+                    'focus_label': '暂无',
+                    'yearly_focus': [],
+                    'description': '当前暂无可用的研究主题热点分析数据。',
+                },
                 'highlight_cards': [],
                 'scope_note': '当前无可用数据，尚未形成轻量图分析结果。',
+                'analysis_level': 'lightweight-analysis',
+                'analysis_method_note': '当前图分析依赖已有成果、合作作者和论文关键词数据。',
             },
         }
 
@@ -523,5 +488,5 @@ class AcademicGraphTopologyView(APIView):
             links,
             source='mysql',
             fallback_used=True,
-            notice='当前图谱已自动回退到 MySQL 关系数据展示，图数据库不可用时页面主体仍可正常使用。',
+            notice='当前图谱已自动回退到 MySQL 关系数据展示，图数据库不可用时图谱主体与轻量分析仍可继续使用。',
         )

@@ -83,11 +83,13 @@ import {
   Odometer,
 } from '@element-plus/icons-vue'
 import {
+  consumeSessionNotice,
   getSessionUser,
   logoutSession,
   SESSION_AUTH_CHANGED_EVENT,
   type SessionUser,
 } from './utils/sessionAuth'
+import { resolveRoleLabel } from './utils/authPresentation.js'
 import appLogo from '../logo.webp'
 
 type PrimaryNavItem = {
@@ -106,13 +108,20 @@ let profileResizeObserver: ResizeObserver | null = null
 const primaryNavItems: PrimaryNavItem[] = [
   { label: '画像主页', path: '/dashboard', icon: Odometer },
   { label: '成果管理', path: '/entry', icon: Histogram },
-  { label: '基础档案', path: '/profile-editor', icon: Document },
+  { label: '个人中心', path: '/profile-editor', icon: Document },
   { label: '智能问答', path: '/assistant-demo', icon: ChatDotRound },
   { label: '推荐结果', path: '/project-recommendations', icon: MagicStick },
 ]
 
 const refreshCurrentUser = () => {
   currentUser.value = getSessionUser()
+}
+
+const flushSessionNotice = () => {
+  const notice = consumeSessionNotice()
+  if (notice) {
+    ElMessage.warning(notice)
+  }
 }
 
 const syncProfileMenuWidth = () => {
@@ -131,6 +140,7 @@ watch(
 onMounted(() => {
   window.addEventListener(SESSION_AUTH_CHANGED_EVENT, refreshCurrentUser)
   window.addEventListener('resize', syncProfileMenuWidth)
+  flushSessionNotice()
 
   nextTick(() => {
     syncProfileMenuWidth()
@@ -164,12 +174,19 @@ watch(displayName, () => {
   nextTick(syncProfileMenuWidth)
 })
 
+watch(
+  () => route.fullPath,
+  () => {
+    flushSessionNotice()
+  },
+)
+
 const profileInitial = computed(() => {
   const name = displayName.value.trim()
   return name ? name.charAt(0).toUpperCase() : 'U'
 })
 
-const roleLabel = computed(() => (currentUser.value?.is_admin ? '系统管理员' : '教师账户'))
+const roleLabel = computed(() => resolveRoleLabel(currentUser.value))
 
 const roleMenuItems = computed(() => {
   if (!currentUser.value?.is_admin) {

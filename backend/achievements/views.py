@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db import transaction
+from django.db.models.functions import ExtractYear
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -15,6 +17,7 @@ from graph_engine.services import AcademicGraphSyncService
 from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes
 from .import_serializers import BibtexConfirmImportSerializer, BibtexPreviewRequestSerializer
 from .models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, ResearchKeyword, TeachingAchievement
+from .portrait_analysis import build_dimension_trend, build_portrait_explanation, build_recent_structure
 from .scoring_engine import TeacherScoringEngine
 from .serializers import (
     AcademicServiceSerializer,
@@ -23,6 +26,15 @@ from .serializers import (
     ProjectSerializer,
     TeachingAchievementSerializer,
 )
+
+
+def parse_bool_query_param(value: str) -> bool | None:
+    normalized = (value or '').strip().lower()
+    if normalized in {'1', 'true', 'yes'}:
+        return True
+    if normalized in {'0', 'false', 'no'}:
+        return False
+    return None
 
 
 def get_requested_teacher(request, user_id: int | None = None):
@@ -58,7 +70,7 @@ def get_portrait_data_meta(user):
 
     return {
         'updated_at': latest_created_at.isoformat() if latest_created_at else None,
-        'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；拓扑图支持 Neo4j 失败时回退到 MySQL 关系数据。',
+        'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；近年趋势按成果年份回溯估算，不等同于历史快照；拓扑图支持 Neo4j 失败时回退到 MySQL 关系数据。',
         'acceptance_scope': '本能力纳入当前阶段验收。',
     }
 
@@ -75,7 +87,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'title': paper.title,
                 'date_acquired': paper.date_acquired.isoformat(),
                 'detail': f'{paper.get_paper_type_display()} · {paper.journal_name}',
-                'highlight': f'引用 {paper.citation_count} 次',
+                'highlight': '代表作' if paper.is_representative else f'引用 {paper.citation_count} 次',
             }
         )
 
@@ -151,6 +163,7 @@ class TeacherRadarView(APIView):
             {
                 'radar_dimensions': radar_result['radar_dimensions'],
                 'dimension_sources': radar_result['dimension_sources'],
+                'dimension_insights': radar_result['dimension_insights'],
                 'data_meta': get_portrait_data_meta(user),
             }
         )
@@ -219,6 +232,32 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         paper_type = self.request.query_params.get('paper_type', '').strip()
         if paper_type:
             queryset = queryset.filter(paper_type=paper_type)
+        year = self.request.query_params.get('year', '').strip()
+        if year.isdigit():
+            queryset = queryset.filter(date_acquired__year=int(year))
+        year_from = self.request.query_params.get('year_from', '').strip()
+        if year_from.isdigit():
+            queryset = queryset.filter(date_acquired__year__gte=int(year_from))
+        year_to = self.request.query_params.get('year_to', '').strip()
+        if year_to.isdigit():
+            queryset = queryset.filter(date_acquired__year__lte=int(year_to))
+        is_representative = parse_bool_query_param(self.request.query_params.get('is_representative', ''))
+        if is_representative is not None:
+            queryset = queryset.filter(is_representative=is_representative)
+
+        ordering_map = {
+            'date_desc': ('-date_acquired', '-created_at'),
+            'date_asc': ('date_acquired', 'created_at'),
+            'citation_desc': ('-citation_count', '-date_acquired', '-created_at'),
+            'citation_asc': ('citation_count', '-date_acquired', '-created_at'),
+            'title_asc': ('title', '-date_acquired', '-created_at'),
+            'title_desc': ('-title', '-date_acquired', '-created_at'),
+            'created_desc': ('-created_at',),
+            'created_asc': ('created_at',),
+        }
+        sort_by = self.request.query_params.get('sort_by', '').strip()
+        if sort_by in ordering_map:
+            queryset = queryset.order_by(*ordering_map[sort_by])
         return queryset
 
     @action(
@@ -267,8 +306,13 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 'paper_type': entry['paper_type'],
                 'journal_name': entry['journal_name'],
                 'journal_level': entry.get('journal_level', ''),
+                'published_volume': entry.get('published_volume', ''),
+                'published_issue': entry.get('published_issue', ''),
+                'pages': entry.get('pages', ''),
+                'source_url': entry.get('source_url', ''),
                 'citation_count': entry.get('citation_count', 0),
                 'is_first_author': entry.get('is_first_author', True),
+                'is_representative': entry.get('is_representative', False),
                 'doi': entry.get('doi', ''),
                 'coauthors': entry.get('coauthors', []),
             }
@@ -281,6 +325,9 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                         'source_index': entry.get('source_index'),
                         'title': entry.get('title', ''),
                         'doi': entry.get('doi', ''),
+                        'issue_summary': '重复记录已跳过，请先核对当前账号下的现有论文。'
+                        if 'doi' in paper_serializer.errors
+                        else '字段校验未通过，请根据错误提示修正后重试。',
                         'errors': paper_serializer.errors,
                     }
                 )
@@ -296,6 +343,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                         'source_index': entry.get('source_index'),
                         'title': entry.get('title', ''),
                         'doi': entry.get('doi', ''),
+                        'issue_summary': '写入论文数据失败，请稍后重试或联系管理员检查日志。',
                         'errors': {'detail': [str(exc)]},
                     }
                 )
@@ -317,6 +365,71 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 'imported_records': imported_records,
                 'skipped_entries': skipped_entries,
                 'failed_entries': failed_entries,
+            }
+        )
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        queryset = self.get_queryset()
+        yearly_distribution = list(
+            queryset.annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(count=Count('id'))
+            .order_by('-year')
+        )
+        type_distribution = list(
+            queryset.values('paper_type')
+            .annotate(count=Count('id'))
+            .order_by('-count', 'paper_type')
+        )
+        latest_records = queryset.order_by('-date_acquired', '-created_at')[:5]
+
+        duplicate_doi_groups = list(
+            queryset.exclude(doi='')
+            .values('doi')
+            .annotate(count=Count('id'))
+            .filter(count__gt=1)
+            .order_by('-count', 'doi')
+        )
+
+        return Response(
+            {
+                'total_count': queryset.count(),
+                'representative_count': queryset.filter(is_representative=True).count(),
+                'recent_count': queryset.filter(date_acquired__year__gte=timezone.now().year - 2).count(),
+                'missing_doi_count': queryset.filter(doi='').count(),
+                'missing_source_url_count': queryset.filter(source_url='').count(),
+                'incomplete_metadata_count': queryset.filter(
+                    Q(pages='') | Q(source_url='') | Q(journal_level='')
+                ).count(),
+                'duplicate_doi_count': len(duplicate_doi_groups),
+                'yearly_distribution': [
+                    {'year': item['year'], 'count': item['count']}
+                    for item in yearly_distribution
+                    if item['year'] is not None
+                ],
+                'type_distribution': [
+                    {
+                        'paper_type': item['paper_type'],
+                        'label': dict(Paper.PAPER_TYPES).get(item['paper_type'], item['paper_type']),
+                        'count': item['count'],
+                    }
+                    for item in type_distribution
+                ],
+                'recent_records': [
+                    {
+                        'id': paper.id,
+                        'title': paper.title,
+                        'date_acquired': paper.date_acquired.isoformat(),
+                        'paper_type': paper.paper_type,
+                        'paper_type_display': paper.get_paper_type_display(),
+                        'journal_name': paper.journal_name,
+                        'citation_count': paper.citation_count,
+                        'is_representative': paper.is_representative,
+                        'metadata_alerts': PaperSerializer(paper, context={'request': request}).data.get('metadata_alerts', []),
+                    }
+                    for paper in latest_records
+                ],
             }
         )
 
@@ -485,6 +598,7 @@ class TeacherDashboardStatsView(APIView):
             {
                 'statistics': statistics,
                 'radar_data': radar_result['radar_dimensions'],
+                'dimension_insights': radar_result['dimension_insights'],
                 'achievement_overview': {
                     'paper_count': metrics['paper_count'],
                     'project_count': metrics['project_count'],
@@ -495,6 +609,9 @@ class TeacherDashboardStatsView(APIView):
                     'total_achievements': metrics['total_achievements'],
                 },
                 'recent_achievements': build_recent_achievements(user),
+                'dimension_trend': build_dimension_trend(user),
+                'recent_structure': build_recent_structure(user),
+                'portrait_explanation': build_portrait_explanation(),
                 'data_meta': get_portrait_data_meta(user),
             }
         )

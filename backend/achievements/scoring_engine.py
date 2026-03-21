@@ -1,4 +1,5 @@
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import ExtractYear
 
 from .models import AcademicService, CoAuthor, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
 
@@ -19,13 +20,38 @@ class TeacherScoringEngine:
         'interdisciplinary': 0.12,
     }
 
+    DIMENSION_LABELS = {
+        'academic_output': '基础学术产出',
+        'funding_support': '经费与项目攻关',
+        'ip_strength': '知识产权沉淀',
+        'talent_training': '人才培养成效',
+        'academic_reputation': '学术活跃与声誉',
+        'interdisciplinary': '跨学科融合度',
+    }
+
+    DIMENSION_FORMULAS = {
+        'academic_output': '论文数量与引用次数共同作用，强调近期可观测的学术产出。',
+        'funding_support': '项目数量与累计经费共同估算科研组织与攻关支撑能力。',
+        'ip_strength': '知识产权总量与成果转化数量共同反映成果沉淀强度。',
+        'talent_training': '教学成果为主，辅以论文协同产出反映育人成效。',
+        'academic_reputation': '学术服务、合作作者与引用情况共同反映学术活跃度与影响力。',
+        'interdisciplinary': '论文关键词覆盖度与项目参与情况共同反映跨学科融合表现。',
+    }
+
     @classmethod
-    def collect_metrics(cls, teacher_user):
+    def collect_metrics(cls, teacher_user, year: int | None = None):
         papers = Paper.objects.filter(teacher=teacher_user)
         projects = Project.objects.filter(teacher=teacher_user)
         intellectual_properties = IntellectualProperty.objects.filter(teacher=teacher_user)
         teaching_achievements = TeachingAchievement.objects.filter(teacher=teacher_user)
         academic_services = AcademicService.objects.filter(teacher=teacher_user)
+
+        if year is not None:
+            papers = papers.filter(date_acquired__year=year)
+            projects = projects.filter(date_acquired__year=year)
+            intellectual_properties = intellectual_properties.filter(date_acquired__year=year)
+            teaching_achievements = teaching_achievements.filter(date_acquired__year=year)
+            academic_services = academic_services.filter(date_acquired__year=year)
 
         paper_count = papers.count()
         citation_total = papers.aggregate(total=Sum('citation_count'))['total'] or 0
@@ -36,7 +62,16 @@ class TeacherScoringEngine:
         teaching_count = teaching_achievements.count()
         service_count = academic_services.count()
         keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user).count()
+        if year is not None:
+            keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year).count()
         collaborator_count = CoAuthor.objects.filter(paper__teacher=teacher_user).values('name').distinct().count()
+        if year is not None:
+            collaborator_count = (
+                CoAuthor.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year)
+                .values('name')
+                .distinct()
+                .count()
+            )
 
         return {
             'paper_count': paper_count,
@@ -51,6 +86,118 @@ class TeacherScoringEngine:
             'collaborator_count': collaborator_count,
             'total_achievements': paper_count + project_count + ip_count + teaching_count + service_count,
         }
+
+    @classmethod
+    def collect_metrics_series(cls, teacher_user, years: list[int]) -> dict[int, dict]:
+        normalized_years = [year for year in years if isinstance(year, int)]
+        year_metrics = {
+            year: {
+                'paper_count': 0,
+                'citation_total': 0,
+                'project_count': 0,
+                'funding_total': 0.0,
+                'ip_count': 0,
+                'transformed_ip_count': 0,
+                'teaching_count': 0,
+                'service_count': 0,
+                'keyword_count': 0,
+                'collaborator_count': 0,
+                'total_achievements': 0,
+            }
+            for year in normalized_years
+        }
+        if not normalized_years:
+            return year_metrics
+
+        paper_years = (
+            Paper.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(
+                paper_count=Count('id'),
+                citation_total=Sum('citation_count'),
+            )
+        )
+        for item in paper_years:
+            year_metrics[item['year']]['paper_count'] = item['paper_count']
+            year_metrics[item['year']]['citation_total'] = item['citation_total'] or 0
+
+        project_years = (
+            Project.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(
+                project_count=Count('id'),
+                funding_total=Sum('funding_amount'),
+            )
+        )
+        for item in project_years:
+            year_metrics[item['year']]['project_count'] = item['project_count']
+            year_metrics[item['year']]['funding_total'] = float(item['funding_total'] or 0)
+
+        ip_years = (
+            IntellectualProperty.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(
+                ip_count=Count('id'),
+                transformed_ip_count=Count('id', filter=Q(is_transformed=True)),
+            )
+        )
+        for item in ip_years:
+            year_metrics[item['year']]['ip_count'] = item['ip_count']
+            year_metrics[item['year']]['transformed_ip_count'] = item['transformed_ip_count']
+
+        teaching_years = (
+            TeachingAchievement.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(teaching_count=Count('id'))
+        )
+        for item in teaching_years:
+            year_metrics[item['year']]['teaching_count'] = item['teaching_count']
+
+        service_years = (
+            AcademicService.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('date_acquired'))
+            .values('year')
+            .annotate(service_count=Count('id'))
+        )
+        for item in service_years:
+            year_metrics[item['year']]['service_count'] = item['service_count']
+
+        keyword_years = (
+            PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('paper__date_acquired'))
+            .values('year')
+            .annotate(keyword_count=Count('id'))
+        )
+        for item in keyword_years:
+            year_metrics[item['year']]['keyword_count'] = item['keyword_count']
+
+        collaborator_years = (
+            CoAuthor.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year__in=normalized_years)
+            .annotate(year=ExtractYear('paper__date_acquired'))
+            .values('year')
+            .annotate(collaborator_count=Count('name', distinct=True))
+        )
+        for item in collaborator_years:
+            year_metrics[item['year']]['collaborator_count'] = item['collaborator_count']
+
+        for year, metrics in year_metrics.items():
+            metrics['total_achievements'] = (
+                metrics['paper_count']
+                + metrics['project_count']
+                + metrics['ip_count']
+                + metrics['teaching_count']
+                + metrics['service_count']
+            )
+
+        return year_metrics
+
+    @classmethod
+    def calculate_total_score(cls, values):
+        return round(sum(values[key] * cls.WEIGHTS[key] for key in cls.WEIGHTS), 1)
 
     @classmethod
     def build_dimension_values(cls, metrics):
@@ -79,12 +226,8 @@ class TeacherScoringEngine:
     def build_radar_dimensions(cls, metrics):
         values = cls.build_dimension_values(metrics)
         return [
-            {'name': '基础学术产出', 'value': values['academic_output']},
-            {'name': '经费与项目攻关', 'value': values['funding_support']},
-            {'name': '知识产权沉淀', 'value': values['ip_strength']},
-            {'name': '人才培养成效', 'value': values['talent_training']},
-            {'name': '学术活跃与声誉', 'value': values['academic_reputation']},
-            {'name': '跨学科融合度', 'value': values['interdisciplinary']},
+            {'key': key, 'name': label, 'value': values[key]}
+            for key, label in cls.DIMENSION_LABELS.items()
         ]
 
     @classmethod
@@ -117,14 +260,59 @@ class TeacherScoringEngine:
         ]
 
     @classmethod
+    def build_dimension_insights(cls, metrics):
+        values = cls.build_dimension_values(metrics)
+        source_map = {item['name']: item['description'] for item in cls.build_dimension_sources(metrics)}
+        insights = []
+
+        for key, label in cls.DIMENSION_LABELS.items():
+            value = values[key]
+            if value >= 75:
+                level = '优势维度'
+            elif value >= 45:
+                level = '稳定维度'
+            else:
+                level = '成长维度'
+
+            evidence = []
+            if key == 'academic_output':
+                evidence = [f"论文 {metrics['paper_count']} 篇", f"总被引 {metrics['citation_total']} 次"]
+            elif key == 'funding_support':
+                evidence = [f"项目 {metrics['project_count']} 项", f"经费 {metrics['funding_total']:.2f} 万元"]
+            elif key == 'ip_strength':
+                evidence = [f"知识产权 {metrics['ip_count']} 项", f"成果转化 {metrics['transformed_ip_count']} 项"]
+            elif key == 'talent_training':
+                evidence = [f"教学成果 {metrics['teaching_count']} 项", f"协同论文 {metrics['paper_count']} 篇"]
+            elif key == 'academic_reputation':
+                evidence = [f"学术服务 {metrics['service_count']} 项", f"合作作者 {metrics['collaborator_count']} 位"]
+            elif key == 'interdisciplinary':
+                evidence = [f"论文关键词 {metrics['keyword_count']} 个", f"参与项目 {metrics['project_count']} 项"]
+
+            insights.append(
+                {
+                    'key': key,
+                    'name': label,
+                    'value': value,
+                    'weight': round(cls.WEIGHTS[key] * 100, 1),
+                    'level': level,
+                    'formula_note': cls.DIMENSION_FORMULAS[key],
+                    'source_description': source_map.get(label, ''),
+                    'evidence': evidence,
+                }
+            )
+
+        return insights
+
+    @classmethod
     def get_comprehensive_radar_data(cls, teacher_user):
         metrics = cls.collect_metrics(teacher_user)
         values = cls.build_dimension_values(metrics)
-        total_score = sum(values[key] * cls.WEIGHTS[key] for key in cls.WEIGHTS)
+        total_score = cls.calculate_total_score(values)
 
         return {
             'metrics': metrics,
             'radar_dimensions': cls.build_radar_dimensions(metrics),
             'dimension_sources': cls.build_dimension_sources(metrics),
-            'total_score': round(total_score, 1),
+            'dimension_insights': cls.build_dimension_insights(metrics),
+            'total_score': total_score,
         }

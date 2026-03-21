@@ -10,6 +10,8 @@
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "verify:ui": "node ./scripts/verify-third-round-ui.mjs",
+    "verify:baseline": "run-s type-check verify:ui",
+    "verify:full": "run-s verify:baseline build-only",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",

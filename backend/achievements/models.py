@@ -61,10 +61,33 @@ class Paper(BaseAchievement):
         blank=True,
         verbose_name="期刊等级（SCI/EI/CCF等）"
     )
+    published_volume = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="卷号"
+    )
+    published_issue = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="期号"
+    )
+    pages = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="页码范围"
+    )
+    source_url = models.URLField(
+        blank=True,
+        verbose_name="来源链接"
+    )
     citation_count = models.IntegerField(default=0)
     is_first_author = models.BooleanField(
         default=True,
         verbose_name="是否第一作者/通讯作者"
+    )
+    is_representative = models.BooleanField(
+        default=False,
+        verbose_name="是否代表作"
     )
     doi = models.CharField(
         max_length=200,

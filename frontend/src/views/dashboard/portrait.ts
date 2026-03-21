@@ -68,17 +68,62 @@ export type DimensionSource = {
   description: string
 }
 
+export type DimensionInsight = {
+  key: string
+  name: string
+  value: number
+  weight: number
+  level: string
+  formula_note: string
+  source_description: string
+  evidence: string[]
+}
+
+export type DimensionTrendPoint = {
+  year: number
+  academic_output: number
+  funding_support: number
+  ip_strength: number
+  talent_training: number
+  academic_reputation: number
+  interdisciplinary: number
+  total_score: number
+}
+
+export type RecentStructurePoint = {
+  year: number
+  papers: number
+  projects: number
+  intellectual_properties: number
+  teaching_achievements: number
+  academic_services: number
+  total: number
+}
+
+export type PortraitExplanation = {
+  overview: string
+  formation_steps: string[]
+  transparency_note: string
+  trend_note: string
+  snapshot_boundary_note: string
+}
+
 export type DashboardStatsResponse = {
   statistics?: StatisticItem[]
   radar_data?: Array<{ name: string; value: number }>
+  dimension_insights?: DimensionInsight[]
   achievement_overview?: AchievementOverview
   recent_achievements?: RecentAchievementRecord[]
+  dimension_trend?: DimensionTrendPoint[]
+  recent_structure?: RecentStructurePoint[]
+  portrait_explanation?: PortraitExplanation
   data_meta?: PortraitDataMeta
 }
 
 export type RadarResponse = {
   radar_dimensions?: Array<{ name: string; value: number }>
   dimension_sources?: DimensionSource[]
+  dimension_insights?: DimensionInsight[]
   data_meta?: PortraitDataMeta
 }
 
@@ -145,6 +190,88 @@ export const buildPortraitUpdatedLabel = (dataMeta: PortraitDataMeta | null): st
 
 export const buildRecentAchievementEmptyText = (records: RecentAchievementRecord[]): string =>
   records.length ? '' : '暂无成果记录，可先前往成果录入页补充数据。'
+
+const DIMENSION_SERIES = [
+  { key: 'academic_output', label: '学术产出', color: '#2563eb' },
+  { key: 'funding_support', label: '项目攻关', color: '#0f766e' },
+  { key: 'ip_strength', label: '知识产权', color: '#f59e0b' },
+  { key: 'talent_training', label: '人才培养', color: '#8b5cf6' },
+  { key: 'academic_reputation', label: '学术活跃', color: '#ef4444' },
+  { key: 'interdisciplinary', label: '跨学科', color: '#14b8a6' },
+] as const
+
+export const buildDimensionTrendOption = (trend: DimensionTrendPoint[], echarts: any): EChartsOption => {
+  const years = trend.map(item => item.year)
+
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: {
+      top: 0,
+      data: DIMENSION_SERIES.map(item => item.label),
+    },
+    grid: { left: 28, right: 24, bottom: 24, top: 54, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: years,
+      axisLine: { lineStyle: { color: '#94a3b8' } },
+    },
+    yAxis: {
+      type: 'value',
+      max: 100,
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
+    },
+    series: DIMENSION_SERIES.map(item => ({
+      name: item.label,
+      type: 'line',
+      smooth: true,
+      data: trend.map(point => point[item.key]),
+      symbolSize: 7,
+      lineStyle: { color: item.color, width: 3 },
+      itemStyle: { color: item.color },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: `${item.color}33` },
+          { offset: 1, color: `${item.color}08` },
+        ]),
+      },
+    })),
+  }
+}
+
+export const buildAchievementStructureOption = (records: RecentStructurePoint[], echarts: any): EChartsOption => {
+  const years = records.map(item => item.year)
+  const seriesConfig = [
+    { key: 'papers', label: '论文', color: '#2563eb' },
+    { key: 'projects', label: '项目', color: '#10b981' },
+    { key: 'intellectual_properties', label: '知识产权', color: '#f59e0b' },
+    { key: 'teaching_achievements', label: '教学成果', color: '#8b5cf6' },
+    { key: 'academic_services', label: '学术服务', color: '#ef4444' },
+  ] as const
+
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { top: 0 },
+    grid: { left: 28, right: 24, bottom: 24, top: 54, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: years,
+      axisLine: { lineStyle: { color: '#94a3b8' } },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
+    },
+    series: seriesConfig.map(item => ({
+      name: item.label,
+      type: 'bar',
+      stack: 'total',
+      emphasis: { focus: 'series' },
+      data: records.map(record => record[item.key]),
+      itemStyle: { color: item.color, borderRadius: [6, 6, 0, 0] },
+    })),
+  }
+}
 
 export const buildTrendOption = (papers: PaperRecord[], echarts: any): EChartsOption => {
   const yearMap = new Map<number, { publications: number; citations: number }>()

@@ -1,10 +1,11 @@
 import axios from 'axios'
-import { achievementEndpointMap } from './constants'
+import { achievementEndpointMap, paperSummaryEndpoint } from './constants'
 import type {
   AchievementListResponseMap,
   AchievementMutationPayloadMap,
   AchievementQueryState,
   AchievementRecordMap,
+  PaperSummaryResponse,
   TabName,
 } from '../../types/achievements'
 
@@ -21,11 +22,11 @@ const buildQueryParams = <T extends TabName>(tab: T, rawState?: Partial<Achievem
       return
     }
 
-    if (tab === 'papers' && key === 'paper_type' && normalized === 'ALL') {
+    if (tab === 'papers' && ['paper_type', 'year', 'is_representative'].includes(key) && normalized === 'ALL') {
       return
     }
 
-    params.append(key === 'paper_type' ? 'paper_type' : key, normalized)
+    params.append(key, normalized)
   })
 
   return Object.fromEntries(params.entries())
@@ -61,4 +62,13 @@ export const updateAchievement = async <T extends TabName>(
 
 export const deleteAchievement = async (tab: TabName, id: number): Promise<void> => {
   await axios.delete(`${achievementEndpointMap[tab]}${id}/`)
+}
+
+export const fetchPaperSummary = async (
+  queryState?: Partial<AchievementQueryState['papers']>,
+): Promise<PaperSummaryResponse> => {
+  const response = await axios.get<PaperSummaryResponse>(paperSummaryEndpoint, {
+    params: buildQueryParams('papers', queryState),
+  })
+  return response.data
 }

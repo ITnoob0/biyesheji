@@ -59,18 +59,30 @@ class ProjectGuideRecommendationView(APIView):
                 request,
                 target_serializer.validated_data.get('user_id'),
             )
+            compare_teacher = ProjectGuideRecommendationService.resolve_compare_teacher(
+                request,
+                target_serializer.validated_data.get('compare_user_id'),
+                primary_teacher=teacher,
+            )
         except PermissionError as exc:
             raise PermissionDenied(str(exc)) from exc
         except Exception as exc:
             raise ValidationError({'detail': str(exc)}) from exc
 
-        result = ProjectGuideRecommendationService.build_recommendations(teacher)
+        result = ProjectGuideRecommendationService.build_recommendations(
+            teacher,
+            compare_user=compare_teacher,
+            include_admin_analysis=bool(request.user.is_staff or request.user.is_superuser),
+        )
         recommendation_serializer = ProjectGuideRecommendationSerializer(result['recommendations'], many=True)
 
         return Response(
             {
                 'recommendations': recommendation_serializer.data,
                 'teacher_snapshot': result['teacher_snapshot'],
+                'comparison_teacher_snapshot': result.get('comparison_teacher_snapshot'),
+                'comparison_summary': result.get('comparison_summary'),
+                'admin_analysis': result.get('admin_analysis'),
                 'data_meta': result['data_meta'],
                 'empty_state': result['empty_state'],
             },

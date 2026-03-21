@@ -30,9 +30,18 @@
       <div v-if="previewSummary" class="summary-row">
         <el-tag type="info">共 {{ previewSummary.total_count }} 条</el-tag>
         <el-tag type="success">可导入 {{ previewSummary.ready_count }} 条</el-tag>
-        <el-tag type="warning">重复 DOI {{ previewSummary.duplicate_count }} 条</el-tag>
+        <el-tag type="warning">重复疑似 {{ previewSummary.duplicate_count }} 条</el-tag>
         <el-tag type="danger">字段异常 {{ previewSummary.invalid_count }} 条</el-tag>
       </div>
+
+      <el-alert v-if="lastImportResult" type="success" show-icon :closable="false">
+        <template #title>本次导入结果</template>
+        <template #default>
+          <div class="feedback-list">
+            <p v-for="line in importFeedbackLines" :key="line">{{ line }}</p>
+          </div>
+        </template>
+      </el-alert>
 
       <el-table v-if="previewEntries.length" :data="previewEntries" max-height="360">
         <el-table-column prop="source_index" label="#" width="56" />
@@ -61,6 +70,24 @@
         v-else
         description="上传 BibTeX 文件后可先查看预览，再确认导入，不会直接写入已有论文数据。"
       />
+
+      <div v-if="lastImportResult?.skipped_entries.length || lastImportResult?.failed_entries.length" class="result-grid">
+        <el-card v-if="lastImportResult?.skipped_entries.length" shadow="never">
+          <template #header>重复或跳过记录</template>
+          <div v-for="item in lastImportResult.skipped_entries" :key="`${item.source_index}-${item.title}`" class="result-item">
+            <strong>#{{ item.source_index || '-' }} {{ item.title || '未命名论文' }}</strong>
+            <p>{{ item.issue_summary || '当前记录已跳过，请检查 DOI 或重复提示。' }}</p>
+          </div>
+        </el-card>
+
+        <el-card v-if="lastImportResult?.failed_entries.length" shadow="never">
+          <template #header>导入失败记录</template>
+          <div v-for="item in lastImportResult.failed_entries" :key="`${item.source_index}-${item.title}`" class="result-item">
+            <strong>#{{ item.source_index || '-' }} {{ item.title || '未命名论文' }}</strong>
+            <p>{{ item.issue_summary || '字段校验未通过，请补全信息后重试。' }}</p>
+          </div>
+        </el-card>
+      </div>
     </div>
 
     <template #footer>
@@ -84,6 +111,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { computed, ref } from 'vue'
 import { paperImportEndpointMap } from './constants'
+import { buildImportFeedbackLines } from './paperLifecycle.js'
 import type {
   BibtexImportResponse,
   BibtexPreviewEntry,
@@ -107,6 +135,7 @@ const previewEntries = ref<BibtexPreviewEntry[]>([])
 const previewSummary = ref<BibtexPreviewSummary | null>(null)
 const previewLoading = ref(false)
 const confirmLoading = ref(false)
+const lastImportResult = ref<BibtexImportResponse | null>(null)
 
 const statusLabelMap: Record<BibtexPreviewEntry['preview_status'], string> = {
   ready: '可导入',
@@ -125,6 +154,7 @@ const statusLabelFor = (status: BibtexPreviewStatus) => statusLabelMap[status]
 const statusTypeFor = (status: BibtexPreviewStatus) => statusTypeMap[status]
 
 const readyEntries = computed(() => previewEntries.value.filter(item => item.preview_status === 'ready'))
+const importFeedbackLines = computed(() => (lastImportResult.value ? buildImportFeedbackLines(lastImportResult.value) : []))
 
 const handleFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement
@@ -135,6 +165,7 @@ const resetPreview = () => {
   previewEntries.value = []
   previewSummary.value = null
   selectedFile.value = null
+  lastImportResult.value = null
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
@@ -181,8 +212,13 @@ const confirmImport = async () => {
         paper_type: item.paper_type,
         journal_name: item.journal_name,
         journal_level: item.journal_level,
+        published_volume: item.published_volume,
+        published_issue: item.published_issue,
+        pages: item.pages,
+        source_url: item.source_url,
         citation_count: item.citation_count,
         is_first_author: item.is_first_author,
+        is_representative: item.is_representative,
         doi: item.doi,
         coauthors: item.coauthors,
         preview_status: item.preview_status,
@@ -191,9 +227,12 @@ const confirmImport = async () => {
     }
 
     const { data } = await axios.post<BibtexImportResponse>(paperImportEndpointMap.bibtexConfirm, payload)
+    lastImportResult.value = data
     ElMessage.success(`导入完成：成功 ${data.imported_count} 条，跳过 ${data.skipped_count} 条，失败 ${data.failed_count} 条`)
     emit('imported')
-    handleClose()
+    if (!data.skipped_count && !data.failed_count) {
+      handleClose()
+    }
   } catch (error: any) {
     const detail = error?.response?.data?.detail || 'BibTeX 导入失败，请稍后重试。'
     ElMessage.error(detail)
@@ -250,6 +289,34 @@ const handleClose = () => {
   gap: 10px;
 }
 
+.feedback-list {
+  display: grid;
+  gap: 4px;
+}
+
+.feedback-list p,
+.result-item p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.result-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e5efe8;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
 .footer-actions {
   display: flex;
   justify-content: flex-end;
@@ -261,6 +328,10 @@ const handleClose = () => {
   .upload-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .result-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

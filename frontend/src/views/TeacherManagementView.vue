@@ -4,7 +4,13 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
+import {
+  buildPasswordSecurityNotice,
+  resolveApiErrorMessage,
+  resolvePermissionDeniedMessage,
+  resolveRoleLabel,
+} from '../utils/authPresentation.js'
+import { ensureSessionUserContext, setSessionUser, setSessionNotice, type SessionUser } from '../utils/sessionAuth'
 import type {
   TeacherAccountResponse,
   TeacherCreateResponse,
@@ -64,6 +70,9 @@ const editTeacher = reactive<TeacherRecord>({
   real_name: '',
   department: '',
   title: '',
+  email: '',
+  contact_phone: '',
+  avatar_url: '',
   research_direction: [],
   bio: '',
   discipline: '',
@@ -71,6 +80,11 @@ const editTeacher = reactive<TeacherRecord>({
   h_index: 0,
   is_active: true,
   is_admin: false,
+  role_code: 'teacher',
+  role_label: '教师账户',
+  password_reset_required: false,
+  password_updated_at: null,
+  security_notice: '',
 })
 
 const createRules: FormRules<CreateTeacherFormState> = {
@@ -121,6 +135,7 @@ const ensureAdminUser = async (): Promise<SessionUser | null> => {
   }
 
   if (!sessionUser.is_admin) {
+    setSessionNotice('当前账号没有教师管理权限。')
     router.replace({ name: 'dashboard' })
     return null
   }
@@ -137,7 +152,7 @@ const loadTeachers = async () => {
     await nextTick()
     focusTeacherRow()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || '教师列表加载失败')
+    ElMessage.error(resolveApiErrorMessage(error, '教师列表加载失败'))
   } finally {
     listLoading.value = false
   }
@@ -165,13 +180,7 @@ const createTeacher = async () => {
     resetCreateForm()
     await loadTeachers()
   } catch (error: any) {
-    const detail = error?.response?.data
-    if (detail && typeof detail === 'object') {
-      const firstError = Object.values(detail)[0]
-      ElMessage.error(Array.isArray(firstError) ? String(firstError[0]) : String(firstError))
-    } else {
-      ElMessage.error('教师账号创建失败')
-    }
+    ElMessage.error(resolveApiErrorMessage(error, '教师账号创建失败'))
   } finally {
     createLoading.value = false
   }
@@ -208,21 +217,40 @@ const saveTeacherEdit = async () => {
     editDialogVisible.value = false
     await loadTeachers()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || '教师资料更新失败')
+    ElMessage.error(resolveApiErrorMessage(error, '教师资料更新失败'))
   }
 }
 
 const resetPassword = async (teacher: TeacherRecord) => {
-  await ElMessageBox.confirm(`确认将 ${teacher.real_name || teacher.username} 的密码重置为默认密码吗？`, '重置确认', {
-    type: 'warning',
-  })
+  await ElMessageBox.confirm(
+    `确认将 ${teacher.real_name || teacher.username} 的密码重置为默认密码吗？重置后系统会提示该教师尽快修改密码。`,
+    '重置确认',
+    {
+      type: 'warning',
+    },
+  )
 
   resetLoadingId.value = teacher.id
   try {
     const response = await axios.post<TeacherPasswordResetResponse>(`/api/users/teachers/${teacher.id}/reset-password/`)
-    ElMessage.success(`已将 ${teacher.real_name || teacher.username} 的密码重置为 ${response.data.password}`)
+    await ElMessageBox.alert(
+      [
+        `临时密码：${response.data.temporary_password}`,
+        `账户角色：${response.data.role_label}`,
+        `安全提示：${response.data.security_notice}`,
+      ].join('<br />'),
+      '密码已重置',
+      {
+        confirmButtonText: '我知道了',
+        dangerouslyUseHTMLString: true,
+      },
+    )
+    await loadTeachers()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || '密码重置失败')
+    const detail = error?.response?.status === 403
+      ? resolvePermissionDeniedMessage(error?.response?.data?.detail)
+      : resolveApiErrorMessage(error, '密码重置失败')
+    ElMessage.error(detail)
   } finally {
     resetLoadingId.value = null
   }
@@ -263,46 +291,51 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="teacher-management-page">
+  <div class="teacher-management-page workspace-page">
     <section class="hero-shell">
-      <div class="hero-main">
+      <div class="hero-main workspace-hero workspace-hero--brand">
         <div class="hero-copy-block">
-          <p class="eyebrow">Teacher Management</p>
-          <h1>教师管理</h1>
-          <p class="hero-copy">
-            面向管理员统一维护教师账号、基础资料与密码状态，保持教师画像主链路稳定可用。
+          <p class="eyebrow workspace-hero__eyebrow">Teacher Management</p>
+          <h1 class="workspace-hero__title">教师管理</h1>
+          <p class="hero-copy workspace-hero__text">
+            面向管理员统一维护教师账号、角色身份、启停状态和临时密码重置提醒，保持账户生命周期清晰可控。
           </p>
           <div class="hero-tags">
             <span class="hero-tag">管理员入口</span>
-            <span class="hero-tag">账号与档案维护</span>
+            <span class="hero-tag">工号登录不变</span>
+            <span class="hero-tag">统一权限边界</span>
           </div>
         </div>
-        <div class="hero-actions">
-          <el-button type="primary" @click="router.push('/dashboard')">返回画像主页</el-button>
+        <div class="hero-actions workspace-page-actions">
+          <el-button type="primary" @click="router.push('/dashboard')">返回画像首页</el-button>
           <el-button plain @click="loadTeachers">刷新教师数据</el-button>
         </div>
       </div>
     </section>
 
-    <el-result
+    <div
       v-if="currentUser && !checkedAdmin"
-      icon="warning"
-      title="当前页面仅限管理员使用"
-      sub-title="教师个人基础档案请前往“编辑基础档案”页面维护。"
-    />
+      class="workspace-status-result workspace-content-shell"
+    >
+      <el-result
+        icon="warning"
+        title="当前页面仅限管理员使用"
+        sub-title="教师个人基础档案请前往“基础档案”页面维护。"
+      />
+    </div>
 
     <template v-else>
       <section class="management-shell">
-        <el-card class="create-card" shadow="never">
+        <el-card class="create-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="card-header">
+            <div class="card-header workspace-section-head">
               <span>创建教师账号</span>
               <el-tag type="warning" effect="plain">管理员入口</el-tag>
             </div>
           </template>
 
           <el-alert
-            title="规则：工号必须是 6 位数字，工号将直接作为教师登录账号，管理员创建时需要同步设置初始密码。"
+            title="规则：工号必须是 6 位数字，工号会直接作为教师登录账号；管理员创建后的密码会被视为临时密码。"
             type="info"
             :closable="false"
             show-icon
@@ -349,7 +382,12 @@ onMounted(async () => {
                 <el-input v-model="createTeacherForm.password" type="password" show-password />
               </el-form-item>
               <el-form-item label="确认密码" prop="confirm_password">
-                <el-input v-model="createTeacherForm.confirm_password" type="password" show-password @keyup.enter="createTeacher" />
+                <el-input
+                  v-model="createTeacherForm.confirm_password"
+                  type="password"
+                  show-password
+                  @keyup.enter="createTeacher"
+                />
               </el-form-item>
             </div>
 
@@ -363,7 +401,7 @@ onMounted(async () => {
             v-if="lastCreatedAccount"
             icon="success"
             title="最新创建结果"
-            sub-title="以下登录信息可直接交付给对应教师。"
+            sub-title="以下登录信息可通过安全渠道交付给对应教师。"
           >
             <template #extra>
               <div class="result-box">
@@ -375,10 +413,10 @@ onMounted(async () => {
           </el-result>
         </el-card>
 
-        <el-card class="list-card" shadow="never">
+        <el-card class="list-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="card-header">
-              <span>教师账号总览</span>
+            <div class="card-header workspace-section-head">
+              <span>教师账户总览</span>
               <el-tag type="success" effect="plain">{{ teachers.length }} 条记录</el-tag>
             </div>
           </template>
@@ -395,15 +433,31 @@ onMounted(async () => {
             <el-table-column prop="employee_id" label="工号(ID)" width="120" />
             <el-table-column prop="username" label="登录账号" width="140" />
             <el-table-column prop="real_name" label="姓名" width="120" />
+            <el-table-column label="身份" width="120">
+              <template #default="{ row }">
+                <el-tag effect="plain" type="primary">{{ resolveRoleLabel(row) }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="department" label="所属学院" min-width="160" />
             <el-table-column prop="title" label="职称" width="120" />
             <el-table-column prop="discipline" label="学科方向" min-width="160" />
-            <el-table-column prop="h_index" label="H-index" width="100" />
-            <el-table-column label="状态" width="100">
+            <el-table-column label="账号状态" width="120">
               <template #default="{ row }">
-                <el-tag :type="row.is_active ? 'success' : 'danger'">
+                <el-tag :type="row.is_active ? 'success' : 'danger'" effect="plain">
                   {{ row.is_active ? '启用' : '停用' }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="密码状态" width="140">
+              <template #default="{ row }">
+                <el-tag :type="row.password_reset_required ? 'warning' : 'success'" effect="plain">
+                  {{ row.password_reset_required ? '待修改密码' : '状态正常' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="安全提示" min-width="220">
+              <template #default="{ row }">
+                <span class="security-copy">{{ buildPasswordSecurityNotice(row) }}</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="280" fixed="right">
@@ -453,7 +507,7 @@ onMounted(async () => {
           <el-form-item label="H-index">
             <el-input-number v-model="editTeacher.h_index" :min="0" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="账号状态">
+          <el-form-item label="账户状态">
             <el-switch v-model="editTeacher.is_active" inline-prompt active-text="启用" inactive-text="停用" />
           </el-form-item>
         </div>
@@ -461,6 +515,13 @@ onMounted(async () => {
         <el-form-item label="研究兴趣">
           <el-input v-model="editTeacher.research_interests" placeholder="多个兴趣可用逗号分隔" />
         </el-form-item>
+
+        <el-alert
+          :title="buildPasswordSecurityNotice(editTeacher)"
+          :type="editTeacher.password_reset_required ? 'warning' : 'info'"
+          :closable="false"
+          show-icon
+        />
 
         <el-form-item label="个人简介">
           <el-input v-model="editTeacher.bio" type="textarea" :rows="4" />
@@ -490,7 +551,6 @@ onMounted(async () => {
 .hero-shell {
   max-width: 1180px;
   margin: 0 auto 22px;
-  padding: 0;
 }
 
 .hero-main {
@@ -548,7 +608,8 @@ h1 {
 
 .hero-actions,
 .card-header,
-.actions {
+.actions,
+.dialog-actions {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -595,8 +656,10 @@ h1 {
   text-align: left;
 }
 
-.result-box p {
+.result-box p,
+.security-copy {
   margin: 8px 0;
+  line-height: 1.6;
 }
 
 :deep(.focus-row) {
@@ -604,9 +667,7 @@ h1 {
 }
 
 .dialog-actions {
-  display: flex;
   justify-content: flex-end;
-  gap: 12px;
 }
 
 @media (max-width: 768px) {
@@ -616,7 +677,9 @@ h1 {
 
   .hero-main,
   .hero-actions,
-  .two-cols {
+  .two-cols,
+  .card-header,
+  .dialog-actions {
     flex-direction: column;
     grid-template-columns: 1fr;
     align-items: stretch;

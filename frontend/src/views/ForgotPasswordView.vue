@@ -4,6 +4,7 @@ import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { resolveApiErrorMessage } from '../utils/authPresentation.js'
 
 interface ForgotPasswordFormState {
   employee_id: string
@@ -40,18 +41,10 @@ const handleResetPassword = async () => {
 
   try {
     await axios.post('/api/users/forgot-password/', form)
-    ElMessage.success('密码已重置，请使用工号和新密码登录')
+    ElMessage.success('密码已重置，请使用工号和新密码重新登录。')
     router.push('/login')
   } catch (error: any) {
-    const detail = error?.response?.data
-    if (detail?.detail) {
-      ElMessage.error(String(detail.detail))
-    } else if (detail && typeof detail === 'object') {
-      const firstError = Object.values(detail)[0]
-      ElMessage.error(Array.isArray(firstError) ? String(firstError[0]) : String(firstError))
-    } else {
-      ElMessage.error('密码重置失败，请检查工号和姓名')
-    }
+    ElMessage.error(resolveApiErrorMessage(error, '密码重置失败，请检查工号和姓名。'))
   } finally {
     loading.value = false
   }
@@ -71,8 +64,15 @@ const handleResetPassword = async () => {
       </div>
 
       <el-alert
-        title="教师账号可通过工号和真实姓名自助找回密码。管理员账户请联系系统管理员处理。"
+        title="教师账号可通过工号和真实姓名自助重置密码；管理员账号请联系系统负责人处理。"
         type="info"
+        :closable="false"
+        show-icon
+      />
+
+      <el-alert
+        title="如果密码曾被管理员初始化或重置，建议通过安全渠道确认身份后再告知教师处理结果。"
+        type="warning"
         :closable="false"
         show-icon
       />

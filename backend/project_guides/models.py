@@ -16,6 +16,14 @@ class ProjectGuide(models.Model):
         ('CLOSED', '已截止'),
     )
 
+    RULE_PROFILES = (
+        ('BALANCED', '均衡规则'),
+        ('KEYWORD_FIRST', '主题优先'),
+        ('DISCIPLINE_FIRST', '学科优先'),
+        ('WINDOW_FIRST', '窗口优先'),
+        ('ACTIVITY_FIRST', '活跃度优先'),
+    )
+
     title = models.CharField(max_length=300, verbose_name='指南标题')
     issuing_agency = models.CharField(max_length=200, verbose_name='发布单位')
     guide_level = models.CharField(max_length=20, choices=GUIDE_LEVELS, default='PROVINCIAL', verbose_name='指南级别')
@@ -24,6 +32,13 @@ class ProjectGuide(models.Model):
     summary = models.TextField(verbose_name='指南摘要')
     target_keywords = models.JSONField(default=list, blank=True, verbose_name='主题关键词')
     target_disciplines = models.JSONField(default=list, blank=True, verbose_name='面向学科/方向')
+    recommendation_tags = models.JSONField(default=list, blank=True, verbose_name='推荐标签')
+    rule_profile = models.CharField(
+        max_length=20,
+        choices=RULE_PROFILES,
+        default='BALANCED',
+        verbose_name='规则配置档位',
+    )
     support_amount = models.CharField(max_length=100, blank=True, verbose_name='资助强度')
     eligibility_notes = models.TextField(blank=True, verbose_name='申报要求')
     source_url = models.URLField(blank=True, verbose_name='来源链接')

@@ -16,6 +16,7 @@ def normalize_text_list(values):
 class ProjectGuideSerializer(serializers.ModelSerializer):
     guide_level_display = serializers.CharField(source='get_guide_level_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    rule_profile_display = serializers.CharField(source='get_rule_profile_display', read_only=True)
     created_by_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -28,10 +29,13 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
             'guide_level_display',
             'status',
             'status_display',
+            'rule_profile',
+            'rule_profile_display',
             'application_deadline',
             'summary',
             'target_keywords',
             'target_disciplines',
+            'recommendation_tags',
             'support_amount',
             'eligibility_notes',
             'source_url',
@@ -72,6 +76,9 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
     def validate_target_disciplines(self, value):
         return normalize_text_list(value)
 
+    def validate_recommendation_tags(self, value):
+        return normalize_text_list(value)
+
     def get_created_by_name(self, obj):
         if not obj.created_by_id:
             return ''
@@ -81,13 +88,19 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
 class ProjectGuideRecommendationSerializer(serializers.ModelSerializer):
     guide_level_display = serializers.CharField(source='get_guide_level_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    rule_profile_display = serializers.CharField(source='get_rule_profile_display', read_only=True)
     recommendation_score = serializers.IntegerField(read_only=True)
     recommendation_reasons = serializers.ListField(child=serializers.CharField(), read_only=True)
     matched_keywords = serializers.ListField(child=serializers.CharField(), read_only=True)
     matched_disciplines = serializers.ListField(child=serializers.CharField(), read_only=True)
     match_category_tags = serializers.ListField(child=serializers.CharField(), read_only=True)
+    recommendation_labels = serializers.ListField(child=serializers.CharField(), read_only=True)
+    explanation_dimensions = serializers.ListField(child=serializers.DictField(), read_only=True)
     priority_label = serializers.CharField(read_only=True)
     recommendation_summary = serializers.CharField(read_only=True)
+    compare_score = serializers.IntegerField(read_only=True)
+    compare_delta = serializers.IntegerField(read_only=True)
+    comparison_summary = serializers.CharField(read_only=True)
 
     class Meta:
         model = ProjectGuide
@@ -99,10 +112,13 @@ class ProjectGuideRecommendationSerializer(serializers.ModelSerializer):
             'guide_level_display',
             'status',
             'status_display',
+            'rule_profile',
+            'rule_profile_display',
             'application_deadline',
             'summary',
             'target_keywords',
             'target_disciplines',
+            'recommendation_tags',
             'support_amount',
             'eligibility_notes',
             'source_url',
@@ -111,16 +127,28 @@ class ProjectGuideRecommendationSerializer(serializers.ModelSerializer):
             'matched_keywords',
             'matched_disciplines',
             'match_category_tags',
+            'recommendation_labels',
+            'explanation_dimensions',
             'priority_label',
             'recommendation_summary',
+            'compare_score',
+            'compare_delta',
+            'comparison_summary',
         )
 
 
 class RecommendationTargetSerializer(serializers.Serializer):
     user_id = serializers.IntegerField(required=False)
+    compare_user_id = serializers.IntegerField(required=False)
 
     def validate_user_id(self, value):
         user_model = get_user_model()
         if not user_model.objects.filter(id=value).exists():
             raise serializers.ValidationError('目标教师不存在。')
+        return value
+
+    def validate_compare_user_id(self, value):
+        user_model = get_user_model()
+        if not user_model.objects.filter(id=value).exists():
+            raise serializers.ValidationError('对比教师不存在。')
         return value

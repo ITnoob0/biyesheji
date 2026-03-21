@@ -1,7 +1,27 @@
 import { resolvePostLoginRedirect } from '../src/utils/sessionFlow.js'
+import {
+  buildPasswordSecurityNotice,
+  resolveLoginFailureMessage,
+  resolveRoleLabel,
+} from '../src/utils/authPresentation.js'
 import { upsertAchievementRecord, removeAchievementRecord } from '../src/views/achievement-entry/recordState.js'
+import {
+  buildImportFeedbackLines,
+  buildPaperDuplicateWarnings,
+  buildPaperMetadataHints,
+} from '../src/views/achievement-entry/paperLifecycle.js'
+import {
+  buildDimensionTrendNarrative,
+  buildKeywordEvolution,
+  buildThemeFocusSummary,
+} from '../src/views/dashboard/portraitInsights.js'
 import { buildGraphSourceSummary } from '../src/views/graph/sourceState.js'
-import { filterRecommendationItems, sortRecommendationItems } from '../src/views/project-guides/recommendationHelpers.js'
+import {
+  buildDistributionCards,
+  filterRecommendationItems,
+  sortRecommendationItems,
+} from '../src/views/project-guides/recommendationHelpers.js'
+import { assistantQuestionOptions, buildAssistantFallbackAnswer } from '../src/views/assistant/helpers.js'
 
 const assert = (condition, message) => {
   if (!condition) {
@@ -10,9 +30,9 @@ const assert = (condition, message) => {
 }
 
 const verifyRedirectRecovery = () => {
-  assert(resolvePostLoginRedirect('/entry', '/profile/100001') === '/profile/100001', '应优先回跳缓存目标页')
-  assert(resolvePostLoginRedirect('/entry', '') === '/entry', '应在无缓存回跳时使用路由 redirect')
-  assert(resolvePostLoginRedirect('', '') === '/dashboard', '应在无 redirect 时回到画像主页')
+  assert(resolvePostLoginRedirect('/entry', '/profile/100001') === '/profile/100001', '应优先回跳缓存的目标页')
+  assert(resolvePostLoginRedirect('/entry', '') === '/entry', '无缓存回跳时应使用路由 redirect')
+  assert(resolvePostLoginRedirect('', '') === '/dashboard', '无 redirect 时应回到画像首页')
 }
 
 const verifyAchievementListUpdate = () => {
@@ -30,14 +50,115 @@ const verifyAchievementListUpdate = () => {
   assert(removed.every(item => item.id !== 2), '删除后列表应移除对应记录')
 }
 
+const verifyPaperLifecycleHelpers = () => {
+  const warnings = buildPaperDuplicateWarnings(
+    {
+      title: '教师画像平台研究',
+      abstract: '摘要',
+      date_acquired: '2026-03-01',
+      paper_type: 'JOURNAL',
+      journal_name: '现代教育技术',
+      journal_level: '',
+      published_volume: '',
+      published_issue: '',
+      pages: '',
+      source_url: '',
+      citation_count: 0,
+      is_first_author: true,
+      is_representative: false,
+      doi: '10.1000/repeat-doi',
+      coauthorInput: '',
+    },
+    [
+      {
+        id: 1,
+        title: '教师画像平台研究',
+        journal_name: '现代教育技术',
+        publication_year: 2026,
+        doi: '10.1000/repeat-doi',
+      },
+    ],
+    null,
+  )
+
+  assert(warnings.length === 2, '论文助手应同时提示 DOI 与题目/期刊/年份重复风险')
+
+  const hints = buildPaperMetadataHints({
+    title: '教师画像平台研究',
+    abstract: '摘要',
+    date_acquired: '2026-03-01',
+    paper_type: 'JOURNAL',
+    journal_name: '现代教育技术',
+    journal_level: '',
+    published_volume: '',
+    published_issue: '',
+    pages: '',
+    source_url: '',
+    citation_count: 0,
+    is_first_author: true,
+    is_representative: false,
+    doi: '',
+    coauthorInput: '',
+  })
+  assert(hints.length === 3, '论文助手应提示 DOI、页码和来源链接缺失')
+
+  const feedbackLines = buildImportFeedbackLines({
+    imported_count: 1,
+    skipped_count: 1,
+    failed_count: 1,
+    imported_records: [],
+    skipped_entries: [{ title: '重复论文', doi: '', issue_summary: '重复记录已跳过。', errors: {} }],
+    failed_entries: [{ title: '异常论文', doi: '', issue_summary: '字段校验未通过。', errors: {} }],
+  })
+  assert(feedbackLines.length >= 5, 'BibTeX 导入反馈应包含统计和首条异常说明')
+}
+
 const verifyGraphFallbackSummary = () => {
   const summary = buildGraphSourceSummary({
     source: 'mysql',
     fallback_used: true,
     notice: '当前图谱已自动回退到 MySQL 关系数据展示。',
+    fallback_tip: '当前已使用 MySQL 关系数据继续展示图谱主体与轻量分析。',
+    calculation_note: '当前图分析主要依据教师成果、合作作者与论文关键词进行轻量统计。',
   })
-  assert(summary.title === 'MySQL 回退链路', '图谱回退时应展示 MySQL 回退说明')
+  assert(summary.title === 'MySQL 回退链路', '图谱回退时应显示 MySQL 回退说明')
   assert(summary.source === 'MYSQL', '图谱数据来源标签应标准化输出')
+  assert(summary.badge === '已降级', '图谱回退时应显示降级标记')
+  assert(summary.fallbackTip.includes('轻量分析'), '图谱回退时应明确说明降级后仍可使用的能力')
+}
+
+const verifyPortraitInsights = () => {
+  const papers = [
+    {
+      id: 1,
+      date_acquired: '2026-03-01',
+      keywords: ['教师画像', '知识图谱', '教师画像'],
+    },
+    {
+      id: 2,
+      date_acquired: '2025-05-01',
+      keywords: ['知识图谱', '科研评价'],
+    },
+    {
+      id: 3,
+      date_acquired: '2025-06-01',
+      keywords: ['教师画像'],
+    },
+  ]
+
+  const keywordEvolution = buildKeywordEvolution(papers)
+  assert(keywordEvolution[0].year === 2026, '关键词演化应按年份倒序输出')
+  assert(keywordEvolution[0].keywords[0].name === '教师画像', '关键词演化应统计当年高频主题')
+
+  const focusSummary = buildThemeFocusSummary(papers)
+  assert(focusSummary.ratio > 0, '主题聚焦摘要应输出集中度比例')
+  assert(focusSummary.topKeywords[0].name === '教师画像', '主题聚焦摘要应给出高频主题')
+
+  const narrative = buildDimensionTrendNarrative([
+    { year: 2025, total_score: 52.4 },
+    { year: 2026, total_score: 61.1 },
+  ])
+  assert(narrative.includes('提升'), '画像趋势叙述应反映最近一年走势')
 }
 
 const verifyRecommendationFiltering = () => {
@@ -50,6 +171,10 @@ const verifyRecommendationFiltering = () => {
       application_deadline: '2026-05-01',
       updated_at: '2026-03-10',
       recommendation_score: 78,
+      guide_level: 'PROVINCIAL',
+      priority_label: '重点关注',
+      recommendation_labels: ['主题贴合', '高匹配'],
+      compare_delta: 14,
       match_category_tags: ['主题匹配型', '学科匹配型'],
     },
     {
@@ -60,6 +185,10 @@ const verifyRecommendationFiltering = () => {
       application_deadline: '2026-04-01',
       updated_at: '2026-03-01',
       recommendation_score: 48,
+      guide_level: 'ENTERPRISE',
+      priority_label: '可作备选',
+      recommendation_labels: ['可作备选'],
+      compare_delta: -6,
       match_category_tags: ['活跃度支撑型'],
     },
   ]
@@ -67,15 +196,84 @@ const verifyRecommendationFiltering = () => {
   const filtered = filterRecommendationItems(items, '科研画像', '主题匹配型')
   assert(filtered.length === 1 && filtered[0].id === 1, '推荐列表应支持按关键词和分类筛选')
 
+  const filteredByOptions = filterRecommendationItems(items, '科研画像', '主题匹配型', {
+    level: 'PROVINCIAL',
+    priority: '重点关注',
+    label: '主题贴合',
+    favoritesOnly: true,
+    favoriteIds: [1],
+  })
+  assert(filteredByOptions.length === 1 && filteredByOptions[0].id === 1, '推荐列表应支持级别、优先级、标签和收藏联动筛选')
+
   const sortedByDeadline = sortRecommendationItems(items, 'deadline')
   assert(sortedByDeadline[0].id === 2, '推荐列表应支持按申报窗口排序')
+
+  const sortedByCompareDelta = sortRecommendationItems(items, 'compare_delta')
+  assert(sortedByCompareDelta[0].id === 1, '推荐列表应支持按教师对比分差排序')
+
+  const cards = buildDistributionCards({
+    recommended_count: 2,
+    priority_distribution: { 重点关注: 1, 可作备选: 1 },
+    rule_profile_distribution: { 主题优先: 1, 均衡规则: 1 },
+    top_labels: [{ label: '主题贴合', count: 2 }],
+  })
+  assert(cards.length >= 3, '管理员分析摘要应输出分布卡片')
+  assert(cards[0].value === 2, '管理员分析摘要应包含推荐总量')
+}
+
+const verifyAuthPresentation = () => {
+  assert(resolveRoleLabel({ is_admin: true }) === '系统管理员', '管理员身份应显示为系统管理员')
+  assert(resolveRoleLabel({ is_admin: false }) === '教师账户', '教师身份应显示为教师账户')
+
+  assert(
+    buildPasswordSecurityNotice({ password_reset_required: true }).includes('临时密码'),
+    '临时密码状态应提示尽快修改密码',
+  )
+  assert(
+    buildPasswordSecurityNotice({ is_active: false }).includes('停用'),
+    '停用账户应提示联系管理员恢复',
+  )
+
+  const inactiveError = {
+    response: {
+      data: {
+        detail: '账户已停用，请联系管理员处理。',
+      },
+    },
+  }
+  assert(
+    resolveLoginFailureMessage(inactiveError) === '账户已停用，请联系管理员处理。',
+    '登录失败提示应优先使用后端返回的明确原因',
+  )
+
+  const htmlError = {
+    response: {
+      data: '<!DOCTYPE html><html><body><h1>Traceback</h1></body></html>',
+    },
+  }
+  assert(
+    resolveLoginFailureMessage(htmlError) === '登录失败，请检查工号/账号和密码。',
+    '登录失败提示不应原样展示后端 HTML 调试页',
+  )
+}
+
+const verifyAssistantHelpers = () => {
+  assert(assistantQuestionOptions.length >= 5, '问答页面应提供多类受控模板')
+
+  const fallback = buildAssistantFallbackAnswer('portrait_summary', '接口暂不可用')
+  assert(fallback.status === 'fallback', '问答异常时应生成结构化回退结果')
+  assert(fallback.source_details[0].value.includes('接口暂不可用'), '问答回退结果应带出失败原因说明')
 }
 
 const run = () => {
   verifyRedirectRecovery()
   verifyAchievementListUpdate()
+  verifyPaperLifecycleHelpers()
   verifyGraphFallbackSummary()
+  verifyPortraitInsights()
   verifyRecommendationFiltering()
+  verifyAuthPresentation()
+  verifyAssistantHelpers()
   console.log('Third-round UI verification passed.')
 }
 

@@ -57,10 +57,12 @@ class ProjectGuideApiTests(APITestCase):
             'issuing_agency': '省教育厅',
             'guide_level': 'PROVINCIAL',
             'status': 'OPEN',
+            'rule_profile': 'KEYWORD_FIRST',
             'application_deadline': '2026-05-31',
             'summary': '面向教育数字化、智能教学与评价改革方向征集重点项目。',
             'target_keywords': ['科研画像', '智能推荐'],
             'target_disciplines': ['教育数据智能', '教育技术学院'],
+            'recommendation_tags': ['教育场景', '重点指南'],
             'support_amount': '20-30 万元',
             'eligibility_notes': '需具备近三年相关研究基础。',
             'source_url': 'https://example.com/guide',
@@ -71,6 +73,8 @@ class ProjectGuideApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(ProjectGuide.objects.count(), 1)
         self.assertEqual(response.data['created_by_name'], '系统管理员')
+        self.assertEqual(response.data['rule_profile'], 'KEYWORD_FIRST')
+        self.assertEqual(response.data['recommendation_tags'], ['教育场景', '重点指南'])
 
     def test_teacher_cannot_create_project_guide(self):
         self.client.force_authenticate(self.teacher)
@@ -95,10 +99,12 @@ class ProjectGuideApiTests(APITestCase):
             issuing_agency='省教育厅',
             guide_level='PROVINCIAL',
             status='OPEN',
+            rule_profile='KEYWORD_FIRST',
             application_deadline='2026-05-31',
             summary='围绕教育数据智能、科研画像和教学评价改革方向组织申报。',
             target_keywords=['科研画像', '教育数据智能', '智能推荐'],
             target_disciplines=['教育数据智能', '教育技术学院'],
+            recommendation_tags=['画像重点', '适合教育场景'],
             support_amount='30 万元',
             eligibility_notes='申报人需近三年有相关论文成果。',
             created_by=self.admin,
@@ -122,8 +128,12 @@ class ProjectGuideApiTests(APITestCase):
         top_item = response.data['recommendations'][0]
         self.assertTrue(top_item['recommendation_reasons'])
         self.assertIn('match_category_tags', top_item)
+        self.assertIn('recommendation_labels', top_item)
+        self.assertIn('explanation_dimensions', top_item)
         self.assertIn('priority_label', top_item)
         self.assertIn('recommendation_summary', top_item)
+        self.assertEqual(top_item['rule_profile'], 'KEYWORD_FIRST')
+        self.assertTrue(any(item['key'] == 'keyword_match' for item in top_item['explanation_dimensions']))
         self.assertIn('teacher_snapshot', response.data)
         self.assertIn('data_meta', response.data)
         self.assertIn('empty_state', response.data)
@@ -165,6 +175,7 @@ class ProjectGuideApiTests(APITestCase):
             issuing_agency='省教育厅',
             guide_level='PROVINCIAL',
             status='OPEN',
+            rule_profile='BALANCED',
             summary='用于验证管理员可以按教师查看项目推荐。',
             target_keywords=['科研画像'],
             target_disciplines=['教育数据智能'],
@@ -177,6 +188,57 @@ class ProjectGuideApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['teacher_snapshot']['user_id'], self.teacher.id)
         self.assertTrue(response.data['recommendations'])
+        self.assertIn('admin_analysis', response.data)
+
+    def test_admin_can_compare_recommendations_between_two_teachers(self):
+        user_model = get_user_model()
+        compare_teacher = user_model.objects.create_user(
+            id=100021,
+            username='100021',
+            password='teacher123456',
+            real_name='对比教师',
+            department='教育技术学院',
+            title='讲师',
+            research_direction=['智能推荐'],
+        )
+        TeacherProfile.objects.create(
+            user=compare_teacher,
+            department='教育技术学院',
+            discipline='智能推荐',
+            title='讲师',
+            research_interests='推荐系统, 教育评价',
+            h_index=4,
+        )
+
+        ProjectGuide.objects.create(
+            title='教师对比推荐指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            rule_profile='DISCIPLINE_FIRST',
+            summary='用于验证管理员可查看两位教师的推荐差异。',
+            target_keywords=['科研画像', '智能推荐'],
+            target_disciplines=['教育数据智能', '智能推荐'],
+            recommendation_tags=['对比分析'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher.id, 'compare_user_id': compare_teacher.id},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('comparison_teacher_snapshot', response.data)
+        self.assertIn('comparison_summary', response.data)
+        self.assertTrue(response.data['comparison_teacher_snapshot'])
+        self.assertTrue(response.data['recommendations'])
+        self.assertIn('compare_score', response.data['recommendations'][0])
+        self.assertIn('compare_delta', response.data['recommendations'][0])
+        self.assertIn('primary_better_count', response.data['comparison_summary'])
+        self.assertIn('recommended_count', response.data['admin_analysis'])
+        self.assertIn('top_labels', response.data['admin_analysis'])
 
     def test_teacher_cannot_request_other_teacher_recommendations(self):
         user_model = get_user_model()
@@ -193,3 +255,52 @@ class ProjectGuideApiTests(APITestCase):
         response = self.client.get('/api/project-guides/recommendations/', {'user_id': other_teacher.id})
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_cannot_use_compare_teacher_parameter(self):
+        user_model = get_user_model()
+        compare_teacher = user_model.objects.create_user(
+            id=100022,
+            username='100022',
+            password='teacher123456',
+            real_name='对比教师',
+        )
+
+        self.client.force_authenticate(self.teacher)
+        response = self.client.get('/api/project-guides/recommendations/', {'compare_user_id': compare_teacher.id})
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_analysis_exposes_distribution_for_regression_verification(self):
+        ProjectGuide.objects.create(
+            title='重点指南 A',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            rule_profile='KEYWORD_FIRST',
+            summary='用于验证管理员推荐分析分布字段。',
+            target_keywords=['科研画像'],
+            target_disciplines=['教育数据智能'],
+            recommendation_tags=['画像重点'],
+            created_by=self.admin,
+        )
+        ProjectGuide.objects.create(
+            title='重点指南 B',
+            issuing_agency='市教育局',
+            guide_level='MUNICIPAL',
+            status='OPEN',
+            rule_profile='DISCIPLINE_FIRST',
+            summary='用于验证管理员推荐分析分布字段。',
+            target_keywords=['教育数据'],
+            target_disciplines=['教育技术学院'],
+            recommendation_tags=['学科贴合'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/project-guides/recommendations/', {'user_id': self.teacher.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('admin_analysis', response.data)
+        self.assertGreaterEqual(response.data['admin_analysis']['recommended_count'], 1)
+        self.assertTrue(response.data['admin_analysis']['priority_distribution'])
+        self.assertTrue(response.data['admin_analysis']['rule_profile_distribution'])

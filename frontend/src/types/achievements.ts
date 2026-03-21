@@ -30,11 +30,18 @@ export interface PaperRecord extends TeacherOwnedAchievementRecord {
   paper_type_display: string
   journal_name: string
   journal_level: string
+  published_volume: string
+  published_issue: string
+  pages: string
+  source_url: string
   citation_count: number
   is_first_author: boolean
+  is_representative: boolean
   doi: string
+  publication_year: number | null
   keywords: string[]
   coauthor_details: CoAuthorDetail[]
+  metadata_alerts: string[]
 }
 
 export interface ProjectRecord extends TeacherOwnedAchievementRecord {
@@ -72,8 +79,13 @@ export interface PaperFormState {
   paper_type: string
   journal_name: string
   journal_level: string
+  published_volume: string
+  published_issue: string
+  pages: string
+  source_url: string
   citation_count: number
   is_first_author: boolean
+  is_representative: boolean
   doi: string
   coauthorInput: string
 }
@@ -116,8 +128,13 @@ export interface PaperMutationPayload {
   paper_type: string
   journal_name: string
   journal_level: string
+  published_volume: string
+  published_issue: string
+  pages: string
+  source_url: string
   citation_count: number
   is_first_author: boolean
+  is_representative: boolean
   doi: string
   coauthors: string[]
 }
@@ -181,6 +198,9 @@ export interface AchievementQueryState {
   papers: {
     search: string
     paper_type: string
+    year: string
+    is_representative: string
+    sort_by: string
   }
   projects: {
     search: string
@@ -206,8 +226,13 @@ export interface BibtexPreviewEntry {
   paper_type: string
   journal_name: string
   journal_level: string
+  published_volume: string
+  published_issue: string
+  pages: string
+  source_url: string
   citation_count: number
   is_first_author: boolean
+  is_representative: boolean
   doi: string
   coauthors: string[]
   preview_status: BibtexPreviewStatus
@@ -234,6 +259,31 @@ export interface BibtexImportResponse {
   skipped_count: number
   failed_count: number
   imported_records: Array<{ id: number; title: string; doi: string }>
-  skipped_entries: Array<{ source_index?: number; title: string; doi: string; errors: Record<string, string[] | string> }>
-  failed_entries: Array<{ source_index?: number; title: string; doi: string; errors: Record<string, string[] | string> }>
+  skipped_entries: Array<{ source_index?: number; title: string; doi: string; issue_summary?: string; errors: Record<string, string[] | string> }>
+  failed_entries: Array<{ source_index?: number; title: string; doi: string; issue_summary?: string; errors: Record<string, string[] | string> }>
+}
+
+export interface PaperSummaryRecord {
+  id: number
+  title: string
+  date_acquired: string
+  paper_type: string
+  paper_type_display: string
+  journal_name: string
+  citation_count: number
+  is_representative: boolean
+  metadata_alerts: string[]
+}
+
+export interface PaperSummaryResponse {
+  total_count: number
+  representative_count: number
+  recent_count: number
+  missing_doi_count: number
+  missing_source_url_count: number
+  incomplete_metadata_count: number
+  duplicate_doi_count: number
+  yearly_distribution: Array<{ year: number; count: number }>
+  type_distribution: Array<{ paper_type: string; label: string; count: number }>
+  recent_records: PaperSummaryRecord[]
 }

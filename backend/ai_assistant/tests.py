@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
+from unittest.mock import patch
 
 from achievements.models import Paper, TeacherProfile
 from project_guides.models import ProjectGuide
@@ -69,6 +70,7 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['question_type'], 'portrait_summary')
         self.assertIn('answer', response.data)
         self.assertIn('系统内真实教师资料', response.data['scope_note'])
+        self.assertTrue(response.data['source_details'])
 
     def test_teacher_can_request_guide_reason(self):
         self.client.force_authenticate(self.teacher)
@@ -85,6 +87,53 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['question_type'], 'guide_reason')
         self.assertEqual(response.data['guide_snapshot']['guide_id'], self.guide.id)
         self.assertTrue(response.data['data_sources'])
+        self.assertTrue(response.data['related_reasons'])
+
+    def test_teacher_can_request_portrait_dimension_reason(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'portrait_dimension_reason',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'portrait_dimension_reason')
+        self.assertTrue(response.data['related_reasons'])
+        self.assertTrue(response.data['source_details'])
+
+    def test_teacher_can_request_guide_overview(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'guide_overview',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'guide_overview')
+        self.assertIn('推荐', response.data['title'])
+
+    def test_admin_can_request_academy_summary(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'academy_summary',
+                'department': '计算机学院',
+                'year': 2025,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'academy_summary')
+        self.assertEqual(response.data['academy_snapshot']['department'], '计算机学院')
+        self.assertEqual(response.data['academy_snapshot']['year'], 2025)
 
     def test_non_admin_cannot_request_other_teacher_answer(self):
         other_teacher = get_user_model().objects.create_user(
@@ -105,3 +154,34 @@ class PortraitAssistantApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_non_admin_cannot_request_academy_summary(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'academy_summary',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('ai_assistant.views.PortraitAssistantService.build_answer')
+    def test_assistant_returns_fallback_payload_when_answer_generation_fails(self, build_answer):
+        build_answer.side_effect = RuntimeError('temporary failure')
+
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'portrait_summary',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'fallback')
+        self.assertIn('failure_notice', response.data)
+        self.assertIn('temporary failure', response.data['source_details'][0]['value'])
+        self.assertIn('受控的轻量智能辅助链路', response.data['scope_note'])

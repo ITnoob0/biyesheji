@@ -1,28 +1,33 @@
 <template>
-  <div class="guide-page">
-    <section class="hero-panel">
+  <div class="guide-page workspace-page">
+    <section class="hero-panel workspace-hero workspace-hero--brand">
       <div>
-        <p class="eyebrow">Guide Management</p>
-        <h1>项目指南管理</h1>
-        <p class="hero-text">面向管理员维护项目指南基础数据，为后续推荐提供可解释的数据来源。</p>
+        <p class="eyebrow workspace-hero__eyebrow">Guide Management</p>
+        <h1 class="workspace-hero__title">项目指南管理</h1>
+        <p class="hero-text workspace-hero__text">面向管理员维护项目指南基础数据，为后续推荐提供可解释的数据来源。</p>
       </div>
-      <div class="hero-actions">
+      <div class="hero-actions workspace-page-actions">
         <el-button plain @click="router.push('/dashboard')">返回画像主页</el-button>
+        <el-button plain @click="router.push('/project-recommendations')">推荐分析入口</el-button>
         <el-button type="primary" :loading="loading" @click="loadGuides">刷新列表</el-button>
       </div>
     </section>
 
-    <el-result
+    <div
       v-if="checkedUser && !checkedUser.is_admin"
-      icon="warning"
-      title="当前页面仅限管理员使用"
-      sub-title="教师账号可前往“项目推荐”页面查看个性化推荐结果。"
-    />
+      class="workspace-status-result content-shell"
+    >
+      <el-result
+        icon="warning"
+        title="当前页面仅限管理员使用"
+        sub-title="教师账号可前往“项目推荐”页面查看个性化推荐结果。"
+      />
+    </div>
 
     <div v-else class="guide-grid content-shell">
-      <el-card shadow="never">
+      <el-card shadow="never" class="workspace-surface-card">
         <template #header>
-          <div class="card-header">
+          <div class="card-header workspace-section-head">
             <span>{{ editingId ? '编辑项目指南' : '新增项目指南' }}</span>
             <el-tag type="info" effect="plain">当前阶段扩展能力</el-tag>
           </div>
@@ -48,8 +53,18 @@
                 <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
+            <el-form-item label="规则档位" prop="rule_profile">
+              <el-select v-model="form.rule_profile" style="width: 100%">
+                <el-option v-for="item in ruleProfileOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+          </div>
+          <div class="double-grid">
             <el-form-item label="截止时间">
               <el-date-picker v-model="form.application_deadline" value-format="YYYY-MM-DD" type="date" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="推荐标签">
+              <el-input v-model="form.recommendationTagsInput" placeholder="如 教育场景、重点指南、适合青年教师" />
             </el-form-item>
           </div>
           <el-form-item label="指南摘要" prop="summary">
@@ -79,11 +94,11 @@
         </el-form>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card shadow="never" class="workspace-surface-card">
         <template #header>
-          <div class="card-header card-header-wrap">
+          <div class="card-header card-header-wrap workspace-section-head">
             <span>指南列表</span>
-            <div class="toolbar">
+            <div class="toolbar workspace-toolbar">
               <el-select v-model="statusFilter" clearable placeholder="全部状态" style="width: 140px" @change="loadGuides">
                 <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
@@ -97,6 +112,7 @@
           <el-table-column prop="title" label="指南标题" min-width="230" />
           <el-table-column prop="issuing_agency" label="发布单位" min-width="150" />
           <el-table-column prop="guide_level_display" label="级别" width="110" />
+          <el-table-column prop="rule_profile_display" label="规则档位" width="120" />
           <el-table-column label="状态" width="110">
             <template #default="{ row }">
               <el-tag :type="row.status === 'OPEN' ? 'success' : row.status === 'DRAFT' ? 'info' : 'warning'">
@@ -109,6 +125,15 @@
             <template #default="{ row }">
               <div class="tag-list">
                 <el-tag v-for="tag in row.target_keywords.slice(0, 4)" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="推荐标签" min-width="180">
+            <template #default="{ row }">
+              <div class="tag-list">
+                <el-tag v-for="tag in row.recommendation_tags.slice(0, 3)" :key="tag" size="small" type="success" effect="plain">
+                  {{ tag }}
+                </el-tag>
               </div>
             </template>
           </el-table-column>
@@ -131,7 +156,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
-import type { GuideLevel, GuideStatus, ProjectGuideRecord } from './project-guides/types'
+import type { GuideLevel, GuideRuleProfile, GuideStatus, ProjectGuideRecord } from './project-guides/types'
 
 const guideEndpoint = '/api/project-guides/'
 const router = useRouter()
@@ -149,6 +174,14 @@ const statusOptions: Array<{ label: string; value: GuideStatus }> = [
   { label: '已截止', value: 'CLOSED' },
 ]
 
+const ruleProfileOptions: Array<{ label: string; value: GuideRuleProfile }> = [
+  { label: '均衡规则', value: 'BALANCED' },
+  { label: '主题优先', value: 'KEYWORD_FIRST' },
+  { label: '学科优先', value: 'DISCIPLINE_FIRST' },
+  { label: '窗口优先', value: 'WINDOW_FIRST' },
+  { label: '活跃度优先', value: 'ACTIVITY_FIRST' },
+]
+
 const checkedUser = ref<SessionUser | null>(null)
 const formRef = ref<FormInstance>()
 const guides = ref<ProjectGuideRecord[]>([])
@@ -163,10 +196,12 @@ const form = reactive({
   issuing_agency: '',
   guide_level: 'PROVINCIAL' as GuideLevel,
   status: 'OPEN' as GuideStatus,
+  rule_profile: 'BALANCED' as GuideRuleProfile,
   application_deadline: '',
   summary: '',
   targetKeywordsInput: '',
   targetDisciplinesInput: '',
+  recommendationTagsInput: '',
   support_amount: '',
   eligibility_notes: '',
   source_url: '',
@@ -191,9 +226,11 @@ const resetForm = () => {
   editingId.value = null
   form.guide_level = 'PROVINCIAL'
   form.status = 'OPEN'
+  form.rule_profile = 'BALANCED'
   form.application_deadline = ''
   form.targetKeywordsInput = ''
   form.targetDisciplinesInput = ''
+  form.recommendationTagsInput = ''
   form.support_amount = ''
   form.eligibility_notes = ''
   form.source_url = ''
@@ -225,10 +262,12 @@ const submitForm = async () => {
       issuing_agency: form.issuing_agency,
       guide_level: form.guide_level,
       status: form.status,
+      rule_profile: form.rule_profile,
       application_deadline: form.application_deadline || null,
       summary: form.summary,
       target_keywords: parseTextList(form.targetKeywordsInput),
       target_disciplines: parseTextList(form.targetDisciplinesInput),
+      recommendation_tags: parseTextList(form.recommendationTagsInput),
       support_amount: form.support_amount,
       eligibility_notes: form.eligibility_notes,
       source_url: form.source_url,
@@ -255,10 +294,12 @@ const startEdit = (row: ProjectGuideRecord) => {
   form.issuing_agency = row.issuing_agency
   form.guide_level = row.guide_level
   form.status = row.status
+  form.rule_profile = row.rule_profile
   form.application_deadline = row.application_deadline || ''
   form.summary = row.summary
   form.targetKeywordsInput = row.target_keywords.join('，')
   form.targetDisciplinesInput = row.target_disciplines.join('，')
+  form.recommendationTagsInput = row.recommendation_tags.join('，')
   form.support_amount = row.support_amount
   form.eligibility_notes = row.eligibility_notes
   form.source_url = row.source_url

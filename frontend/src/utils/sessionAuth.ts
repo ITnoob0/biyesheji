@@ -9,6 +9,7 @@ const IS_ADMIN_KEY = 'is_admin'
 const USER_PROFILE_KEY = 'user_profile'
 const AUTH_REDIRECT_KEY = 'auth_redirect_target'
 const AUTH_FAILURE_REASON_KEY = 'auth_failure_reason'
+const AUTH_NOTICE_KEY = 'auth_notice'
 export const SESSION_AUTH_CHANGED_EVENT = 'session-auth-changed'
 
 export type SessionUser = Pick<
@@ -18,6 +19,9 @@ export type SessionUser = Pick<
   | 'real_name'
   | 'department'
   | 'title'
+  | 'email'
+  | 'contact_phone'
+  | 'avatar_url'
   | 'research_direction'
   | 'bio'
   | 'discipline'
@@ -25,6 +29,11 @@ export type SessionUser = Pick<
   | 'h_index'
   | 'is_active'
   | 'is_admin'
+  | 'role_code'
+  | 'role_label'
+  | 'password_reset_required'
+  | 'password_updated_at'
+  | 'security_notice'
 >
 
 type SessionUserPayload = Omit<Partial<TeacherAccountResponse>, 'id'> & {
@@ -37,6 +46,9 @@ const normalizeSessionUser = (raw: SessionUserPayload | null | undefined): Sessi
   real_name: raw?.real_name ?? '',
   department: raw?.department ?? '',
   title: raw?.title ?? '',
+  email: raw?.email ?? '',
+  contact_phone: raw?.contact_phone ?? '',
+  avatar_url: raw?.avatar_url ?? '',
   research_direction: Array.isArray(raw?.research_direction) ? raw.research_direction : [],
   bio: raw?.bio ?? '',
   discipline: raw?.discipline ?? '',
@@ -44,6 +56,15 @@ const normalizeSessionUser = (raw: SessionUserPayload | null | undefined): Sessi
   h_index: Number(raw?.h_index ?? 0),
   is_active: raw?.is_active ?? true,
   is_admin: Boolean(raw?.is_admin),
+  role_code: raw?.role_code === 'admin' ? 'admin' : 'teacher',
+  role_label: raw?.role_label ?? (raw?.is_admin ? '系统管理员' : '教师账户'),
+  password_reset_required: Boolean(raw?.password_reset_required),
+  password_updated_at: raw?.password_updated_at ?? null,
+  security_notice:
+    raw?.security_notice ??
+    (raw?.password_reset_required
+      ? '当前密码为管理员初始化或重置后的临时密码，请登录后尽快修改。'
+      : '请妥善保管工号与密码，建议使用高强度密码并定期更新。'),
 })
 
 const emitSessionAuthChanged = (): void => {
@@ -103,9 +124,26 @@ export const consumeSessionExpiredReason = (): string | null => {
   return reason
 }
 
+export const setSessionNotice = (message: string | null | undefined): void => {
+  const normalized = typeof message === 'string' ? message.trim() : ''
+  if (!normalized) {
+    sessionStorage.removeItem(AUTH_NOTICE_KEY)
+    return
+  }
+
+  sessionStorage.setItem(AUTH_NOTICE_KEY, normalized)
+}
+
+export const consumeSessionNotice = (): string | null => {
+  const message = sessionStorage.getItem(AUTH_NOTICE_KEY)?.trim() || null
+  sessionStorage.removeItem(AUTH_NOTICE_KEY)
+  return message
+}
+
 export const resetSessionFlowState = (): void => {
   sessionStorage.removeItem(AUTH_REDIRECT_KEY)
   sessionStorage.removeItem(AUTH_FAILURE_REASON_KEY)
+  sessionStorage.removeItem(AUTH_NOTICE_KEY)
 }
 
 export const logoutSession = async (router?: Router): Promise<void> => {

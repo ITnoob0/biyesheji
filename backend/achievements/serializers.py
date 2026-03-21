@@ -49,6 +49,8 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     coauthor_details = CoAuthorDetailSerializer(source='coauthors', many=True, read_only=True)
     keywords = serializers.SerializerMethodField()
     paper_type_display = serializers.CharField(source='get_paper_type_display', read_only=True)
+    publication_year = serializers.SerializerMethodField()
+    metadata_alerts = serializers.SerializerMethodField()
 
     class Meta:
         model = Paper
@@ -63,15 +65,27 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'paper_type_display',
             'journal_name',
             'journal_level',
+            'published_volume',
+            'published_issue',
+            'pages',
+            'source_url',
             'citation_count',
             'is_first_author',
+            'is_representative',
             'doi',
+            'publication_year',
             'created_at',
             'coauthors',
             'coauthor_details',
             'keywords',
+            'metadata_alerts',
         )
-        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('coauthor_details', 'keywords')
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + (
+            'coauthor_details',
+            'keywords',
+            'publication_year',
+            'metadata_alerts',
+        )
 
     def validate_journal_name(self, value):
         cleaned = value.strip()
@@ -107,6 +121,14 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
 
         if 'journal_level' in attrs and attrs['journal_level']:
             attrs['journal_level'] = attrs['journal_level'].strip()
+        if 'published_volume' in attrs and attrs['published_volume']:
+            attrs['published_volume'] = attrs['published_volume'].strip()
+        if 'published_issue' in attrs and attrs['published_issue']:
+            attrs['published_issue'] = attrs['published_issue'].strip()
+        if 'pages' in attrs and attrs['pages']:
+            attrs['pages'] = attrs['pages'].strip()
+        if 'source_url' in attrs and attrs['source_url']:
+            attrs['source_url'] = attrs['source_url'].strip()
 
         return attrs
 
@@ -131,6 +153,23 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     def get_keywords(self, obj):
         keyword_relations = PaperKeyword.objects.filter(paper=obj).select_related('keyword')
         return [relation.keyword.name for relation in keyword_relations]
+
+    def get_publication_year(self, obj):
+        return obj.date_acquired.year if obj.date_acquired else None
+
+    def get_metadata_alerts(self, obj):
+        alerts = []
+
+        if not obj.doi:
+            alerts.append('缺少 DOI，可补充后提升成果检索与去重准确性。')
+        if not obj.pages:
+            alerts.append('缺少页码范围，建议补充成果出处信息。')
+        if not obj.source_url:
+            alerts.append('缺少来源链接，建议补充论文原始访问地址。')
+        if not obj.journal_level:
+            alerts.append('缺少期刊级别，可补充 SCI、EI、CCF 等标识。')
+
+        return alerts
 
     def _replace_coauthors(self, paper, coauthor_names):
         paper.coauthors.all().delete()

@@ -37,8 +37,13 @@ class AchievementEntryApiTests(APITestCase):
             'paper_type': 'JOURNAL',
             'journal_name': '现代教育技术',
             'journal_level': '核心期刊',
+            'published_volume': '18',
+            'published_issue': '3',
+            'pages': '22-30',
+            'source_url': 'https://example.com/papers/teacher-100004-paper',
             'citation_count': 9,
             'is_first_author': True,
+            'is_representative': True,
             'doi': '10.1000/teacher-100004-paper',
             'coauthors': ['李晨', '周倩'],
         }
@@ -49,6 +54,9 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(Paper.objects.count(), 1)
         self.assertEqual(response.data['teacher'], 100004)
         self.assertEqual(response.data['teacher_name'], '汪心蓝')
+        self.assertEqual(response.data['published_volume'], '18')
+        self.assertTrue(response.data['is_representative'])
+        self.assertEqual(response.data['publication_year'], 2025)
         self.assertEqual(len(response.data['coauthor_details']), 2)
         self.assertEqual(response.data['keywords'], ['教师画像', '智能辅助'])
         graph_sync_service.sync_paper.assert_called_once()
@@ -112,6 +120,40 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('doi', response.data)
 
+    @patch('achievements.views.AcademicGraphSyncService')
+    @patch('achievements.views.AcademicAI')
+    def test_teacher_cannot_update_or_delete_other_teachers_paper(self, academic_ai_cls, graph_sync_service):
+        academic_ai_cls.return_value.extract_tags.return_value = []
+
+        other_paper = Paper.objects.create(
+            teacher=self.other_user,
+            title='其他教师的论文',
+            abstract='这是一个足够长的摘要，用来验证当前教师无法编辑或删除其他账号的论文记录。',
+            date_acquired='2024-01-02',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            doi='10.1000/other-user-paper',
+        )
+
+        update_response = self.client.patch(
+            f'/api/achievements/papers/{other_paper.id}/',
+            {
+                'title': '越权修改',
+                'abstract': '这是一个足够长的摘要，用来验证越权修改会被拒绝。',
+                'date_acquired': '2024-02-02',
+                'paper_type': 'JOURNAL',
+                'journal_name': '测试期刊',
+                'doi': '10.1000/other-user-paper',
+                'coauthors': [],
+            },
+            format='json',
+        )
+        delete_response = self.client.delete(f'/api/achievements/papers/{other_paper.id}/')
+
+        self.assertEqual(update_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(delete_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Paper.objects.filter(id=other_paper.id).exists())
+
     def test_bibtex_preview_reports_ready_duplicate_and_invalid_entries(self):
         Paper.objects.create(
             teacher=self.user,
@@ -159,6 +201,63 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['entries'][1]['preview_status'], 'duplicate')
         self.assertEqual(response.data['entries'][2]['preview_status'], 'invalid')
         self.assertEqual(response.data['entries'][0]['coauthors'], ['李晨'])
+
+    def test_bibtex_preview_marks_title_journal_year_duplicate_even_without_doi(self):
+        Paper.objects.create(
+            teacher=self.user,
+            title='同名论文',
+            abstract='这是一个足够长的摘要，用于验证 BibTeX 预览会识别题目、期刊与年份的高度重复记录。',
+            date_acquired='2024-01-01',
+            paper_type='JOURNAL',
+            journal_name='现代教育技术',
+        )
+
+        bibtex_content = """
+@article{similar-entry,
+  title = {同名论文},
+  author = {汪心蓝 and 李晨},
+  journal = {现代教育技术},
+  year = {2024},
+  abstract = {围绕重复录入提示进行测试。}
+}
+"""
+
+        upload = SimpleUploadedFile('papers.bib', bibtex_content.encode('utf-8'), content_type='text/plain')
+        response = self.client.post('/api/achievements/papers/import/bibtex-preview/', {'file': upload})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['entries'][0]['preview_status'], 'duplicate')
+        self.assertTrue(any('高度重复' in issue for issue in response.data['entries'][0]['issues']))
+
+    def test_bibtex_preview_marks_batch_duplicate_doi_entries(self):
+        bibtex_content = """
+@article{first-entry,
+  title = {批次重复 DOI 论文一},
+  author = {汪心蓝 and 李晨},
+  journal = {现代教育技术},
+  year = {2025},
+  doi = {10.1000/batch-duplicate-doi},
+  abstract = {用于验证批次内 DOI 重复提示。}
+}
+
+@article{second-entry,
+  title = {批次重复 DOI 论文二},
+  author = {汪心蓝 and 周倩},
+  journal = {中国电化教育},
+  year = {2025},
+  doi = {10.1000/batch-duplicate-doi},
+  abstract = {用于验证批次内 DOI 重复提示。}
+}
+"""
+
+        upload = SimpleUploadedFile('batch-duplicate.bib', bibtex_content.encode('utf-8'), content_type='text/plain')
+        response = self.client.post('/api/achievements/papers/import/bibtex-preview/', {'file': upload})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['summary']['duplicate_count'], 1)
+        self.assertEqual(response.data['entries'][0]['preview_status'], 'ready')
+        self.assertEqual(response.data['entries'][1]['preview_status'], 'duplicate')
+        self.assertTrue(any('当前批次中存在重复 DOI' in issue for issue in response.data['entries'][1]['issues']))
 
     @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
@@ -216,6 +315,55 @@ class AchievementEntryApiTests(APITestCase):
         imported_paper = Paper.objects.get(teacher=self.user, doi='10.1000/imported-bibtex-paper')
         self.assertEqual(imported_paper.coauthors.count(), 2)
         graph_sync_service.sync_paper.assert_called_once()
+
+    @patch('achievements.views.AcademicGraphSyncService')
+    @patch('achievements.views.AcademicAI')
+    def test_bibtex_confirm_skips_duplicate_doi_entries_instead_of_importing(self, academic_ai_cls, graph_sync_service):
+        academic_ai_cls.return_value.extract_tags.return_value = ['BibTeX 导入']
+
+        Paper.objects.create(
+            teacher=self.user,
+            title='已有 DOI 论文',
+            abstract='这是一个足够长的摘要，用于验证确认导入时会跳过重复 DOI。',
+            date_acquired='2024-01-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            doi='10.1000/existing-confirm-doi',
+        )
+
+        response = self.client.post(
+            '/api/achievements/papers/import/bibtex-confirm/',
+            {
+                'entries': [
+                    {
+                        'source_index': 1,
+                        'citation_key': 'duplicate-entry',
+                        'entry_type': 'article',
+                        'title': '重复 DOI 导入论文',
+                        'abstract': '这是一个足够长的摘要，用于验证确认导入时会跳过重复 DOI。',
+                        'date_acquired': '2025-05-01',
+                        'paper_type': 'JOURNAL',
+                        'journal_name': '现代教育技术',
+                        'journal_level': '核心期刊',
+                        'citation_count': 3,
+                        'is_first_author': True,
+                        'doi': '10.1000/existing-confirm-doi',
+                        'coauthors': ['李晨'],
+                        'preview_status': 'duplicate',
+                        'issues': ['当前账号下已存在相同 DOI 的论文。'],
+                    }
+                ]
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['imported_count'], 0)
+        self.assertEqual(response.data['skipped_count'], 1)
+        self.assertEqual(response.data['failed_count'], 0)
+        self.assertIn('重复记录已跳过', response.data['skipped_entries'][0]['issue_summary'])
+        self.assertEqual(Paper.objects.filter(teacher=self.user, doi='10.1000/existing-confirm-doi').count(), 1)
+        graph_sync_service.sync_paper.assert_not_called()
 
     @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
@@ -487,6 +635,11 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['achievement_overview']['total_achievements'], 5)
         self.assertTrue(any(item['type'] == 'project' for item in response.data['recent_achievements']))
         self.assertTrue(any(item['type'] == 'intellectual_property' for item in response.data['recent_achievements']))
+        self.assertTrue(response.data['dimension_trend'])
+        self.assertTrue(response.data['recent_structure'])
+        self.assertIn('overview', response.data['portrait_explanation'])
+        self.assertIn('snapshot_boundary_note', response.data['portrait_explanation'])
+        self.assertTrue(any(item['key'] == 'academic_output' for item in response.data['dimension_insights']))
         self.assertIn('source_note', response.data['data_meta'])
         self.assertEqual(response.data['data_meta']['acceptance_scope'], '本能力纳入当前阶段验收。')
 
@@ -515,7 +668,9 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['radar_dimensions']), 6)
         self.assertEqual(len(response.data['dimension_sources']), 6)
+        self.assertEqual(len(response.data['dimension_insights']), 6)
         self.assertTrue(any(item['name'] == '经费与项目攻关' for item in response.data['dimension_sources']))
+        self.assertTrue(any(item['level'] in ['优势维度', '稳定维度', '成长维度'] for item in response.data['dimension_insights']))
 
     def test_admin_can_view_dashboard_stats_for_specified_teacher(self):
         user_model = get_user_model()
@@ -548,23 +703,23 @@ class AchievementEntryApiTests(APITestCase):
             id=1,
             username='admin',
             password='Admin123456',
-            real_name='绯荤粺绠＄悊鍛?',
+            real_name='系统管理员',
         )
         Paper.objects.create(
             teacher=self.user,
-            title='绠＄悊鍛樻煡鐪嬬殑璁烘枃',
-            abstract='杩欐槸涓€涓冻澶熼暱鐨勬憳瑕侊紝鐢ㄤ簬楠岃瘉绠＄悊鍛樺彲浠ユ寜鏁欏笀杩囨护璁烘枃鍒楄〃銆?',
+            title='管理员查看的论文',
+            abstract='这是一个足够长的摘要，用于验证管理员可以按教师过滤论文列表。',
             date_acquired='2025-04-01',
             paper_type='JOURNAL',
-            journal_name='娴嬭瘯鏈熷垔',
+            journal_name='测试期刊',
         )
         Paper.objects.create(
             teacher=self.other_user,
-            title='鍏朵粬鏁欏笀鐨勮鏂?',
-            abstract='杩欐槸鍙︿竴涓冻澶熼暱鐨勬憳瑕侊紝鐢ㄤ簬楠岃瘉 teacher_id 杩囨护鍙繑鍥炵洰鏍囨暀甯堟暟鎹€?',
+            title='其他教师的论文',
+            abstract='这是另一个足够长的摘要，用于验证 teacher_id 过滤只返回目标教师数据。',
             date_acquired='2025-04-02',
             paper_type='CONFERENCE',
-            journal_name='娴嬭瘯浼氳',
+            journal_name='测试会议',
         )
 
         self.client.force_authenticate(user=admin)
@@ -573,7 +728,7 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['teacher'], self.user.id)
-        self.assertEqual(response.data[0]['title'], '绠＄悊鍛樻煡鐪嬬殑璁烘枃')
+        self.assertEqual(response.data[0]['title'], '管理员查看的论文')
 
     def test_non_admin_cannot_access_academy_overview_dashboard(self):
         response = self.client.get('/api/achievements/academy-overview/')
@@ -620,6 +775,10 @@ class AchievementEntryApiTests(APITestCase):
         self.assertIn('data_meta', response.data)
         self.assertIn('filter_options', response.data)
         self.assertIn('active_filters', response.data)
+        self.assertIn('trend_summary', response.data)
+        self.assertIn('comparison_summary', response.data)
+        self.assertIn('realtime_metrics', response.data['data_meta'])
+        self.assertIn('offline_candidate_metrics', response.data['data_meta'])
 
     @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
@@ -672,6 +831,68 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(search_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(search_response.data), 1)
         self.assertEqual(search_response.data[0]['title'], '已更新论文')
+
+    def test_teacher_can_filter_sort_and_summarize_papers(self):
+        Paper.objects.create(
+            teacher=self.user,
+            title='代表作论文',
+            abstract='这是一个足够长的摘要，用于验证成果中心支持代表作筛选、统计和近年成果展示。',
+            date_acquired='2026-02-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊 A',
+            journal_level='SCI',
+            pages='1-8',
+            source_url='https://example.com/a',
+            citation_count=12,
+            is_representative=True,
+            doi='10.1000/summary-a',
+        )
+        Paper.objects.create(
+            teacher=self.user,
+            title='普通论文',
+            abstract='这是另一个足够长的摘要，用于验证按年份过滤和元数据缺失统计。',
+            date_acquired='2024-05-10',
+            paper_type='CONFERENCE',
+            journal_name='测试会议 B',
+            citation_count=2,
+            doi='',
+        )
+        Paper.objects.create(
+            teacher=self.user,
+            title='高被引论文',
+            abstract='这是第三个足够长的摘要，用于验证按引用次数排序。',
+            date_acquired='2025-06-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊 C',
+            journal_level='核心期刊',
+            pages='33-40',
+            source_url='https://example.com/c',
+            citation_count=20,
+            doi='10.1000/summary-c',
+        )
+
+        representative_response = self.client.get(
+            '/api/achievements/papers/',
+            {'is_representative': 'true', 'sort_by': 'citation_desc'},
+        )
+        yearly_response = self.client.get('/api/achievements/papers/', {'year': 2024})
+        summary_response = self.client.get('/api/achievements/papers/summary/')
+
+        self.assertEqual(representative_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(representative_response.data), 1)
+        self.assertEqual(representative_response.data[0]['title'], '代表作论文')
+
+        self.assertEqual(yearly_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(yearly_response.data), 1)
+        self.assertEqual(yearly_response.data[0]['title'], '普通论文')
+
+        self.assertEqual(summary_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(summary_response.data['total_count'], 3)
+        self.assertEqual(summary_response.data['representative_count'], 1)
+        self.assertEqual(summary_response.data['missing_doi_count'], 1)
+        self.assertTrue(any(item['paper_type'] == 'JOURNAL' for item in summary_response.data['type_distribution']))
+        self.assertTrue(any(item['year'] == 2026 for item in summary_response.data['yearly_distribution']))
+        self.assertEqual(summary_response.data['recent_records'][0]['title'], '代表作论文')
 
     @patch('achievements.views.AcademicGraphSyncService')
     def test_teacher_can_search_projects_by_title_or_status(self, graph_sync_service):
@@ -754,3 +975,40 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['statistics'][1]['value'], 1)
         self.assertEqual(len(response.data['top_active_teachers']), 1)
         self.assertEqual(response.data['top_active_teachers'][0]['user_id'], teacher_in_scope.id)
+
+    def test_academy_dashboard_includes_extended_filter_and_ranking_fields(self):
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=2,
+            username='admin2',
+            password='Admin123456',
+            real_name='系统管理员二号',
+        )
+        teacher = user_model.objects.create_user(
+            id=100092,
+            username='100092',
+            password='teacher123456',
+            real_name='合作教师',
+            department='人工智能学院',
+            title='副教授',
+        )
+        paper = Paper.objects.create(
+            teacher=teacher,
+            title='合作论文',
+            abstract='这是一个足够长的摘要，用于验证学院看板扩展字段保持稳定返回。',
+            date_acquired='2025-06-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=7,
+        )
+        paper.coauthors.create(name='校外合作者')
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get('/api/achievements/academy-overview/', {'teacher_title': '副教授', 'has_collaboration': 'true'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['active_filters']['teacher_title'], '副教授')
+        self.assertTrue(response.data['active_filters']['has_collaboration'])
+        self.assertIn('teacher_titles', response.data['filter_options'])
+        self.assertIn('department_breakdown', response.data)
+        self.assertIn('latest_active_year', response.data['top_active_teachers'][0])

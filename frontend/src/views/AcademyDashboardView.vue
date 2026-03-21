@@ -1,31 +1,35 @@
 <template>
-  <div class="academy-page">
-    <section class="hero-shell">
+  <div class="academy-page workspace-page">
+    <section class="hero-shell workspace-hero workspace-hero--brand">
       <div class="hero-main">
         <div>
-          <p class="eyebrow">Academy Overview</p>
-          <h1>学院级科研统计看板</h1>
-          <p class="subtitle">面向管理员聚合展示教师、成果、合作与院系统计，聚焦当前阶段可演示、可验收的核心指标。</p>
+          <p class="eyebrow workspace-hero__eyebrow">Academy Overview</p>
+          <h1 class="workspace-hero__title">学院级科研统计看板</h1>
+          <p class="subtitle workspace-hero__text">面向管理员聚合展示教师、成果、合作与院系统计，聚焦当前阶段可演示、可验收的核心指标。</p>
         </div>
-        <div class="hero-actions">
+        <div class="hero-actions workspace-page-actions">
           <el-button type="primary" plain :loading="loading" @click="loadOverview">刷新统计</el-button>
           <el-button @click="router.push('/dashboard')">返回教师画像</el-button>
         </div>
       </div>
     </section>
 
-    <el-result
+    <div
       v-if="checkedUser && !checkedUser.is_admin"
-      icon="warning"
-      title="仅管理员可访问学院级统计看板"
-      sub-title="当前页面为管理端统计视图，教师账号无法访问。"
-    />
+      class="workspace-status-result workspace-content-shell"
+    >
+      <el-result
+        icon="warning"
+        title="仅管理员可访问学院级统计看板"
+        sub-title="当前页面为管理端统计视图，教师账号无法访问。"
+      />
+    </div>
 
     <template v-else>
       <section class="filter-shell">
-        <el-card class="filter-card" shadow="never">
+        <el-card class="filter-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="section-head">
+            <div class="section-head workspace-section-head">
               <span>筛选、钻取与导出</span>
               <el-tag type="primary" effect="plain">第三轮增强</el-tag>
             </div>
@@ -58,7 +62,7 @@
       </section>
 
       <section class="metric-grid">
-        <el-card v-for="item in statistics" :key="item.title" class="metric-card" shadow="hover">
+      <el-card v-for="item in statistics" :key="item.title" class="metric-card workspace-surface-card" shadow="hover">
           <div class="metric-top">
             <span class="metric-label">{{ item.title }}</span>
             <el-icon :class="item.iconClass" :size="22">
@@ -74,9 +78,9 @@
       </section>
 
       <section class="chart-grid">
-        <el-card class="chart-card" shadow="never">
+        <el-card class="chart-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="section-head">
+            <div class="section-head workspace-section-head">
               <span>年度成果趋势</span>
               <el-tag type="success" effect="plain">MySQL 实时聚合</el-tag>
             </div>
@@ -84,9 +88,9 @@
           <div ref="trendChartRef" class="chart-canvas"></div>
         </el-card>
 
-        <el-card class="chart-card" shadow="never">
+        <el-card class="chart-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="section-head">
+            <div class="section-head workspace-section-head">
               <span>院系统计分布</span>
               <el-tag type="warning" effect="plain">{{ departmentDistribution.length }} 个分组</el-tag>
             </div>
@@ -96,9 +100,9 @@
       </section>
 
       <section class="bottom-grid">
-        <el-card class="rank-card" shadow="never">
+        <el-card class="rank-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="section-head">
+            <div class="section-head workspace-section-head">
               <span>高活跃教师排行</span>
               <el-tag type="primary" effect="plain">按成果总量排序</el-tag>
             </div>
@@ -120,9 +124,9 @@
           </el-table>
         </el-card>
 
-        <el-card class="meta-card" shadow="never">
+        <el-card class="meta-card workspace-surface-card" shadow="never">
           <template #header>
-            <div class="section-head">
+            <div class="section-head workspace-section-head">
               <span>合作活跃度概览</span>
               <el-tag type="info" effect="plain">轻量聚合</el-tag>
             </div>
@@ -196,13 +200,16 @@ const departmentDistribution = ref<DepartmentDistributionRecord[]>([])
 const topActiveTeachers = ref<TopActiveTeacherRecord[]>([])
 const filterOptions = ref<AcademyFilterOptions>({
   departments: [],
+  teacher_titles: [],
   teachers: [],
   years: [],
 })
 const activeFilters = ref<AcademyActiveFilters>({
   department: '',
   teacher_id: null,
+  teacher_title: '',
   year: null,
+  has_collaboration: null,
 })
 const collaborationOverview = ref<CollaborationOverview>({
   coauthor_relation_total: 0,

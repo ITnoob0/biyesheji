@@ -15,6 +15,8 @@ export type {
   PaperFormState,
   PaperMutationPayload,
   PaperRecord,
+  PaperSummaryRecord,
+  PaperSummaryResponse,
   ProjectFormState,
   ProjectMutationPayload,
   ProjectRecord,
