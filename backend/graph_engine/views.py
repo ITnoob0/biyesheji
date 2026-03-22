@@ -1,11 +1,11 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from users.access import GRAPH_SCOPE_MESSAGE, ensure_self_or_admin_user
 from .analysis import build_graph_analysis
 
 
@@ -35,8 +35,14 @@ class AcademicGraphTopologyView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id: int) -> Response:
-        if request.user.id != user_id and not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied('You do not have permission to view this graph.')
+        user_model = get_user_model()
+        try:
+            teacher = user_model.objects.get(id=user_id)
+        except user_model.DoesNotExist:
+            teacher = None
+
+        if teacher is not None:
+            ensure_self_or_admin_user(request.user, teacher, GRAPH_SCOPE_MESSAGE)
 
         neo4j_topology = self._build_neo4j_topology(user_id)
         if neo4j_topology is not None:

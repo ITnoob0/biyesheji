@@ -5,7 +5,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { TokenObtainPairResponse } from '../types/auth'
 import { resolvePostLoginRedirect } from '../utils/sessionFlow.js'
+import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { buildPasswordSecurityNotice, resolveLoginFailureMessage } from '../utils/authPresentation.js'
+import { resolvePostLoginLandingPath } from '../utils/workspaceNavigation.js'
 import {
   clearSessionAuth,
   consumeAuthRedirectTarget,
@@ -19,6 +21,7 @@ const password = ref('')
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+const loginErrorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
 
 const redirectHint = computed(() =>
   typeof route.query.redirect === 'string' && route.query.redirect.trim()
@@ -28,6 +31,7 @@ const redirectHint = computed(() =>
 
 const handleLogin = async () => {
   clearSessionAuth()
+  loginErrorNotice.value = null
   loading.value = true
 
   try {
@@ -48,11 +52,15 @@ const handleLogin = async () => {
       consumeAuthRedirectTarget(),
     )
 
-    router.push(redirectTarget)
+    router.push(resolvePostLoginLandingPath(redirectTarget, sessionUser))
     ElMessage.success('登录成功')
   } catch (error: any) {
     clearSessionAuth()
-    ElMessage.error(resolveLoginFailureMessage(error))
+    loginErrorNotice.value = buildApiErrorNotice(error, {
+      fallbackMessage: resolveLoginFailureMessage(error),
+      fallbackGuidance: '请核对工号或管理员账号、密码；若账户被停用或密码被初始化，请联系管理员处理。',
+    })
+    ElMessage.error(loginErrorNotice.value.message)
   } finally {
     loading.value = false
   }
@@ -74,6 +82,15 @@ onMounted(() => {
       <p class="description">
         管理员继续使用 <code>admin</code> 登录，教师继续使用 6 位工号作为登录用户名。
       </p>
+
+      <el-alert
+        v-if="loginErrorNotice"
+        :title="loginErrorNotice.message"
+        type="error"
+        :description="[loginErrorNotice.guidance, loginErrorNotice.requestHint].filter(Boolean).join(' ')"
+        :closable="false"
+        show-icon
+      />
 
       <el-alert
         v-if="redirectHint"

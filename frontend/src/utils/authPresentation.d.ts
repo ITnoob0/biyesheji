@@ -13,6 +13,12 @@ export function buildPasswordSecurityNotice(
 
 export function formatPasswordUpdatedAt(value: string | null | undefined): string
 
+export function buildAdminRouteNotice(featureLabel?: string): string
+
+export function buildAdminPortraitSelectionNotice(): string
+
+export function buildSelfOnlyNotice(resourceLabel?: string): string
+
 export function resolvePermissionDeniedMessage(detail: string | null | undefined): string
 
 export function resolveApiErrorMessage(errorLike: any, fallbackMessage?: string): string

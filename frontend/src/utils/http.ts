@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import type { Router } from 'vue-router'
+import { resolveApiErrorMessage } from './apiFeedback.js'
 import {
   clearSessionAuth,
   getSessionRefreshToken,
@@ -140,7 +141,7 @@ export const initializeHttpClient = (router?: Router): void => {
         }
       }
 
-      await invalidateSession()
+      await invalidateSession(resolveApiErrorMessage(error, '登录状态已失效，请重新登录后继续操作。'))
       return Promise.reject(error)
     },
   )

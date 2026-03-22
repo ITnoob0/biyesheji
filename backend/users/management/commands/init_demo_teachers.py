@@ -12,6 +12,7 @@ from achievements.models import (
     TeacherProfile,
     TeachingAchievement,
 )
+from project_guides.models import ProjectGuide
 from users.serializers import DEFAULT_TEACHER_PASSWORD, sync_teacher_profile
 from users.services import set_user_password
 
@@ -19,10 +20,47 @@ from users.services import set_user_password
 class Command(BaseCommand):
     help = 'Initialize demo teacher accounts, profiles, and achievement data.'
 
+    DEMO_ADMIN_ID = 1
+    DEMO_ADMIN_USERNAME = 'admin'
+    DEMO_ADMIN_PASSWORD = 'Admin123456'
+    DEMO_GUIDE_SOURCE_PREFIX = 'https://demo.local/guides/'
+    DEMO_TEACHER_IDS = (100001, 100002, 100003, 100004)
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--reset-demo-data',
+            action='store_true',
+            help='删除并重建内置演示教师数据与演示项目指南，恢复到标准可演示状态。',
+        )
+        parser.add_argument(
+            '--reset-passwords',
+            action='store_true',
+            help='显式将内置演示账号密码重置为标准演示密码；默认保留数据库中已有密码。',
+        )
+        parser.add_argument(
+            '--print-accounts',
+            action='store_true',
+            help='初始化完成后打印演示账号清单与默认密码说明。',
+        )
+
     def handle(self, *args, **options):
         user_model = get_user_model()
+        reset_demo_data = bool(options.get('reset_demo_data'))
+        reset_passwords = bool(options.get('reset_passwords'))
+        print_accounts = bool(options.get('print_accounts'))
 
-        self._bootstrap_admin(user_model)
+        if reset_demo_data:
+            reset_summary = self._reset_demo_state(user_model)
+            self.stdout.write(
+                self.style.WARNING(
+                    '已重置内置演示数据：'
+                    f"删除教师账号 {reset_summary['teacher_count']} 个，"
+                    f"删除演示指南 {reset_summary['guide_count']} 条。"
+                )
+            )
+
+        account_password_states: dict[str, str] = {}
+        admin_user = self._bootstrap_admin(user_model, reset_passwords, account_password_states)
 
         teachers = [
             {
@@ -223,8 +261,9 @@ class Command(BaseCommand):
             },
         ]
 
+        created_teachers = []
         for teacher_data in teachers:
-            user = self._create_or_update_teacher(user_model, teacher_data)
+            user = self._create_or_update_teacher(user_model, teacher_data, reset_passwords, account_password_states)
             self._sync_papers(user, teacher_data['papers'])
             if 'project' in teacher_data:
                 self._sync_project(user, teacher_data['project'])
@@ -234,14 +273,19 @@ class Command(BaseCommand):
                 self._sync_teaching(user, teacher_data['teaching'])
             if 'service' in teacher_data:
                 self._sync_service(user, teacher_data['service'])
+            created_teachers.append(user)
+
+        self._sync_demo_guides(admin_user)
 
         self.stdout.write(self.style.SUCCESS('Demo teacher accounts and base data initialized successfully.'))
+        if print_accounts:
+            self._print_account_summary(admin_user, created_teachers, account_password_states, reset_passwords)
 
-    def _bootstrap_admin(self, user_model):
-        admin_user, _ = user_model.objects.get_or_create(
-            id=1,
+    def _bootstrap_admin(self, user_model, reset_passwords: bool, account_password_states: dict[str, str]):
+        admin_user, created = user_model.objects.get_or_create(
+            id=self.DEMO_ADMIN_ID,
             defaults={
-                'username': 'admin',
+                'username': self.DEMO_ADMIN_USERNAME,
                 'real_name': '系统管理员',
                 'department': '科研管理中心',
                 'title': '管理员',
@@ -257,11 +301,26 @@ class Command(BaseCommand):
         admin_user.is_superuser = True
         admin_user.is_active = True
         admin_user.save()
-        set_user_password(admin_user, 'Admin123456', require_password_change=False)
+        if created or reset_passwords or not admin_user.has_usable_password():
+            set_user_password(admin_user, self.DEMO_ADMIN_PASSWORD, require_password_change=False)
+            account_password_states[admin_user.username] = self.DEMO_ADMIN_PASSWORD
+        else:
+            account_password_states[admin_user.username] = '__preserved__'
+        sync_teacher_profile(
+            admin_user,
+            {
+                'department': admin_user.department,
+                'title': admin_user.title,
+                'discipline': '科研治理',
+                'research_interests': '演示治理, 系统维护',
+                'h_index': 0,
+            },
+        )
+        return admin_user
 
-    def _create_or_update_teacher(self, user_model, data):
+    def _create_or_update_teacher(self, user_model, data, reset_passwords: bool, account_password_states: dict[str, str]):
         login_account = str(data['id'])
-        user, _ = user_model.objects.get_or_create(
+        user, created = user_model.objects.get_or_create(
             id=data['id'],
             defaults={
                 'username': login_account,
@@ -282,7 +341,11 @@ class Command(BaseCommand):
         user.research_direction = data['research_direction']
         user.is_active = True
         user.save()
-        set_user_password(user, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
+        if created or reset_passwords or not user.has_usable_password():
+            set_user_password(user, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
+            account_password_states[user.username] = DEFAULT_TEACHER_PASSWORD
+        else:
+            account_password_states[user.username] = '__preserved__'
 
         sync_teacher_profile(
             user,
@@ -356,4 +419,119 @@ class Command(BaseCommand):
             teacher=user,
             title=service_data['title'],
             defaults=service_data,
+        )
+
+    def _sync_demo_guides(self, admin_user):
+        guides = [
+            {
+                'title': '高校教师科研画像与智能评价专项指南',
+                'issuing_agency': '省教育厅',
+                'guide_level': 'PROVINCIAL',
+                'status': 'OPEN',
+                'rule_profile': 'KEYWORD_FIRST',
+                'application_deadline': '2026-06-30',
+                'summary': '面向教师科研画像、教育知识图谱与智能评价方向组织申报，是推荐与问答演示的核心指南数据。',
+                'target_keywords': ['科研画像', '知识图谱', '教师评价'],
+                'target_disciplines': ['人工智能', '教育数据智能', '教育技术学院'],
+                'recommendation_tags': ['画像重点', '省部级', '演示推荐'],
+                'support_amount': '20-30 万元',
+                'eligibility_notes': '申报人需具备近三年相关成果基础。',
+                'source_url': f'{self.DEMO_GUIDE_SOURCE_PREFIX}portrait-evaluation',
+            },
+            {
+                'title': '教育数据智能与学习分析项目指南',
+                'issuing_agency': '省科技厅',
+                'guide_level': 'PROVINCIAL',
+                'status': 'OPEN',
+                'rule_profile': 'DISCIPLINE_FIRST',
+                'application_deadline': '2026-07-15',
+                'summary': '面向教育数据智能、学习分析和科研服务平台方向，用于演示推荐筛选、排序和说明能力。',
+                'target_keywords': ['教育数据智能', '学习分析', '可视化分析'],
+                'target_disciplines': ['数据科学', '教育数据智能', '信息工程学院'],
+                'recommendation_tags': ['学科贴合', '演示推荐'],
+                'support_amount': '15-25 万元',
+                'eligibility_notes': '需具备教育数据或学习分析相关研究积累。',
+                'source_url': f'{self.DEMO_GUIDE_SOURCE_PREFIX}edu-data-analytics',
+            },
+            {
+                'title': '跨模态数字人与智能交互合作指南',
+                'issuing_agency': '某重点实验室',
+                'guide_level': 'ENTERPRISE',
+                'status': 'OPEN',
+                'rule_profile': 'ACTIVITY_FIRST',
+                'application_deadline': '2026-08-01',
+                'summary': '面向数字人、跨模态智能和智能交互合作，用于展示不同教师画像下的推荐差异。',
+                'target_keywords': ['跨模态智能', '数字人', '情感计算'],
+                'target_disciplines': ['智能计算', '人工智能学院'],
+                'recommendation_tags': ['企业合作', '对比演示'],
+                'support_amount': '联合研发',
+                'eligibility_notes': '鼓励具有跨模态成果积累的教师团队申报。',
+                'source_url': f'{self.DEMO_GUIDE_SOURCE_PREFIX}multimodal-agent',
+            },
+            {
+                'title': '科研治理平台建设预研指南',
+                'issuing_agency': '校科研处',
+                'guide_level': 'MUNICIPAL',
+                'status': 'DRAFT',
+                'rule_profile': 'BALANCED',
+                'application_deadline': '2026-09-01',
+                'summary': '保留一条草稿状态指南，用于管理员项目指南管理页面演示。',
+                'target_keywords': ['科研治理', '平台建设'],
+                'target_disciplines': ['科研治理'],
+                'recommendation_tags': ['管理员演示'],
+                'support_amount': '待定',
+                'eligibility_notes': '当前为演示草稿数据，不面向教师开放。',
+                'source_url': f'{self.DEMO_GUIDE_SOURCE_PREFIX}governance-draft',
+            },
+        ]
+
+        for guide_data in guides:
+            defaults = {**guide_data, 'created_by': admin_user}
+            ProjectGuide.objects.update_or_create(
+                source_url=guide_data['source_url'],
+                defaults=defaults,
+            )
+
+    def _reset_demo_state(self, user_model):
+        demo_users = user_model.objects.filter(id__in=self.DEMO_TEACHER_IDS)
+        teacher_count = demo_users.count()
+        demo_users.delete()
+
+        demo_guides = ProjectGuide.objects.filter(source_url__startswith=self.DEMO_GUIDE_SOURCE_PREFIX)
+        guide_count = demo_guides.count()
+        demo_guides.delete()
+
+        return {
+            'teacher_count': teacher_count,
+            'guide_count': guide_count,
+        }
+
+    def _print_account_summary(self, admin_user, teachers, account_password_states, reset_passwords: bool):
+        self.stdout.write('')
+        self.stdout.write(self.style.HTTP_INFO('演示账号清单'))
+        admin_password_state = account_password_states.get(admin_user.username)
+        if admin_password_state and admin_password_state != '__preserved__':
+            self.stdout.write(f"- 管理员账号：{admin_user.username} / {admin_password_state}")
+        else:
+            self.stdout.write(
+                f"- 管理员账号：{admin_user.username} / 已保留现有密码（数据库中为加密存储，无法直接回显明文）"
+            )
+        if reset_passwords:
+            self.stdout.write(
+                f"- 教师默认密码：{DEFAULT_TEACHER_PASSWORD}（本次已显式重置为标准演示密码，初始化后为临时密码）"
+            )
+        else:
+            self.stdout.write(
+                f"- 教师账号密码：默认保留数据库中已有密码；仅新建账号会使用 {DEFAULT_TEACHER_PASSWORD}"
+            )
+        for teacher in teachers:
+            password_state = account_password_states.get(teacher.username)
+            if password_state and password_state != '__preserved__':
+                self.stdout.write(f"- 教师账号：{teacher.username} / {password_state} / {teacher.real_name}")
+            else:
+                self.stdout.write(
+                    f"- 教师账号：{teacher.username} / 已保留现有密码（数据库中为加密存储，无法直接回显明文） / {teacher.real_name}"
+                )
+        self.stdout.write(
+            '- 说明：以上仅为内置演示账号，不应与真实业务环境中的正式账号和真实业务数据混用。'
         )

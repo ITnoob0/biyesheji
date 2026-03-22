@@ -1,23 +1,9 @@
+import { resolveApiErrorMessage } from './apiFeedback.js'
+
 const DEFAULT_PERMISSION_MESSAGE = '当前身份没有权限执行此操作。'
 const DEFAULT_LOGIN_FAILURE_MESSAGE = '登录失败，请检查工号/账号和密码。'
-const HTML_DEBUG_PAYLOAD_PATTERN = /<\/?[a-z][\s\S]*>|<!DOCTYPE|Traceback/i
-
-const extractSafeText = detail => {
-  if (typeof detail !== 'string') {
-    return ''
-  }
-
-  const normalized = detail.trim()
-  if (!normalized) {
-    return ''
-  }
-
-  if (HTML_DEBUG_PAYLOAD_PATTERN.test(normalized)) {
-    return ''
-  }
-
-  return normalized
-}
+const DEFAULT_ADMIN_ROUTE_NOTICE = '当前账号为教师身份，不能访问管理员入口。'
+const DEFAULT_ADMIN_PORTRAIT_NOTICE = '管理员登录后默认进入教师管理，请先选择教师后再查看画像。'
 
 export const resolveRoleLabel = user => {
   if (user?.role_label && String(user.role_label).trim()) {
@@ -53,37 +39,22 @@ export const resolvePermissionDeniedMessage = detail => {
   return message || DEFAULT_PERMISSION_MESSAGE
 }
 
-export const resolveApiErrorMessage = (errorLike, fallbackMessage = '操作失败，请稍后重试。') => {
-  const detail = errorLike?.response?.data
-
-  const safeText = extractSafeText(detail)
-  if (safeText) {
-    return safeText
+export const buildAdminRouteNotice = (featureLabel = '管理员入口') => {
+  const normalized = typeof featureLabel === 'string' ? featureLabel.trim() : ''
+  if (!normalized || normalized === '管理员入口') {
+    return DEFAULT_ADMIN_ROUTE_NOTICE
   }
-
-  if (detail?.detail) {
-    const safeDetail = extractSafeText(String(detail.detail))
-    if (safeDetail) {
-      return safeDetail
-    }
-  }
-
-  if (detail && typeof detail === 'object') {
-    const firstValue = Object.values(detail)[0]
-    if (Array.isArray(firstValue) && firstValue.length) {
-      const safeArrayValue = extractSafeText(String(firstValue[0]))
-      if (safeArrayValue) {
-        return safeArrayValue
-      }
-    }
-    const safeFirstValue = extractSafeText(firstValue)
-    if (safeFirstValue) {
-      return safeFirstValue
-    }
-  }
-
-  return fallbackMessage
+  return `当前账号为教师身份，不能访问${normalized}。`
 }
+
+export const buildSelfOnlyNotice = (resourceLabel = '本人的画像与账户信息') => {
+  const normalized = typeof resourceLabel === 'string' ? resourceLabel.trim() : ''
+  return `教师账号只能查看${normalized || '本人的数据'}`
+}
+
+export const buildAdminPortraitSelectionNotice = () => DEFAULT_ADMIN_PORTRAIT_NOTICE
+
+export { resolveApiErrorMessage }
 
 export const resolveLoginFailureMessage = errorLike => {
   const detail = resolveApiErrorMessage(errorLike, DEFAULT_LOGIN_FAILURE_MESSAGE)

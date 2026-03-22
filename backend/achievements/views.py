@@ -12,7 +12,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ai_assistant.utils import AcademicAI
+from core.api_errors import api_error_response
 from graph_engine.services import AcademicGraphSyncService
+from users.access import (
+    PROFILE_SCOPE_MESSAGE,
+    TEACHER_SELF_SERVICE_ONLY_MESSAGE,
+    ensure_self_or_admin_user,
+    ensure_self_user,
+    ensure_teacher_user,
+)
 
 from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes
 from .import_serializers import BibtexConfirmImportSerializer, BibtexPreviewRequestSerializer
@@ -46,14 +54,14 @@ def get_requested_teacher(request, user_id: int | None = None):
         except (TypeError, ValueError):
             return None
 
-        if request.user.id != normalized_user_id and not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied('You do not have permission to view this teacher profile.')
-
         user_model = get_user_model()
         try:
-            return user_model.objects.get(id=normalized_user_id)
+            target_user = user_model.objects.get(id=normalized_user_id)
         except user_model.DoesNotExist:
             return None
+
+        ensure_self_or_admin_user(request.user, target_user, PROFILE_SCOPE_MESSAGE)
+        return target_user
 
     return request.user
 
@@ -156,7 +164,13 @@ class TeacherRadarView(APIView):
     def get(self, request, user_id: int) -> Response:
         user = get_requested_teacher(request, user_id=user_id)
         if user is None:
-            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='教师账户不存在。',
+                code='teacher_not_found',
+                request=request,
+                next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
+            )
 
         radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
         return Response(
@@ -192,14 +206,19 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         instance = serializer.save(teacher=self.request.user)
         self.sync_graph(instance)
 
     def perform_update(self, serializer):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, serializer.instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         instance = serializer.save()
         self.sync_graph(instance)
 
     def perform_destroy(self, instance):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         identifier = instance.id
         instance.delete()
         self.delete_graph_snapshot(identifier)
@@ -278,7 +297,13 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         try:
             preview_data = build_bibtex_preview_entries(raw_content, request.user)
         except ValueError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=str(exc),
+                code='bibtex_preview_invalid',
+                request=request,
+                next_step='请检查 BibTeX 内容编码、条目格式和必填字段后重新预览。',
+            )
 
         return Response(
             {
@@ -541,7 +566,13 @@ class TeacherDashboardStatsView(APIView):
     def get(self, request):
         user = get_requested_teacher(request)
         if user is None:
-            return Response({'detail': 'Teacher not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='教师账户不存在。',
+                code='teacher_not_found',
+                request=request,
+                next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
+            )
 
         radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
         metrics = radar_result['metrics']

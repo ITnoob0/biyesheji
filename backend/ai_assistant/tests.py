@@ -135,6 +135,22 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['academy_snapshot']['department'], '计算机学院')
         self.assertEqual(response.data['academy_snapshot']['year'], 2025)
 
+    def test_admin_can_request_other_teacher_answer(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'portrait_summary',
+                'user_id': self.teacher.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'portrait_summary')
+        self.assertEqual(response.data['teacher_snapshot']['user_id'], self.teacher.id)
+        self.assertTrue(response.data['source_details'])
+
     def test_non_admin_cannot_request_other_teacher_answer(self):
         other_teacher = get_user_model().objects.create_user(
             id=100032,
@@ -166,6 +182,9 @@ class PortraitAssistantApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('error', response.data)
+        self.assertTrue(response.data['error']['next_step'])
+        self.assertTrue(response.data['request_id'])
 
     @patch('ai_assistant.views.PortraitAssistantService.build_answer')
     def test_assistant_returns_fallback_payload_when_answer_generation_fails(self, build_answer):

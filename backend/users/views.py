@@ -4,6 +4,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from core.api_errors import api_error_response
+
 from .access import ensure_admin_user, ensure_manageable_teacher, ensure_self_or_admin_user
 from .serializers import (
     DEFAULT_TEACHER_PASSWORD,
@@ -65,7 +67,7 @@ class TeacherListCreateView(APIView):
         return Response(serializer.data)
 
     def post(self, request):
-        ensure_admin_user(request.user, "只有管理员可以创建教师账户。")
+        ensure_admin_user(request.user)
 
         serializer = TeacherCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -110,18 +112,32 @@ class TeacherDetailView(APIView):
             return None
 
         ensure_self_or_admin_user(request.user, teacher, "当前账号只能查看自己的账户信息。")
+        if request.user.is_staff or request.user.is_superuser:
+            ensure_manageable_teacher(teacher, "教师管理入口仅支持教师账户，不包含管理员账户。")
         return teacher
 
     def get(self, request, user_id):
         teacher = self.get_object(request, user_id)
         if teacher is None:
-            return Response({"detail": "教师账户不存在。"}, status=status.HTTP_404_NOT_FOUND)
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="教师账户不存在。",
+                code="teacher_not_found",
+                request=request,
+                next_step="请确认教师账号是否存在，或刷新教师列表后再试。",
+            )
         return Response(TeacherAccountSerializer(teacher).data)
 
     def patch(self, request, user_id):
         teacher = self.get_object(request, user_id)
         if teacher is None:
-            return Response({"detail": "教师账户不存在。"}, status=status.HTTP_404_NOT_FOUND)
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="教师账户不存在。",
+                code="teacher_not_found",
+                request=request,
+                next_step="请确认教师账号是否存在，或刷新教师列表后再试。",
+            )
 
         serializer_class = (
             TeacherUpdateSerializer if (request.user.is_staff or request.user.is_superuser) else CurrentUserUpdateSerializer
@@ -136,13 +152,19 @@ class TeacherResetPasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, user_id):
-        ensure_admin_user(request.user, "只有管理员可以重置教师密码。")
+        ensure_admin_user(request.user)
 
         user_model = get_user_model()
         try:
             teacher = user_model.objects.get(id=user_id)
         except user_model.DoesNotExist:
-            return Response({"detail": "教师账户不存在。"}, status=status.HTTP_404_NOT_FOUND)
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="教师账户不存在。",
+                code="teacher_not_found",
+                request=request,
+                next_step="请确认教师账号是否存在，或刷新教师列表后再试。",
+            )
 
         ensure_manageable_teacher(teacher, "管理员账户不支持通过教师管理入口重置密码。")
         set_user_password(teacher, DEFAULT_TEACHER_PASSWORD, require_password_change=True)

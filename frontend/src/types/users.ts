@@ -1,5 +1,13 @@
 export type TeacherAccountRoleCode = 'admin' | 'teacher'
 
+export interface TeacherPermissionScope {
+  entry_role: TeacherAccountRoleCode
+  scope_summary: string
+  allowed_actions: string[]
+  restricted_actions: string[]
+  future_extension_hint: string
+}
+
 export interface TeacherAccountResponse {
   id: number
   employee_id: number
@@ -19,6 +27,7 @@ export interface TeacherAccountResponse {
   is_admin: boolean
   role_code: TeacherAccountRoleCode
   role_label: string
+  permission_scope: TeacherPermissionScope
   password_reset_required: boolean
   password_updated_at: string | null
   security_notice: string

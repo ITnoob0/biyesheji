@@ -93,6 +93,30 @@ class ProjectGuideApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_teacher_cannot_update_or_delete_project_guide(self):
+        guide = ProjectGuide.objects.create(
+            title='管理员创建的指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            summary='用于验证教师不能修改或删除指南。',
+            target_keywords=['科研画像'],
+            target_disciplines=['教育数据智能'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.teacher)
+        update_response = self.client.patch(
+            f'/api/project-guides/{guide.id}/',
+            {'title': '越权修改的指南'},
+            format='json',
+        )
+        delete_response = self.client.delete(f'/api/project-guides/{guide.id}/')
+
+        self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(delete_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(ProjectGuide.objects.filter(id=guide.id).exists())
+
     def test_teacher_recommendations_return_reasons_and_empty_state_metadata(self):
         ProjectGuide.objects.create(
             title='教育数据智能专项指南',
@@ -255,6 +279,9 @@ class ProjectGuideApiTests(APITestCase):
         response = self.client.get('/api/project-guides/recommendations/', {'user_id': other_teacher.id})
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('error', response.data)
+        self.assertTrue(response.data['error']['next_step'])
+        self.assertTrue(response.data['request_id'])
 
     def test_teacher_cannot_use_compare_teacher_parameter(self):
         user_model = get_user_model()
@@ -269,6 +296,8 @@ class ProjectGuideApiTests(APITestCase):
         response = self.client.get('/api/project-guides/recommendations/', {'compare_user_id': compare_teacher.id})
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('error', response.data)
+        self.assertTrue(response.data['request_id'])
 
     def test_admin_analysis_exposes_distribution_for_regression_verification(self):
         ProjectGuide.objects.create(

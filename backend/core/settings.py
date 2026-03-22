@@ -5,7 +5,7 @@ import os # 新增
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-7-$&th6v+-7)(izuuoct_#y55ty=+_$01yx#028+t6fv601veo'
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 ALLOWED_HOSTS = ['*'] # 开发阶段允许所有主机
 
 # 1. 注册第三方库和我们的业务 App
@@ -34,6 +34,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware', 
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.RequestIdMiddleware',
+    'core.middleware.ApiExceptionMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -97,6 +99,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'EXCEPTION_HANDLER': 'core.api_errors.custom_exception_handler',
 }
 
 # 6. JWT 配置

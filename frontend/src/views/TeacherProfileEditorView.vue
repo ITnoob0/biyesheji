@@ -88,6 +88,7 @@ const securityNotice = computed(() => buildPasswordSecurityNotice(currentUser.va
 const contactSummary = computed(() => [profileForm.email, profileForm.contact_phone].filter(Boolean).join(' · '))
 const displayName = computed(() => currentUser.value?.real_name || currentUser.value?.username || '教师')
 const avatarText = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'T')
+const permissionScope = computed(() => currentUser.value?.permission_scope ?? null)
 const publicDisplayFields = publicDisplayFieldLabels
 const internalDisplayFields = internalManagementFieldLabels
 
@@ -353,6 +354,46 @@ onMounted(async () => {
               <strong>{{ securityNotice }}</strong>
             </div>
           </div>
+
+          <div v-if="permissionScope" class="permission-scope-panel">
+            <div class="permission-scope-copy">
+              <span>当前权限边界</span>
+              <strong>{{ permissionScope.scope_summary }}</strong>
+            </div>
+
+            <div class="permission-scope-copy">
+              <span>当前可执行操作</span>
+              <div class="field-tag-list compact">
+                <el-tag
+                  v-for="item in permissionScope.allowed_actions"
+                  :key="`allow-${item}`"
+                  type="success"
+                  effect="plain"
+                >
+                  {{ item }}
+                </el-tag>
+              </div>
+            </div>
+
+            <div class="permission-scope-copy">
+              <span>当前受限边界</span>
+              <div class="field-tag-list compact">
+                <el-tag
+                  v-for="item in permissionScope.restricted_actions"
+                  :key="`restricted-${item}`"
+                  type="warning"
+                  effect="plain"
+                >
+                  {{ item }}
+                </el-tag>
+              </div>
+            </div>
+
+            <div class="permission-scope-copy">
+              <span>后续多角色扩展预留</span>
+              <p>{{ permissionScope.future_extension_hint }}</p>
+            </div>
+          </div>
         </el-card>
 
         <PersonalCenterQuickLinks
@@ -547,21 +588,41 @@ h1 {
   margin-top: 18px;
 }
 
+.permission-scope-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
 .internal-item {
   padding: 16px 18px;
   border-radius: 18px;
   background: #f8fbff;
 }
 
-.internal-item span {
+.internal-item span,
+.permission-scope-copy span {
   display: block;
   margin-bottom: 8px;
   color: #64748b;
   font-size: 13px;
 }
 
-.internal-item strong {
+.internal-item strong,
+.permission-scope-copy strong {
   color: #0f172a;
+  line-height: 1.7;
+}
+
+.permission-scope-copy {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.permission-scope-copy p {
+  margin: 0;
+  color: #64748b;
   line-height: 1.7;
 }
 

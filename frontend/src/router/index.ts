@@ -10,8 +10,10 @@ import ProjectGuideManagementView from '../views/ProjectGuideManagementView.vue'
 import ProjectRecommendationView from '../views/ProjectRecommendationView.vue'
 import AcademyDashboardView from '../views/AcademyDashboardView.vue'
 import AssistantDemoView from '../views/AssistantDemoView.vue'
+import { buildAdminRouteNotice, buildSelfOnlyNotice } from '../utils/authPresentation.js'
 import { initializeHttpClient } from '../utils/http'
 import { clearSessionAuth, ensureSessionUserContext, setSessionNotice } from '../utils/sessionAuth'
+import { resolveWorkspaceHomePath } from '../utils/workspaceNavigation.js'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -104,7 +106,7 @@ router.beforeEach(async to => {
     const sessionUser = await ensureSessionUserContext()
 
     if (sessionUser) {
-      return { name: 'dashboard' }
+      return { path: resolveWorkspaceHomePath(sessionUser) }
     }
 
     clearSessionAuth()
@@ -123,7 +125,15 @@ router.beforeEach(async to => {
   }
 
   if (to.meta.requiresAdmin && !sessionUser.is_admin) {
-    setSessionNotice('当前账号为教师身份，不能访问管理员入口。')
+    const adminFeatureLabel =
+      to.name === 'teacher-management'
+        ? '教师管理入口'
+        : to.name === 'project-guide-management'
+          ? '项目指南管理入口'
+          : to.name === 'academy-dashboard'
+            ? '学院级统计看板'
+            : '管理员入口'
+    setSessionNotice(buildAdminRouteNotice(adminFeatureLabel))
     return {
       name: 'dashboard',
       replace: true,
@@ -134,7 +144,7 @@ router.beforeEach(async to => {
     const requestedUserId = Number(to.params.id)
 
     if (Number.isFinite(requestedUserId) && requestedUserId !== sessionUser.id) {
-      setSessionNotice('教师账号只能查看本人的画像与账户信息，已自动切回当前账号。')
+      setSessionNotice(`${buildSelfOnlyNotice('本人的画像与账户信息')}，已自动切回当前账号。`)
       return {
         name: 'profile',
         params: { id: sessionUser.id },

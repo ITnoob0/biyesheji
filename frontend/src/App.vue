@@ -2,7 +2,7 @@
   <div class="app-shell" :class="{ 'app-shell--with-header': showAuthBar }">
     <header v-if="showAuthBar" class="workspace-header">
       <div class="workspace-header__inner">
-        <button type="button" class="workspace-brand" @click="goTo('/dashboard')">
+        <button type="button" class="workspace-brand" @click="goTo(homePath)">
           <span class="workspace-brand__mark">
             <img class="workspace-brand__image" :src="appLogo" alt="系统 Logo" />
           </span>
@@ -77,10 +77,13 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
   ChatDotRound,
+  DataAnalysis,
   Document,
   Histogram,
   MagicStick,
   Odometer,
+  Reading,
+  User,
 } from '@element-plus/icons-vue'
 import {
   consumeSessionNotice,
@@ -90,6 +93,7 @@ import {
   type SessionUser,
 } from './utils/sessionAuth'
 import { resolveRoleLabel } from './utils/authPresentation.js'
+import { resolveWorkspaceHomePath } from './utils/workspaceNavigation.js'
 import appLogo from '../logo.webp'
 
 type PrimaryNavItem = {
@@ -104,14 +108,6 @@ const currentUser = ref<SessionUser | null>(getSessionUser())
 const profileTriggerRef = ref<HTMLElement | null>(null)
 const profileMenuWidth = ref(220)
 let profileResizeObserver: ResizeObserver | null = null
-
-const primaryNavItems: PrimaryNavItem[] = [
-  { label: '画像主页', path: '/dashboard', icon: Odometer },
-  { label: '成果管理', path: '/entry', icon: Histogram },
-  { label: '个人中心', path: '/profile-editor', icon: Document },
-  { label: '智能问答', path: '/assistant-demo', icon: ChatDotRound },
-  { label: '推荐结果', path: '/project-recommendations', icon: MagicStick },
-]
 
 const refreshCurrentUser = () => {
   currentUser.value = getSessionUser()
@@ -162,6 +158,30 @@ onUnmounted(() => {
 const showAuthBar = computed(() => {
   const hiddenRoutes = new Set(['login', 'teacher-register', 'forgot-password'])
   return !hiddenRoutes.has(String(route.name || '')) && Boolean(currentUser.value)
+})
+
+const homePath = computed(() => resolveWorkspaceHomePath(currentUser.value))
+
+const primaryNavItems = computed<PrimaryNavItem[]>(() => {
+  if (currentUser.value?.is_admin) {
+    return [
+      { label: '画像主页', path: '/dashboard', icon: Odometer },
+      { label: '教师管理', path: '/teachers', icon: User },
+      { label: '学院看板', path: '/academy-dashboard', icon: DataAnalysis },
+      { label: '项目指南', path: '/project-guides', icon: Reading },
+      { label: '推荐结果', path: '/project-recommendations', icon: MagicStick },
+      { label: '智能问答', path: '/assistant-demo', icon: ChatDotRound },
+      { label: '个人中心', path: '/profile-editor', icon: Document },
+    ]
+  }
+
+  return [
+    { label: '画像主页', path: '/dashboard', icon: Odometer },
+    { label: '成果管理', path: '/entry', icon: Histogram },
+    { label: '个人中心', path: '/profile-editor', icon: Document },
+    { label: '智能问答', path: '/assistant-demo', icon: ChatDotRound },
+    { label: '推荐结果', path: '/project-recommendations', icon: MagicStick },
+  ]
 })
 
 const displayName = computed(() => {

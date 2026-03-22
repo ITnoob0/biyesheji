@@ -115,6 +115,40 @@ class GraphTopologyFallbackTests(APITestCase):
         response = self.client.get(f'/api/graph/topology/{other_user.id}/')
 
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data['detail'], '教师账号只能查看本人的学术图谱。')
+        self.assertEqual(response.data['error']['status'], 403)
+        self.assertTrue(response.data['request_id'])
+
+    def test_admin_can_access_other_teacher_topology(self):
+        admin = User.objects.create_superuser(
+            id=1,
+            username='admin',
+            password='Admin123456',
+            real_name='系统管理员',
+        )
+        other_user = User.objects.create_user(
+            id=100083,
+            username='100083',
+            password='teacher123456',
+            real_name='被查看教师',
+        )
+        paper = Paper.objects.create(
+            teacher=other_user,
+            title='管理员查看的图谱论文',
+            abstract='围绕管理员查看指定教师学术图谱的权限边界进行验证。',
+            date_acquired='2026-03-02',
+            doi='10.1234/admin-graph-view',
+            paper_type='JOURNAL',
+            journal_name='教育信息化研究',
+        )
+        CoAuthor.objects.create(paper=paper, name='协作作者', is_internal=True)
+
+        self.client.force_authenticate(admin)
+        response = self.client.get(f'/api/graph/topology/{other_user.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['meta']['source'], 'mysql')
+        self.assertTrue(any(node.get('name') == '管理员查看的图谱论文' for node in response.data['nodes']))
 
     @patch('graph_engine.signals.threading.Thread')
     def test_paper_save_signal_does_not_start_full_sync_by_default(self, thread_cls):

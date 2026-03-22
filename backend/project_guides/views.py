@@ -67,7 +67,7 @@ class ProjectGuideRecommendationView(APIView):
         except PermissionError as exc:
             raise PermissionDenied(str(exc)) from exc
         except Exception as exc:
-            raise ValidationError({'detail': str(exc)}) from exc
+            raise ValidationError({'detail': f'推荐参数校验未通过：{exc}'}) from exc
 
         result = ProjectGuideRecommendationService.build_recommendations(
             teacher,

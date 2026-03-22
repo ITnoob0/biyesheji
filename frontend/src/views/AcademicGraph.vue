@@ -19,11 +19,29 @@
         </template>
       </el-alert>
 
+      <el-alert
+        v-if="!loading && errorNotice"
+        type="error"
+        show-icon
+        :closable="false"
+        class="fallback-alert"
+        :title="errorNotice.message"
+      >
+        <template #default>
+          <p>{{ errorNotice.guidance }}</p>
+          <p v-if="errorNotice.requestHint">{{ errorNotice.requestHint }}</p>
+        </template>
+      </el-alert>
+
       <div class="chart-area">
         <div v-loading="loading" ref="chartRef" class="graph-canvas"></div>
 
         <div v-if="!loading && hasError" class="state-layer">
-          <el-result icon="warning" title="图谱加载失败" sub-title="未能读取当前教师图谱数据，但不会影响画像页其他模块。">
+          <el-result
+            icon="warning"
+            title="图谱加载失败"
+            :sub-title="errorNotice?.guidance || '未能读取当前教师图谱数据，但不会影响画像页其他模块。'"
+          >
             <template #extra>
               <el-button type="primary" @click="loadGraph">重试</el-button>
             </template>
@@ -240,6 +258,7 @@ import * as echarts from 'echarts'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { buildGraphSourceSummary } from './graph/sourceState.js'
 import type { GraphLink, GraphNode, GraphNodeType, GraphTopologyAnalysis, GraphTopologyMeta, GraphTopologyResponse } from '../types/graph'
 import { ensureSessionUserContext } from '../utils/sessionAuth'
@@ -259,6 +278,7 @@ const graphAnalysis = ref<GraphTopologyAnalysis | null>(null)
 const selectedNode = ref<GraphNode | null>(null)
 const selectedLink = ref<GraphLink | null>(null)
 const hiddenNodeTypes = ref<GraphNodeType[]>([])
+const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
 
 let chartInstance: echarts.ECharts | null = null
 
@@ -432,6 +452,7 @@ const loadGraph = async () => {
   loading.value = true
   isEmpty.value = false
   hasError.value = false
+  errorNotice.value = null
 
   try {
     const data = await fetchGraphData(props.userId)
@@ -461,7 +482,11 @@ const loadGraph = async () => {
     selectedNode.value = null
     selectedLink.value = null
     chartInstance?.clear()
-    ElMessage.error('学术拓扑图加载失败，画像页其他区域仍可继续使用。')
+    errorNotice.value = buildApiErrorNotice(error, {
+      fallbackMessage: '学术拓扑图加载失败，画像页其他区域仍可继续使用。',
+      fallbackGuidance: '你可以稍后重试；若 Neo4j 不可用，系统会继续保留 MySQL 回退链路。',
+    })
+    ElMessage.warning(errorNotice.value.message)
   } finally {
     loading.value = false
   }

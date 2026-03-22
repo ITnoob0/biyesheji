@@ -34,7 +34,7 @@ class Command(BaseCommand):
         self.stdout.write("1. python scripts\\startup_preflight.py")
         self.stdout.write("2. python manage.py migrate")
         self.stdout.write("3. python scripts\\startup_preflight.py")
-        self.stdout.write("4. python manage.py init_demo_teachers")
+        self.stdout.write("4. python scripts\\restore_demo_state.py")
         self.stdout.write("5. python manage.py runserver")
 
         if failed_results:

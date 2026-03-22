@@ -339,6 +339,7 @@ import RadarChart from '../components/RadarChart.vue'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
 import { buildDimensionTrendNarrative, buildKeywordEvolution, buildThemeFocusSummary } from './dashboard/portraitInsights.js'
+import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import {
   buildAchievementStructureOption,
   buildDimensionTrendOption,
@@ -454,6 +455,16 @@ const ensureUser = async (): Promise<SessionUser | null> => {
 }
 
 const loadTeacherDetail = async () => {
+  if (currentUser.value?.is_admin && userId.value === currentUser.value.id) {
+    const response = await axios.get<TeacherAccountResponse>('/api/users/me/')
+    teacherInfo.value = {
+      ...response.data,
+      name: response.data.real_name || response.data.username,
+      hIndex: response.data.h_index ?? 0,
+    }
+    return
+  }
+
   const response = await axios.get<TeacherAccountResponse>(`/api/users/teachers/${userId.value}/`)
   teacherInfo.value = {
     ...response.data,
@@ -532,7 +543,14 @@ const refreshPortrait = async () => {
     renderStructureChart()
   } catch (error) {
     console.error(error)
-    ElMessage.error('画像数据加载失败，请检查后端接口状态。')
+    const errorNotice = buildApiErrorNotice(error, {
+      fallbackMessage: '画像数据加载失败，请稍后重试。',
+      fallbackGuidance: currentUser.value?.is_admin
+        ? '管理员可返回教师管理查看指定教师画像，或继续查看当前管理员画像。'
+        : '请确认当前登录状态正常，或稍后重试。',
+    })
+
+    ElMessage.error([errorNotice.message, errorNotice.guidance].filter(Boolean).join(' '))
   }
 }
 

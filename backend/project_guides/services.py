@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
+from users.access import COMPARE_SCOPE_MESSAGE, RECOMMENDATION_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
 from users.services import get_teacher_profile
 
 from .models import ProjectGuide
@@ -36,11 +37,13 @@ class ProjectGuideRecommendationService:
             return request.user
 
         normalized_user_id = int(target_user_id)
-        if request.user.id != normalized_user_id and not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionError('当前账号无权查看其他教师的推荐结果。')
-
         user_model = get_user_model()
-        return user_model.objects.get(id=normalized_user_id)
+        teacher = user_model.objects.get(id=normalized_user_id)
+        try:
+            ensure_self_or_admin_user(request.user, teacher, RECOMMENDATION_SCOPE_MESSAGE)
+        except Exception as exc:
+            raise PermissionError(str(exc)) from exc
+        return teacher
 
     @staticmethod
     def resolve_compare_teacher(request, user_id: int | None = None, primary_teacher=None):
@@ -48,8 +51,10 @@ class ProjectGuideRecommendationService:
             return None
 
         normalized_user_id = int(user_id)
-        if not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionError('当前账号无权使用指定教师对比能力。')
+        try:
+            ensure_admin_user(request.user, COMPARE_SCOPE_MESSAGE)
+        except Exception as exc:
+            raise PermissionError(str(exc)) from exc
 
         if primary_teacher and normalized_user_id == primary_teacher.id:
             return None

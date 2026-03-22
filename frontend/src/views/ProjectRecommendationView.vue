@@ -18,6 +18,16 @@
     </section>
 
     <section class="content-shell control-shell">
+      <el-alert
+        v-if="errorNotice"
+        class="page-error-alert"
+        :title="errorNotice.message"
+        type="warning"
+        :description="[errorNotice.guidance, errorNotice.requestHint].filter(Boolean).join(' ')"
+        :closable="false"
+        show-icon
+      />
+
       <el-card shadow="never" class="workspace-surface-card">
         <template #header>
           <div class="section-head workspace-section-head">
@@ -356,6 +366,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
 import { loadFavoriteGuideIds, toggleFavoriteGuideId } from './project-guides/recommendationState.js'
@@ -378,6 +389,7 @@ const selectedLabel = ref('')
 const favoritesOnly = ref(false)
 const selectedSort = ref('score')
 const favoriteGuideIds = ref<number[]>([])
+const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
 
 const sortOptions = buildRecommendationSortOptions()
 
@@ -433,6 +445,7 @@ const loadTeacherOptions = async () => {
 
 const loadRecommendations = async () => {
   loading.value = true
+  errorNotice.value = null
   try {
     const params: Record<string, number> | undefined =
       currentUser.value?.is_admin && (selectedTeacherId.value || route.query.user_id || compareTeacherId.value)
@@ -447,7 +460,11 @@ const loadRecommendations = async () => {
     favoriteGuideIds.value = loadFavoriteGuideIds(data.teacher_snapshot.user_id)
   } catch (error) {
     console.error(error)
-    ElMessage.error('项目指南推荐加载失败，请稍后重试。')
+    errorNotice.value = buildApiErrorNotice(error, {
+      fallbackMessage: '项目指南推荐暂时不可用，请稍后重试。',
+      fallbackGuidance: '你仍可返回画像主页、个人中心或成果中心继续操作，也可以稍后刷新推荐结果。',
+    })
+    ElMessage.warning(errorNotice.value.message)
   } finally {
     loading.value = false
   }
@@ -592,6 +609,11 @@ h2 {
 
 .control-shell {
   margin-bottom: 20px;
+}
+
+.page-error-alert {
+  margin-bottom: 16px;
+  border-radius: 18px;
 }
 
 .control-shell :deep(.el-card) {

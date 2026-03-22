@@ -177,6 +177,7 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
+import { buildAdminRouteNotice } from '../utils/authPresentation.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import {
   buildAcademyTrendOption,
@@ -268,7 +269,7 @@ const loadOverview = async () => {
   } catch (error: any) {
     console.error(error)
     if (error?.response?.status === 403) {
-      ElMessage.error('仅管理员可访问学院级统计看板。')
+      ElMessage.error(buildAdminRouteNotice('学院级统计看板'))
       router.replace('/dashboard')
       return
     }

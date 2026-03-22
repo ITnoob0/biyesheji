@@ -730,6 +730,69 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data[0]['teacher'], self.user.id)
         self.assertEqual(response.data[0]['title'], '管理员查看的论文')
 
+    @patch('achievements.views.AcademicGraphSyncService')
+    @patch('achievements.views.AcademicAI')
+    def test_admin_cannot_create_update_or_delete_teacher_paper_via_teacher_self_service_endpoint(
+        self,
+        academic_ai_cls,
+        graph_sync_service,
+    ):
+        academic_ai_cls.return_value.extract_tags.return_value = []
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=1,
+            username='admin',
+            password='Admin123456',
+            real_name='系统管理员',
+        )
+        paper = Paper.objects.create(
+            teacher=self.user,
+            title='教师自助成果',
+            abstract='这是一个足够长的摘要，用于验证管理员不能通过教师成果自助入口代替教师维护成果。',
+            date_acquired='2025-01-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            doi='10.1000/teacher-self-service-paper',
+        )
+
+        self.client.force_authenticate(user=admin)
+        create_response = self.client.post(
+            '/api/achievements/papers/',
+            {
+                'title': '管理员越权新增论文',
+                'abstract': '这是一个足够长的摘要，用于验证管理员不能通过教师自助入口新增成果。',
+                'date_acquired': '2025-02-01',
+                'paper_type': 'JOURNAL',
+                'journal_name': '测试期刊',
+                'doi': '10.1000/admin-create-denied',
+                'coauthors': [],
+            },
+            format='json',
+        )
+        update_response = self.client.patch(
+            f'/api/achievements/papers/{paper.id}/',
+            {
+                'title': '管理员越权修改',
+                'abstract': '这是一个足够长的摘要，用于验证管理员不能通过教师自助入口修改成果。',
+                'date_acquired': '2025-01-03',
+                'paper_type': 'JOURNAL',
+                'journal_name': '测试期刊',
+                'doi': '10.1000/teacher-self-service-paper',
+                'coauthors': [],
+            },
+            format='json',
+        )
+        delete_response = self.client.delete(f'/api/achievements/papers/{paper.id}/')
+
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(delete_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(create_response.data['detail'], '成果录入和维护仅限教师本人操作，管理员当前仅可查看与验证。')
+        self.assertTrue(Paper.objects.filter(id=paper.id).exists())
+        self.assertEqual(Paper.objects.filter(doi='10.1000/admin-create-denied').count(), 0)
+        graph_sync_service.sync_paper.assert_not_called()
+        graph_sync_service.delete_paper.assert_not_called()
+
     def test_non_admin_cannot_access_academy_overview_dashboard(self):
         response = self.client.get('/api/achievements/academy-overview/')
 

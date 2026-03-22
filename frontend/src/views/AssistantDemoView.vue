@@ -93,6 +93,15 @@
         </div>
 
         <div v-else-if="answerData" class="answer-shell">
+          <el-alert
+            v-if="errorNotice"
+            :title="errorNotice.message"
+            type="warning"
+            :description="[errorNotice.guidance, errorNotice.requestHint].filter(Boolean).join(' ')"
+            :closable="false"
+            show-icon
+          />
+
           <div class="answer-head">
             <div>
               <h2>{{ answerData.title }}</h2>
@@ -169,6 +178,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AssistantAnswerResponse, AssistantQuestionType } from '../types/assistant'
 import type { RecommendationItem, RecommendationResponse } from './project-guides/types'
+import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import { assistantQuestionOptions, buildAssistantFallbackAnswer, supportedQuestionTypes } from './assistant/helpers.js'
 import type { AcademyOverviewResponse } from './academy-dashboard/overview'
@@ -185,6 +195,7 @@ const selectedYear = ref<number | undefined>(undefined)
 const guideOptions = ref<RecommendationItem[]>([])
 const academyDepartments = ref<string[]>([])
 const academyYears = ref<number[]>([])
+const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
 
 const currentTeacherId = computed(() => {
   if (currentUser.value?.is_admin && route.query.user_id) {
@@ -218,6 +229,7 @@ const loadAcademyOptions = async () => {
 
 const submitQuestion = async () => {
   loading.value = true
+  errorNotice.value = null
   try {
     const payload: Record<string, unknown> = {
       question_type: questionType.value,
@@ -242,10 +254,27 @@ const submitQuestion = async () => {
 
     const { data } = await axios.post<AssistantAnswerResponse>('/api/ai-assistant/portrait-qa/', payload)
     answerData.value = data
+    if (data.status === 'fallback') {
+      const sourceReason = data.source_details?.[0]?.value || '当前问答链路已降级。'
+      errorNotice.value = {
+        message: data.failure_notice || '问答结果已降级为说明模式。',
+        guidance: sourceReason,
+        requestHint: '',
+      }
+    }
   } catch (error) {
     console.error(error)
-    answerData.value = buildAssistantFallbackAnswer(questionType.value, '问答接口暂时不可用或当前环境依赖不完整。')
-    ElMessage.warning('问答结果已降级为基础说明模式。')
+    errorNotice.value = buildApiErrorNotice(error, {
+      fallbackMessage: '问答结果已降级为基础说明模式。',
+      fallbackGuidance: '当前问答链路异常不会影响画像、成果、推荐和学院看板等主链路页面。',
+    })
+    answerData.value = buildAssistantFallbackAnswer(
+      questionType.value,
+      errorNotice.value.requestHint
+        ? `${errorNotice.value.message}（${errorNotice.value.requestHint}）`
+        : errorNotice.value.message,
+    )
+    ElMessage.warning(errorNotice.value.message)
   } finally {
     loading.value = false
   }
@@ -253,6 +282,7 @@ const submitQuestion = async () => {
 
 watch(questionType, async nextType => {
   answerData.value = null
+  errorNotice.value = null
   if (nextType === 'guide_reason' && !guideOptions.value.length) {
     await loadGuideOptions()
   }

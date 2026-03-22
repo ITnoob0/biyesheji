@@ -8,6 +8,7 @@ from rest_framework import serializers
 from .access import is_admin_user
 from .services import (
     get_teacher_profile,
+    get_user_permission_scope,
     get_user_role_code,
     get_user_role_label,
     get_user_security_notice,
@@ -24,6 +25,7 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
     is_admin = serializers.SerializerMethodField()
     role_code = serializers.SerializerMethodField()
     role_label = serializers.SerializerMethodField()
+    permission_scope = serializers.SerializerMethodField()
     discipline = serializers.SerializerMethodField()
     research_interests = serializers.SerializerMethodField()
     h_index = serializers.SerializerMethodField()
@@ -50,6 +52,7 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
             "is_admin",
             "role_code",
             "role_label",
+            "permission_scope",
             "password_reset_required",
             "password_updated_at",
             "security_notice",
@@ -63,6 +66,9 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
 
     def get_role_label(self, obj):
         return get_user_role_label(obj)
+
+    def get_permission_scope(self, obj):
+        return get_user_permission_scope(obj)
 
     def get_discipline(self, obj):
         profile = get_teacher_profile(obj)

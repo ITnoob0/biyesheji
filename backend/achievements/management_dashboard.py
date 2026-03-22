@@ -1,9 +1,10 @@
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from users.access import ACADEMY_SCOPE_MESSAGE, ensure_admin_user
 
 from .academy_dashboard_analysis import (
     build_collaboration_overview,
@@ -19,18 +20,11 @@ from .academy_dashboard_analysis import (
     normalize_year,
     parse_bool_query_param,
 )
-
-
-def ensure_admin(user):
-    if not (user.is_staff or user.is_superuser):
-        raise PermissionDenied('Only administrators can access the academy dashboard.')
-
-
 class AcademyOverviewDashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_admin(request.user)
+        ensure_admin_user(request.user, ACADEMY_SCOPE_MESSAGE)
 
         user_model = get_user_model()
         all_teachers = user_model.objects.filter(is_superuser=False)

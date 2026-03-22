@@ -1,9 +1,18 @@
 import { resolvePostLoginRedirect } from '../src/utils/sessionFlow.js'
 import {
+  buildAdminRouteNotice,
+  buildAdminPortraitSelectionNotice,
   buildPasswordSecurityNotice,
+  buildSelfOnlyNotice,
   resolveLoginFailureMessage,
   resolveRoleLabel,
 } from '../src/utils/authPresentation.js'
+import { buildApiErrorNotice, resolveApiErrorMessage } from '../src/utils/apiFeedback.js'
+import {
+  resolvePostLoginLandingPath,
+  resolveWorkspaceHomePath,
+  shouldRedirectAdminPortraitRoute,
+} from '../src/utils/workspaceNavigation.js'
 import { upsertAchievementRecord, removeAchievementRecord } from '../src/views/achievement-entry/recordState.js'
 import {
   buildImportFeedbackLines,
@@ -33,6 +42,33 @@ const verifyRedirectRecovery = () => {
   assert(resolvePostLoginRedirect('/entry', '/profile/100001') === '/profile/100001', '应优先回跳缓存的目标页')
   assert(resolvePostLoginRedirect('/entry', '') === '/entry', '无缓存回跳时应使用路由 redirect')
   assert(resolvePostLoginRedirect('', '') === '/dashboard', '无 redirect 时应回到画像首页')
+
+  assert(resolveWorkspaceHomePath({ is_admin: true }) === '/dashboard', '管理员工作台首页应支持画像主页')
+  assert(resolveWorkspaceHomePath({ is_admin: false }) === '/dashboard', '教师工作台首页应落到画像主页')
+  assert(
+    resolvePostLoginLandingPath('/dashboard', { id: 1, is_admin: true }) === '/dashboard',
+    '管理员登录后应允许回到自己的画像主页',
+  )
+  assert(
+    resolvePostLoginLandingPath('/profile/1', { id: 1, is_admin: true }) === '/profile/1',
+    '管理员登录后应允许进入自己的画像详情页',
+  )
+  assert(
+    resolvePostLoginLandingPath('/profile/100001', { id: 1, is_admin: true }) === '/profile/100001',
+    '管理员若明确查看指定教师画像，应保留该目标页',
+  )
+  assert(
+    shouldRedirectAdminPortraitRoute({ name: 'dashboard', params: {} }, { id: 1, is_admin: true }) === false,
+    '管理员访问 dashboard 时不应被错误重定向',
+  )
+  assert(
+    shouldRedirectAdminPortraitRoute({ name: 'profile', params: { id: '1' } }, { id: 1, is_admin: true }) === false,
+    '管理员访问自己的画像详情页时不应被错误重定向',
+  )
+  assert(
+    shouldRedirectAdminPortraitRoute({ name: 'profile', params: { id: '100001' } }, { id: 1, is_admin: true }) === false,
+    '管理员查看指定教师画像时不应被错误重定向',
+  )
 }
 
 const verifyAchievementListUpdate = () => {
@@ -233,6 +269,15 @@ const verifyAuthPresentation = () => {
     buildPasswordSecurityNotice({ is_active: false }).includes('停用'),
     '停用账户应提示联系管理员恢复',
   )
+  assert(
+    buildAdminRouteNotice('教师管理入口') === '当前账号为教师身份，不能访问教师管理入口。',
+    '管理员入口提示应支持按功能统一生成',
+  )
+  assert(buildAdminPortraitSelectionNotice().includes('教师管理'), '管理员画像引导提示仍应保留教师管理入口说明')
+  assert(
+    buildSelfOnlyNotice('本人的画像与账户信息') === '教师账号只能查看本人的画像与账户信息',
+    '教师自助范围提示应支持按资源统一生成',
+  )
 
   const inactiveError = {
     response: {
@@ -255,6 +300,29 @@ const verifyAuthPresentation = () => {
     resolveLoginFailureMessage(htmlError) === '登录失败，请检查工号/账号和密码。',
     '登录失败提示不应原样展示后端 HTML 调试页',
   )
+
+  const structuredError = {
+    response: {
+      data: {
+        detail: '图谱加载失败，请稍后重试。',
+        request_id: 'req-123',
+        error: {
+          message: '图谱加载失败，请稍后重试。',
+          next_step: '可稍后重试，或先继续使用画像页其他模块。',
+          request_id: 'req-123',
+        },
+      },
+    },
+  }
+
+  assert(
+    resolveApiErrorMessage(structuredError) === '图谱加载失败，请稍后重试。',
+    '统一错误解析应优先读取后端标准错误消息',
+  )
+
+  const notice = buildApiErrorNotice(structuredError)
+  assert(notice.requestHint.includes('req-123'), '统一错误提示应带出请求编号，便于排查')
+  assert(notice.guidance.includes('继续使用画像页其他模块'), '统一错误提示应带出下一步建议')
 }
 
 const verifyAssistantHelpers = () => {

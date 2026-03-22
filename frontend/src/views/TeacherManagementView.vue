@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  buildAdminRouteNotice,
   buildPasswordSecurityNotice,
   resolveApiErrorMessage,
   resolvePermissionDeniedMessage,
@@ -85,6 +86,13 @@ const editTeacher = reactive<TeacherRecord>({
   password_reset_required: false,
   password_updated_at: null,
   security_notice: '',
+  permission_scope: {
+    entry_role: 'teacher',
+    scope_summary: '教师账号当前可维护自己的资料、密码和成果，并查看自己的画像、推荐、图谱和问答结果。',
+    allowed_actions: [],
+    restricted_actions: [],
+    future_extension_hint: '如后续引入更多角色，可继续沿用统一权限入口扩展。',
+  },
 })
 
 const createRules: FormRules<CreateTeacherFormState> = {
@@ -135,7 +143,7 @@ const ensureAdminUser = async (): Promise<SessionUser | null> => {
   }
 
   if (!sessionUser.is_admin) {
-    setSessionNotice('当前账号没有教师管理权限。')
+    setSessionNotice(buildAdminRouteNotice('教师管理入口'))
     router.replace({ name: 'dashboard' })
     return null
   }

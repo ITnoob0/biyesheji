@@ -108,6 +108,18 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.data["role_code"], "teacher")
         self.assertEqual(response.data["contact_phone"], "13912345678")
 
+    def test_current_user_payload_includes_permission_scope(self):
+        teacher = self.create_teacher(user_id=100108, real_name="边界教师")
+        self.client.force_authenticate(user=teacher)
+
+        response = self.client.get(reverse("current_user"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("permission_scope", response.data)
+        self.assertEqual(response.data["permission_scope"]["entry_role"], "teacher")
+        self.assertTrue(response.data["permission_scope"]["allowed_actions"])
+        self.assertTrue(response.data["permission_scope"]["restricted_actions"])
+
     def test_current_user_profile_can_be_updated_with_public_profile_fields(self):
         self.client.force_authenticate(user=self.admin)
         response = self.client.patch(
@@ -169,6 +181,14 @@ class TeacherUserApiTests(APITestCase):
         response = self.client.post(reverse("teacher_reset_password", kwargs={"user_id": self.admin.id}))
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cannot_access_admin_account_via_teacher_management_detail(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get(reverse("teacher_detail", kwargs={"user_id": self.admin.id}))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["detail"], "教师管理入口仅支持教师账户，不包含管理员账户。")
 
     def test_teacher_can_change_own_password_and_clear_force_change_flag(self):
         teacher = self.create_teacher(user_id=100105, real_name="周老师")
@@ -248,6 +268,26 @@ class TeacherUserApiTests(APITestCase):
         response = self.client.post(reverse("teacher_reset_password", kwargs={"user_id": teacher_b.id}))
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_non_admin_cannot_create_teacher_account(self):
+        teacher = self.create_teacher(user_id=100121, real_name="教师甲")
+        self.client.force_authenticate(user=teacher)
+
+        response = self.client.post(
+            reverse("teacher_list_create"),
+            {
+                "employee_id": "100122",
+                "real_name": "越权创建",
+                "department": "计算机学院",
+                "title": "讲师",
+                "password": "SecurePass789!Q",
+                "confirm_password": "SecurePass789!Q",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["detail"], "当前账号没有管理员权限。")
 
     def test_non_admin_cannot_update_other_teacher_detail(self):
         teacher_a = self.create_teacher(user_id=100119, real_name="教师甲")
@@ -331,3 +371,5 @@ class TeacherUserApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data["detail"], "账户已停用，请联系管理员处理。")
+        self.assertEqual(response.data["error"]["code"], "account_inactive")
+        self.assertTrue(response.data["request_id"])

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from rest_framework.exceptions import PermissionDenied
 
 from achievements.academy_dashboard_analysis import build_scope_querysets
 from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
 from achievements.scoring_engine import TeacherScoringEngine
 from project_guides.models import ProjectGuide
 from project_guides.services import ProjectGuideRecommendationService
+from users.access import ACADEMY_SCOPE_MESSAGE, ASSISTANT_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
 from users.services import get_teacher_profile
 
 
@@ -15,10 +15,9 @@ class PortraitAssistantService:
     @staticmethod
     def resolve_target_teacher(request, user_id: int | None = None):
         target_user_id = user_id or request.user.id
-        if request.user.id != target_user_id and not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied('当前账号无权查看其他教师的问答结果。')
-
-        return get_user_model().objects.get(id=target_user_id)
+        teacher = get_user_model().objects.get(id=target_user_id)
+        ensure_self_or_admin_user(request.user, teacher, ASSISTANT_SCOPE_MESSAGE)
+        return teacher
 
     @staticmethod
     def _base_meta():
@@ -222,8 +221,7 @@ class PortraitAssistantService:
 
     @classmethod
     def _academy_summary(cls, request, department: str = '', year: int | None = None):
-        if not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied('当前账号无权查看学院统计问答结果。')
+        ensure_admin_user(request.user, ACADEMY_SCOPE_MESSAGE)
 
         user_model = get_user_model()
         teachers = user_model.objects.filter(is_superuser=False)
