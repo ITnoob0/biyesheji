@@ -57,6 +57,13 @@ class AcademicGraphTopologyView(APIView):
             'node_count': node_count,
             'link_count': link_count,
             'notice': notice,
+            'source_scope_note': '当前图谱覆盖教师、论文、合作学者、关键词，以及项目、知识产权、教学成果和学术服务等轻量关系节点。',
+            'degradation_note': (
+                '当前图谱已按 MySQL 回退链路提供主体展示与轻量分析，不执行复杂图计算。'
+                if fallback_used
+                else '当前图谱优先使用 Neo4j 读取增强展示；若图数据库异常，系统会自动回退到 MySQL 关系数据。'
+            ),
+            'interaction_note': '当前节点交互、路径说明与圈层概览都只在当前已加载子图内解释，不代表复杂图挖掘结果。',
         }
 
     def _make_node(self, node_id: str, name: str, node_type: str, detail_lines=None, **extra):
@@ -110,6 +117,16 @@ class AcademicGraphTopologyView(APIView):
                     'collaboration_links': 0,
                     'average_collaborators_per_paper': 0,
                     'strongest_collaborator': None,
+                },
+                'collaboration_circle_overview': {
+                    'core_collaborator_count': 0,
+                    'active_collaborator_count': 0,
+                    'extended_collaborator_count': 0,
+                    'core_collaborators': [],
+                    'active_collaborators': [],
+                    'extended_collaborators': [],
+                    'description': '当前尚未形成可用的合作圈层概览。',
+                    'threshold_note': '当前圈层规则保留为轻量阈值说明，不执行复杂社区发现算法。',
                 },
                 'collaborator_type_breakdown': {
                     'internal_count': 0,
@@ -208,6 +225,8 @@ class AcademicGraphTopologyView(APIView):
                             paper.get('title', '未命名论文'),
                             'Paper',
                             detail_lines=['论文成果节点'],
+                            entityId=int(paper['paper_id']) if paper.get('paper_id') else None,
+                            recordType='paper',
                         )
                     )
                     links.append(self._make_link(teacher_id, paper_id, 'published'))
@@ -258,6 +277,8 @@ class AcademicGraphTopologyView(APIView):
                                 f"承担角色：{project.get('role', '未知')}",
                                 f"项目状态：{project.get('status', '未知')}",
                             ],
+                            entityId=int(project['project_id']) if project.get('project_id') else None,
+                            recordType='project',
                         )
                     )
                     links.append(self._make_link(teacher_id, project_id, 'undertakes_project'))
@@ -275,6 +296,8 @@ class AcademicGraphTopologyView(APIView):
                                 f"成果类型：{ip.get('ip_type', '未知')}",
                                 f"登记号：{ip.get('registration_number', '未知')}",
                             ],
+                            entityId=int(ip['ip_id']) if ip.get('ip_id') else None,
+                            recordType='intellectual_property',
                         )
                     )
                     links.append(self._make_link(teacher_id, ip_id, 'owns_ip'))
@@ -292,6 +315,8 @@ class AcademicGraphTopologyView(APIView):
                                 f"成果类型：{teaching.get('achievement_type', '未知')}",
                                 f"级别：{teaching.get('level', '未知')}",
                             ],
+                            entityId=int(teaching['teaching_id']) if teaching.get('teaching_id') else None,
+                            recordType='teaching_achievement',
                         )
                     )
                     links.append(self._make_link(teacher_id, teaching_id, 'has_teaching_achievement'))
@@ -309,6 +334,8 @@ class AcademicGraphTopologyView(APIView):
                                 f"服务类型：{service.get('service_type', '未知')}",
                                 f"服务机构：{service.get('organization', '未知')}",
                             ],
+                            entityId=int(service['service_id']) if service.get('service_id') else None,
+                            recordType='academic_service',
                         )
                     )
                     links.append(self._make_link(teacher_id, service_id, 'provides_service'))
@@ -397,6 +424,8 @@ class AcademicGraphTopologyView(APIView):
                         f'期刊/会议：{paper.journal_name}',
                         f'发表时间：{paper.date_acquired.isoformat()}',
                     ],
+                    entityId=paper.id,
+                    recordType='paper',
                 )
             )
             links.append(self._make_link(teacher_node_id, paper_node_id, 'published'))
@@ -438,6 +467,8 @@ class AcademicGraphTopologyView(APIView):
                         f'承担角色：{project.get_role_display()}',
                         f'经费：{project.funding_amount} 万元',
                     ],
+                    entityId=project.id,
+                    recordType='project',
                 )
             )
             links.append(self._make_link(teacher_node_id, project_node_id, 'undertakes_project'))
@@ -454,6 +485,8 @@ class AcademicGraphTopologyView(APIView):
                         f'登记号：{ip.registration_number}',
                         '已转化' if ip.is_transformed else '未转化',
                     ],
+                    entityId=ip.id,
+                    recordType='intellectual_property',
                 )
             )
             links.append(self._make_link(teacher_node_id, ip_node_id, 'owns_ip'))
@@ -469,6 +502,8 @@ class AcademicGraphTopologyView(APIView):
                         f'成果类型：{teaching.get_achievement_type_display()}',
                         f'级别：{teaching.level}',
                     ],
+                    entityId=teaching.id,
+                    recordType='teaching_achievement',
                 )
             )
             links.append(self._make_link(teacher_node_id, teaching_node_id, 'has_teaching_achievement'))
@@ -484,6 +519,8 @@ class AcademicGraphTopologyView(APIView):
                         f'服务类型：{service.get_service_type_display()}',
                         f'服务机构：{service.organization}',
                     ],
+                    entityId=service.id,
+                    recordType='academic_service',
                 )
             )
             links.append(self._make_link(teacher_node_id, service_node_id, 'provides_service'))

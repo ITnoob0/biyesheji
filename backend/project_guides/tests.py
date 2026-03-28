@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 
 from achievements.models import Paper, PaperKeyword, ResearchKeyword, TeacherProfile
 
-from .models import ProjectGuide
+from .models import ProjectGuide, ProjectGuideFavorite, ProjectGuideRecommendationRecord
 
 
 class ProjectGuideApiTests(APITestCase):
@@ -156,8 +156,11 @@ class ProjectGuideApiTests(APITestCase):
         self.assertIn('explanation_dimensions', top_item)
         self.assertIn('priority_label', top_item)
         self.assertIn('recommendation_summary', top_item)
+        self.assertIn('supporting_records', top_item)
         self.assertEqual(top_item['rule_profile'], 'KEYWORD_FIRST')
         self.assertTrue(any(item['key'] == 'keyword_match' for item in top_item['explanation_dimensions']))
+        self.assertTrue(top_item['supporting_records'])
+        self.assertIn('reason', top_item['supporting_records'][0])
         self.assertIn('teacher_snapshot', response.data)
         self.assertIn('data_meta', response.data)
         self.assertIn('empty_state', response.data)
@@ -333,3 +336,133 @@ class ProjectGuideApiTests(APITestCase):
         self.assertGreaterEqual(response.data['admin_analysis']['recommended_count'], 1)
         self.assertTrue(response.data['admin_analysis']['priority_distribution'])
         self.assertTrue(response.data['admin_analysis']['rule_profile_distribution'])
+
+    def test_teacher_can_persist_favorite_feedback_and_history(self):
+        guide = ProjectGuide.objects.create(
+            title='反馈收藏指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            rule_profile='PORTRAIT_FIRST',
+            rule_config={'portrait_bonus': 6, 'keyword_bonus': 2},
+            summary='用于验证推荐结果历史、收藏持久化和反馈信号采集。',
+            target_keywords=['科研画像', '智能推荐'],
+            target_disciplines=['教育数据智能'],
+            recommendation_tags=['规则增强'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.teacher)
+        recommendation_response = self.client.get('/api/project-guides/recommendations/')
+        favorite_response = self.client.post(
+            f'/api/project-guides/{guide.id}/favorite/',
+            {'is_favorited': True},
+            format='json',
+        )
+        feedback_response = self.client.post(
+            f'/api/project-guides/{guide.id}/feedback/',
+            {'feedback_signal': 'PLAN_TO_APPLY', 'feedback_note': '准备结合当前研究方向申报。'},
+            format='json',
+        )
+        refreshed_recommendation_response = self.client.get('/api/project-guides/recommendations/')
+        history_response = self.client.get('/api/project-guides/recommendation-history/')
+
+        self.assertEqual(recommendation_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(recommendation_response.data['history_preview'])
+        self.assertIn('favorites', recommendation_response.data)
+        self.assertIn('portrait_link_summary', recommendation_response.data)
+        self.assertTrue(recommendation_response.data['data_meta']['interaction_enabled'])
+        self.assertTrue(any(item['portrait_dimension_links'] for item in recommendation_response.data['recommendations']))
+
+        self.assertEqual(favorite_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(ProjectGuideFavorite.objects.filter(teacher=self.teacher, guide=guide).exists())
+        self.assertIn(guide.id, favorite_response.data['favorite_ids'])
+
+        self.assertEqual(feedback_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(feedback_response.data['feedback_signal'], 'PLAN_TO_APPLY')
+        self.assertEqual(feedback_response.data['feedback_note'], '准备结合当前研究方向申报。')
+        self.assertGreaterEqual(
+            ProjectGuideRecommendationRecord.objects.filter(
+                teacher=self.teacher,
+                guide=guide,
+                feedback_signal='PLAN_TO_APPLY',
+            ).count(),
+            1,
+        )
+
+        self.assertEqual(refreshed_recommendation_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(refreshed_recommendation_response.data['recommendations'][0]['latest_feedback_signal'], 'PLAN_TO_APPLY')
+        self.assertEqual(refreshed_recommendation_response.data['recommendations'][0]['latest_feedback_note'], '准备结合当前研究方向申报。')
+        self.assertIn('response_rate', refreshed_recommendation_response.data['feedback_summary'])
+        self.assertGreaterEqual(refreshed_recommendation_response.data['feedback_summary']['responded_guide_count'], 1)
+        self.assertGreaterEqual(refreshed_recommendation_response.data['feedback_summary']['plan_to_apply_count'], 1)
+        self.assertTrue(refreshed_recommendation_response.data['feedback_summary']['recent_feedback_items'])
+        self.assertIn('feedback_ranking_boundary', refreshed_recommendation_response.data['data_meta'])
+
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(history_response.data['history'])
+        self.assertIn('distribution', history_response.data['feedback_summary'])
+        self.assertTrue(history_response.data['feedback_summary']['recent_feedback_items'])
+
+    def test_admin_analysis_includes_feedback_response_summary(self):
+        guide = ProjectGuide.objects.create(
+            title='管理员反馈摘要指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            rule_profile='KEYWORD_FIRST',
+            summary='用于验证管理员可以看到教师推荐响应分析摘要。',
+            target_keywords=['科研画像', '智能推荐'],
+            target_disciplines=['教育数据智能'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.teacher)
+        self.client.get('/api/project-guides/recommendations/')
+        self.client.post(
+            f'/api/project-guides/{guide.id}/feedback/',
+            {'feedback_signal': 'INTERESTED', 'feedback_note': '与当前方向较贴合。'},
+            format='json',
+        )
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/project-guides/recommendations/', {'user_id': self.teacher.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('admin_analysis', response.data)
+        self.assertGreaterEqual(response.data['admin_analysis']['responded_guide_count'], 1)
+        self.assertGreaterEqual(response.data['admin_analysis']['positive_feedback_count'], 1)
+        self.assertIn('response_rate', response.data['admin_analysis'])
+
+    def test_admin_can_view_lifecycle_summary_and_archive_guide(self):
+        guide = ProjectGuide.objects.create(
+            title='生命周期指南',
+            issuing_agency='科技部',
+            guide_level='NATIONAL',
+            status='OPEN',
+            rule_profile='FOUNDATION_FIRST',
+            rule_config={'activity_bonus': 4},
+            summary='用于验证项目指南生命周期管理增强。',
+            target_keywords=['科研画像'],
+            target_disciplines=['教育数据智能'],
+            lifecycle_note='已发布待归档',
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.admin)
+        archive_response = self.client.patch(
+            f'/api/project-guides/{guide.id}/',
+            {'status': 'ARCHIVED'},
+            format='json',
+        )
+        summary_response = self.client.get('/api/project-guides/summary/')
+
+        self.assertEqual(archive_response.status_code, status.HTTP_200_OK)
+        guide.refresh_from_db()
+        self.assertEqual(guide.status, 'ARCHIVED')
+        self.assertIsNotNone(guide.archived_at)
+
+        self.assertEqual(summary_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(summary_response.data['archived_count'], 1)
+        self.assertGreaterEqual(summary_response.data['config_coverage_count'], 1)
+        self.assertIn('FOUNDATION_FIRST', summary_response.data['rule_profile_distribution'])

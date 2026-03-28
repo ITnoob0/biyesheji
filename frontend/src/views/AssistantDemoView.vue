@@ -14,8 +14,18 @@
       </div>
     </section>
 
+    <section v-if="linkContext" class="link-context-shell">
+      <el-alert
+        :title="linkContextTitle"
+        type="info"
+        :description="linkContextDescription"
+        :closable="false"
+        show-icon
+      />
+    </section>
+
     <section class="assistant-grid">
-      <el-card shadow="never" class="workspace-surface-card">
+      <el-card id="assistant-answer-section" shadow="never" class="workspace-surface-card">
         <template #header>
           <div class="section-head workspace-section-head">
             <span>问答输入</span>
@@ -153,9 +163,65 @@
 
           <div class="source-detail-list">
             <div v-for="item in answerData.source_details" :key="`${item.label}-${item.value}`" class="source-detail-item">
-              <strong>{{ item.label }}</strong>
+              <div class="source-detail-head">
+                <strong>{{ item.label }}</strong>
+                <div class="source-detail-tags">
+                  <el-tag v-if="resolveSourceModuleLabel(item)" size="small" effect="plain">
+                    {{ resolveSourceModuleLabel(item) }}
+                  </el-tag>
+                  <el-tag v-if="resolveSourcePageLabel(item)" size="small" type="info" effect="plain">
+                    {{ resolveSourcePageLabel(item) }}
+                  </el-tag>
+                  <el-tag size="small" :type="resolveAvailabilityTagType(item.availability_status)" effect="plain">
+                    {{ resolveAvailabilityLabel(item) }}
+                  </el-tag>
+                </div>
+              </div>
               <span>{{ item.value }}</span>
               <p>{{ item.note }}</p>
+              <p v-if="item.verification_text" class="source-verification-text">{{ item.verification_text }}</p>
+              <el-button v-if="item.link" link type="primary" @click="openEvidenceLink(item.link)">
+                {{ item.link.label }}
+              </el-button>
+            </div>
+          </div>
+
+          <div v-if="answerData.source_governance" class="governance-panel">
+            <strong>来源治理与可验证范围</strong>
+            <div class="governance-grid">
+              <div class="meta-item">
+                <strong>回答模式</strong>
+                <p>{{ answerData.source_governance.answer_mode }}</p>
+              </div>
+              <div class="meta-item">
+                <strong>适用范围</strong>
+                <p>{{ answerData.source_governance.scope_label }}</p>
+              </div>
+              <div class="meta-item governance-full">
+                <strong>核验方式</strong>
+                <p>{{ answerData.source_governance.verification_note }}</p>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                answerData.source_governance.degraded_flags?.length ||
+                answerData.source_governance.unavailable_flags?.length
+              "
+              class="governance-flag-grid"
+            >
+              <div v-if="answerData.source_governance.degraded_flags?.length" class="meta-item">
+                <strong>当前降级提示</strong>
+                <ul>
+                  <li v-for="item in answerData.source_governance.degraded_flags" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+              <div v-if="answerData.source_governance.unavailable_flags?.length" class="meta-item">
+                <strong>当前不可用范围</strong>
+                <ul>
+                  <li v-for="item in answerData.source_governance.unavailable_flags" :key="item">{{ item }}</li>
+                </ul>
+              </div>
             </div>
           </div>
 
@@ -180,6 +246,7 @@ import type { AssistantAnswerResponse, AssistantQuestionType } from '../types/as
 import type { RecommendationItem, RecommendationResponse } from './project-guides/types'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import { focusEvidenceSection, parseCrossModuleLink, resolveAssistantEvidenceRoute } from '../utils/crossModuleLinking'
 import { assistantQuestionOptions, buildAssistantFallbackAnswer, supportedQuestionTypes } from './assistant/helpers.js'
 import type { AcademyOverviewResponse } from './academy-dashboard/overview'
 
@@ -196,6 +263,24 @@ const guideOptions = ref<RecommendationItem[]>([])
 const academyDepartments = ref<string[]>([])
 const academyYears = ref<number[]>([])
 const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
+const linkContext = computed(() => parseCrossModuleLink(route.query))
+
+const sourceModuleLabels: Record<string, string> = {
+  portrait: '画像模块',
+  achievement: '成果模块',
+  recommendation: '推荐模块',
+  assistant: '问答模块',
+  'academy-dashboard': '看板模块',
+  graph: '图谱模块',
+}
+
+const sourcePageLabels: Record<string, string> = {
+  portrait: '教师画像主页',
+  recommendations: '项目指南推荐页',
+  'achievement-entry': '教师成果录入中心',
+  assistant: '智能问答页',
+  'academy-dashboard': '学院级统计看板',
+}
 
 const currentTeacherId = computed(() => {
   if (currentUser.value?.is_admin && route.query.user_id) {
@@ -203,6 +288,23 @@ const currentTeacherId = computed(() => {
   }
   return currentUser.value?.id
 })
+
+const linkContextTitle = computed(() => {
+  if (linkContext.value?.source === 'recommendation') {
+    return '当前从推荐模块进入，问答会继续保留推荐证据回跳。'
+  }
+  if (linkContext.value?.source === 'portrait') {
+    return '当前从画像模块进入，问答会继续保留画像证据回跳。'
+  }
+  if (linkContext.value?.source === 'achievement') {
+    return '当前从成果模块进入，问答会继续保留成果证据回跳。'
+  }
+  return '当前问答结果支持回跳到证据页面。'
+})
+
+const linkContextDescription = computed(
+  () => linkContext.value?.note || '当前问答只基于系统内真实数据生成，来源卡片会回跳到可访问的真实证据区。',
+)
 
 const currentTeacherLabel = computed(() => {
   if (questionType.value === 'academy_summary') {
@@ -213,6 +315,35 @@ const currentTeacherLabel = computed(() => {
   }
   return currentUser.value?.real_name || currentUser.value?.username || '当前教师'
 })
+
+const resolveSourceModuleLabel = (item: NonNullable<AssistantAnswerResponse>['source_details'][number]) =>
+  item.module_label || (item.module ? sourceModuleLabels[item.module] || item.module : '')
+
+const resolveSourcePageLabel = (item: NonNullable<AssistantAnswerResponse>['source_details'][number]) =>
+  item.page_label || (item.link?.page ? sourcePageLabels[item.link.page] || item.link.page : '')
+
+const resolveAvailabilityLabel = (item: NonNullable<AssistantAnswerResponse>['source_details'][number]) => {
+  if (item.availability_label) {
+    return item.availability_label
+  }
+  if (item.availability_status === 'fallback') {
+    return '已降级'
+  }
+  if (item.availability_status === 'limited') {
+    return '信息有限'
+  }
+  return '可验证'
+}
+
+const resolveAvailabilityTagType = (status?: 'ok' | 'limited' | 'fallback') => {
+  if (status === 'fallback') {
+    return 'warning'
+  }
+  if (status === 'limited') {
+    return 'info'
+  }
+  return 'success'
+}
 
 const loadGuideOptions = async () => {
   const params = currentUser.value?.is_admin && currentTeacherId.value ? { user_id: currentTeacherId.value } : undefined
@@ -254,6 +385,7 @@ const submitQuestion = async () => {
 
     const { data } = await axios.post<AssistantAnswerResponse>('/api/ai-assistant/portrait-qa/', payload)
     answerData.value = data
+    focusEvidenceSection('assistant-answer-section')
     if (data.status === 'fallback') {
       const sourceReason = data.source_details?.[0]?.value || '当前问答链路已降级。'
       errorNotice.value = {
@@ -264,9 +396,15 @@ const submitQuestion = async () => {
     }
   } catch (error) {
     console.error(error)
+    const isForbidden = axios.isAxiosError(error) && error.response?.status === 403
+    const isValidationError = axios.isAxiosError(error) && error.response?.status === 400
     errorNotice.value = buildApiErrorNotice(error, {
-      fallbackMessage: '问答结果已降级为基础说明模式。',
-      fallbackGuidance: '当前问答链路异常不会影响画像、成果、推荐和学院看板等主链路页面。',
+      fallbackMessage: isForbidden ? '当前账号无权访问该问答范围。' : '问答结果已降级为基础说明模式。',
+      fallbackGuidance: isForbidden
+        ? '你仍可继续使用当前账号有权限访问的画像、成果、推荐或看板页面。'
+        : isValidationError
+          ? '当前问答参数无效，系统已回退为边界说明模式。'
+          : '当前问答链路异常不会影响画像、成果、推荐和学院看板等主链路页面。',
     })
     answerData.value = buildAssistantFallbackAnswer(
       questionType.value,
@@ -277,6 +415,35 @@ const submitQuestion = async () => {
     ElMessage.warning(errorNotice.value.message)
   } finally {
     loading.value = false
+  }
+}
+
+const openEvidenceLink = (link: NonNullable<AssistantAnswerResponse['source_details'][number]['link']>) => {
+  router.push(resolveAssistantEvidenceRoute(link, currentUser.value, answerData.value?.teacher_snapshot?.user_id || currentTeacherId.value))
+}
+
+const applyRouteQueryContext = async (shouldAutoSubmit = false) => {
+  if (route.query.question_type && supportedQuestionTypes.includes(route.query.question_type as AssistantQuestionType)) {
+    questionType.value = route.query.question_type as AssistantQuestionType
+  }
+  if (route.query.guide_id) {
+    selectedGuideId.value = Number(route.query.guide_id)
+  }
+  if (route.query.department) {
+    selectedDepartment.value = String(route.query.department)
+  }
+  if (route.query.year) {
+    selectedYear.value = Number(route.query.year)
+  }
+
+  if (questionType.value === 'guide_reason') {
+    await loadGuideOptions()
+  }
+  if (questionType.value === 'academy_summary' && currentUser.value?.is_admin) {
+    await loadAcademyOptions()
+  }
+  if (shouldAutoSubmit && route.query.question_type) {
+    await submitQuestion()
   }
 }
 
@@ -298,26 +465,18 @@ onMounted(async () => {
     return
   }
 
-  if (route.query.question_type && supportedQuestionTypes.includes(route.query.question_type as AssistantQuestionType)) {
-    questionType.value = route.query.question_type as AssistantQuestionType
-  }
-  if (route.query.guide_id) {
-    selectedGuideId.value = Number(route.query.guide_id)
-  }
-  if (route.query.department) {
-    selectedDepartment.value = String(route.query.department)
-  }
-  if (route.query.year) {
-    selectedYear.value = Number(route.query.year)
-  }
-
-  if (questionType.value === 'guide_reason') {
-    await loadGuideOptions()
-  }
-  if (questionType.value === 'academy_summary' && currentUser.value?.is_admin) {
-    await loadAcademyOptions()
-  }
+  await applyRouteQueryContext(true)
 })
+
+watch(
+  () => route.query,
+  async () => {
+    if (!currentUser.value) {
+      return
+    }
+    await applyRouteQueryContext(true)
+  },
+)
 </script>
 
 <style scoped>
@@ -346,7 +505,8 @@ onMounted(async () => {
 
 .hero-actions,
 .section-head,
-.answer-head {
+.answer-head,
+.source-detail-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -359,6 +519,11 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 0.92fr 1.08fr;
   gap: 20px;
+}
+
+.link-context-shell {
+  max-width: 1180px;
+  margin: 0 auto 20px;
 }
 
 .assistant-grid :deep(.el-card) {
@@ -395,13 +560,16 @@ h2 {
 .form-grid,
 .meta-list,
 .answer-shell,
-.source-detail-list {
+.source-detail-list,
+.governance-grid,
+.governance-flag-grid {
   display: grid;
   gap: 16px;
 }
 
 .meta-item,
 .source-detail-item,
+.governance-panel,
 .boundary-panel {
   padding: 16px 18px;
   border-radius: 18px;
@@ -422,21 +590,43 @@ h2 {
   font-weight: 600;
 }
 
+.source-detail-head {
+  align-items: flex-start;
+}
+
+.source-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.source-verification-text {
+  margin-top: -2px;
+  color: #1d4ed8;
+}
+
 .answer-text {
   margin: 0;
   color: #334155;
 }
 
 .reason-list ul,
-.boundary-panel ul {
+.boundary-panel ul,
+.governance-panel ul {
   margin: 8px 0 0;
   padding-left: 18px;
+}
+
+.governance-full {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 1080px) {
   .assistant-grid,
   .hero-shell,
-  .hero-actions {
+  .hero-actions,
+  .source-detail-head {
     grid-template-columns: 1fr;
     display: grid;
   }

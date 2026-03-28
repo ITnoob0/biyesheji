@@ -12,7 +12,7 @@ import AcademyDashboardView from '../views/AcademyDashboardView.vue'
 import AssistantDemoView from '../views/AssistantDemoView.vue'
 import { buildAdminRouteNotice, buildSelfOnlyNotice } from '../utils/authPresentation.js'
 import { initializeHttpClient } from '../utils/http'
-import { clearSessionAuth, ensureSessionUserContext, setSessionNotice } from '../utils/sessionAuth'
+import { clearSessionAuth, ensureSessionUserContext, getSessionUser, setSessionNotice } from '../utils/sessionAuth'
 import { resolveWorkspaceHomePath } from '../utils/workspaceNavigation.js'
 
 const router = createRouter({
@@ -20,7 +20,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: { name: 'dashboard' },
+      redirect: () => resolveWorkspaceHomePath(getSessionUser()),
       meta: { requiresAuth: true },
     },
     {

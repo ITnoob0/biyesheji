@@ -21,6 +21,9 @@ export type SessionUser = Pick<
   | 'title'
   | 'email'
   | 'contact_phone'
+  | 'contact_visibility'
+  | 'contact_visibility_label'
+  | 'public_contact_channels'
   | 'avatar_url'
   | 'research_direction'
   | 'bio'
@@ -35,6 +38,9 @@ export type SessionUser = Pick<
   | 'password_reset_required'
   | 'password_updated_at'
   | 'security_notice'
+  | 'account_status_label'
+  | 'password_status_label'
+  | 'next_action_hint'
 >
 
 type SessionUserPayload = Omit<Partial<TeacherAccountResponse>, 'id'> & {
@@ -70,6 +76,9 @@ const normalizeSessionUser = (raw: SessionUserPayload | null | undefined): Sessi
   title: raw?.title ?? '',
   email: raw?.email ?? '',
   contact_phone: raw?.contact_phone ?? '',
+  contact_visibility: raw?.contact_visibility ?? 'email_only',
+  contact_visibility_label: raw?.contact_visibility_label ?? '仅公开邮箱',
+  public_contact_channels: Array.isArray(raw?.public_contact_channels) ? raw.public_contact_channels : [],
   avatar_url: raw?.avatar_url ?? '',
   research_direction: Array.isArray(raw?.research_direction) ? raw.research_direction : [],
   bio: raw?.bio ?? '',
@@ -88,6 +97,15 @@ const normalizeSessionUser = (raw: SessionUserPayload | null | undefined): Sessi
     (raw?.password_reset_required
       ? '当前密码为管理员初始化或重置后的临时密码，请登录后尽快修改。'
       : '请妥善保管工号与密码，建议使用高强度密码并定期更新。'),
+  account_status_label: raw?.account_status_label ?? (raw?.is_active === false ? '账户停用' : '账户可用'),
+  password_status_label: raw?.password_status_label ?? (raw?.password_reset_required ? '待修改密码' : '状态正常'),
+  next_action_hint:
+    raw?.next_action_hint ??
+    (raw?.is_active === false
+      ? '当前账户已停用，需由管理员恢复启用后才能继续登录和修改密码。'
+      : raw?.password_reset_required
+        ? '当前密码为初始化或重置后的临时密码，请登录后尽快前往个人中心修改密码。'
+        : '当前账户状态正常，可继续维护资料、成果和密码。'),
 })
 
 const emitSessionAuthChanged = (): void => {

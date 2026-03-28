@@ -20,6 +20,12 @@ class CustomUser(AbstractUser):
     bio = models.TextField(blank=True, null=True, verbose_name="个人简介")
     avatar_url = models.URLField(blank=True, null=True, verbose_name="头像地址")
     contact_phone = models.CharField(max_length=30, blank=True, null=True, verbose_name="联系电话")
+    contact_visibility = models.CharField(
+        max_length=20,
+        default="email_only",
+        verbose_name="联系方式展示策略",
+        help_text="控制个人中心公开资料卡如何展示联系方式。",
+    )
     password_reset_required = models.BooleanField(
         default=False,
         verbose_name="需修改密码",

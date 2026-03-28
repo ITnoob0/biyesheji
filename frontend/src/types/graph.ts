@@ -17,6 +17,8 @@ export interface GraphNode {
   nodeType: GraphNodeType
   nodeTypeLabel?: string
   detailLines?: string[]
+  entityId?: number | null
+  recordType?: string
 }
 
 export interface GraphLink {
@@ -33,6 +35,9 @@ export interface GraphTopologyMeta {
   node_count?: number
   link_count?: number
   notice?: string
+  source_scope_note?: string
+  degradation_note?: string
+  interaction_note?: string
   analysis_level?: string
   calculation_note?: string
   fallback_tip?: string
@@ -63,6 +68,16 @@ export interface GraphTopologyAnalysis {
     collaboration_links: number
     average_collaborators_per_paper: number
     strongest_collaborator: GraphAnalysisRankingItem | null
+  }
+  collaboration_circle_overview: {
+    core_collaborator_count: number
+    active_collaborator_count: number
+    extended_collaborator_count: number
+    core_collaborators: GraphAnalysisRankingItem[]
+    active_collaborators: GraphAnalysisRankingItem[]
+    extended_collaborators: GraphAnalysisRankingItem[]
+    description: string
+    threshold_note: string
   }
   collaborator_type_breakdown: {
     internal_count: number

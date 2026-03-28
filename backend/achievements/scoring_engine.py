@@ -38,6 +38,45 @@ class TeacherScoringEngine:
         'interdisciplinary': '论文关键词覆盖度与项目参与情况共同反映跨学科融合表现。',
     }
 
+    WEIGHT_SPEC_DETAILS = {
+        'academic_output': {
+            'name': '基础学术产出',
+            'formula_short': '论文数 * 12 + 引用数 * 0.6，上限 100',
+            'main_inputs': ['论文数量', '总被引次数'],
+            'rationale': '优先反映近期可观测、可核验的学术产出表现。',
+        },
+        'funding_support': {
+            'name': '经费与项目攻关',
+            'formula_short': '项目数 * 18 + 经费折算，上限 100',
+            'main_inputs': ['项目数量', '累计经费'],
+            'rationale': '体现教师获取资源和组织科研攻关的能力。',
+        },
+        'ip_strength': {
+            'name': '知识产权沉淀',
+            'formula_short': '知识产权数 * 20 + 转化数 * 18，上限 100',
+            'main_inputs': ['知识产权数量', '成果转化数量'],
+            'rationale': '体现成果沉淀与应用转化能力。',
+        },
+        'talent_training': {
+            'name': '人才培养成效',
+            'formula_short': '教学成果数 * 24 + 论文数 * 2，上限 100',
+            'main_inputs': ['教学成果数量', '论文协同产出'],
+            'rationale': '体现教学育人投入及与科研产出的联动性。',
+        },
+        'academic_reputation': {
+            'name': '学术活跃与声誉',
+            'formula_short': '学术服务、合作作者与引用折算，上限 100',
+            'main_inputs': ['学术服务数量', '合作作者数量', '总被引次数'],
+            'rationale': '体现学术共同体参与度与外部影响力。',
+        },
+        'interdisciplinary': {
+            'name': '跨学科融合度',
+            'formula_short': '关键词数 * 3 + 项目数 * 6，上限 100',
+            'main_inputs': ['论文关键词数量', '项目参与情况'],
+            'rationale': '体现研究主题覆盖和跨方向协作能力。',
+        },
+    }
+
     @classmethod
     def collect_metrics(cls, teacher_user, year: int | None = None):
         papers = Paper.objects.filter(teacher=teacher_user)
@@ -61,11 +100,11 @@ class TeacherScoringEngine:
         transformed_ip_count = intellectual_properties.filter(is_transformed=True).count()
         teaching_count = teaching_achievements.count()
         service_count = academic_services.count()
+
         keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user).count()
-        if year is not None:
-            keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year).count()
         collaborator_count = CoAuthor.objects.filter(paper__teacher=teacher_user).values('name').distinct().count()
         if year is not None:
+            keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year).count()
             collaborator_count = (
                 CoAuthor.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year)
                 .values('name')
@@ -113,10 +152,7 @@ class TeacherScoringEngine:
             Paper.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
-            .annotate(
-                paper_count=Count('id'),
-                citation_total=Sum('citation_count'),
-            )
+            .annotate(paper_count=Count('id'), citation_total=Sum('citation_count'))
         )
         for item in paper_years:
             year_metrics[item['year']]['paper_count'] = item['paper_count']
@@ -126,10 +162,7 @@ class TeacherScoringEngine:
             Project.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
-            .annotate(
-                project_count=Count('id'),
-                funding_total=Sum('funding_amount'),
-            )
+            .annotate(project_count=Count('id'), funding_total=Sum('funding_amount'))
         )
         for item in project_years:
             year_metrics[item['year']]['project_count'] = item['project_count']
@@ -139,10 +172,7 @@ class TeacherScoringEngine:
             IntellectualProperty.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
-            .annotate(
-                ip_count=Count('id'),
-                transformed_ip_count=Count('id', filter=Q(is_transformed=True)),
-            )
+            .annotate(ip_count=Count('id'), transformed_ip_count=Count('id', filter=Q(is_transformed=True)))
         )
         for item in ip_years:
             year_metrics[item['year']]['ip_count'] = item['ip_count']
@@ -225,10 +255,7 @@ class TeacherScoringEngine:
     @classmethod
     def build_radar_dimensions(cls, metrics):
         values = cls.build_dimension_values(metrics)
-        return [
-            {'key': key, 'name': label, 'value': values[key]}
-            for key, label in cls.DIMENSION_LABELS.items()
-        ]
+        return [{'key': key, 'name': label, 'value': values[key]} for key, label in cls.DIMENSION_LABELS.items()]
 
     @classmethod
     def build_dimension_sources(cls, metrics):
@@ -304,6 +331,45 @@ class TeacherScoringEngine:
         return insights
 
     @classmethod
+    def build_weight_spec(cls, metrics):
+        current_values = cls.build_dimension_values(metrics)
+        return [
+            {
+                'key': key,
+                'name': cls.WEIGHT_SPEC_DETAILS[key]['name'],
+                'weight': round(weight * 100, 1),
+                'formula_short': cls.WEIGHT_SPEC_DETAILS[key]['formula_short'],
+                'main_inputs': cls.WEIGHT_SPEC_DETAILS[key]['main_inputs'],
+                'rationale': cls.WEIGHT_SPEC_DETAILS[key]['rationale'],
+                'current_value': current_values[key],
+            }
+            for key, weight in cls.WEIGHTS.items()
+        ]
+
+    @classmethod
+    def build_calculation_summary(cls, metrics):
+        values = cls.build_dimension_values(metrics)
+        total_score = cls.calculate_total_score(values)
+        strongest_key = max(values, key=values.get)
+        weakest_key = min(values, key=values.get)
+        return {
+            'weight_mode': 'fixed_weights_runtime_aggregation',
+            'formula_note': '综合得分 = 各维度得分 × 固定权重后求和，按实时业务数据即时生成。',
+            'total_score': total_score,
+            'total_achievements': metrics['total_achievements'],
+            'strongest_dimension': {
+                'key': strongest_key,
+                'name': cls.WEIGHT_SPEC_DETAILS[strongest_key]['name'],
+                'value': values[strongest_key],
+            },
+            'weakest_dimension': {
+                'key': weakest_key,
+                'name': cls.WEIGHT_SPEC_DETAILS[weakest_key]['name'],
+                'value': values[weakest_key],
+            },
+        }
+
+    @classmethod
     def get_comprehensive_radar_data(cls, teacher_user):
         metrics = cls.collect_metrics(teacher_user)
         values = cls.build_dimension_values(metrics)
@@ -314,5 +380,7 @@ class TeacherScoringEngine:
             'radar_dimensions': cls.build_radar_dimensions(metrics),
             'dimension_sources': cls.build_dimension_sources(metrics),
             'dimension_insights': cls.build_dimension_insights(metrics),
+            'weight_spec': cls.build_weight_spec(metrics),
+            'calculation_summary': cls.build_calculation_summary(metrics),
             'total_score': total_score,
         }

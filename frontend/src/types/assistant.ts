@@ -1,10 +1,37 @@
 export type AssistantQuestionType =
   | 'portrait_summary'
   | 'portrait_dimension_reason'
+  | 'portrait_data_governance'
   | 'achievement_summary'
+  | 'achievement_portrait_link'
+  | 'achievement_recommendation_link'
   | 'guide_reason'
   | 'guide_overview'
+  | 'graph_status'
   | 'academy_summary'
+
+export interface AssistantEvidenceLink {
+  label: string
+  page: 'portrait' | 'recommendations' | 'achievement-entry' | 'assistant' | 'academy-dashboard'
+  section?:
+    | 'portrait-dimensions'
+    | 'portrait-achievements'
+    | 'portrait-explanation'
+    | 'portrait-graph'
+    | 'recommendation-evidence'
+    | 'achievement-records'
+    | 'assistant-answer'
+    | 'academy-ranking'
+    | 'academy-drilldown'
+  highlight?: string
+  dimension_key?: string
+  guide_id?: number
+  record_type?: string
+  record_id?: number
+  department?: string
+  year?: number | null
+  note?: string
+}
 
 export interface AssistantTeacherSnapshot {
   user_id: number
@@ -22,6 +49,21 @@ export interface AssistantSourceDetail {
   label: string
   value: string
   note: string
+  module?: string
+  module_label?: string
+  page_label?: string
+  availability_status?: 'ok' | 'limited' | 'fallback'
+  availability_label?: string
+  verification_text?: string
+  link?: AssistantEvidenceLink
+}
+
+export interface AssistantSourceGovernance {
+  answer_mode: string
+  scope_label: string
+  verification_note: string
+  degraded_flags: string[]
+  unavailable_flags: string[]
 }
 
 export interface AssistantAcademySnapshot {
@@ -47,4 +89,5 @@ export interface AssistantAnswerResponse {
   related_reasons?: string[]
   guide_snapshot?: AssistantGuideSnapshot
   academy_snapshot?: AssistantAcademySnapshot
+  source_governance?: AssistantSourceGovernance
 }

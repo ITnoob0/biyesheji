@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.contrib import admin
+from django.conf.urls.static import static
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -14,3 +16,6 @@ urlpatterns = [
     path("api/graph/", include("graph_engine.urls")),
     path("api/ai-assistant/", include("ai_assistant.urls")),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

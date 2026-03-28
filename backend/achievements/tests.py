@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from .models import AcademicService, IntellectualProperty, Paper, PaperOperationLog, Project, TeachingAchievement
 
 
 class AchievementEntryApiTests(APITestCase):
@@ -1075,3 +1075,426 @@ class AchievementEntryApiTests(APITestCase):
         self.assertIn('teacher_titles', response.data['filter_options'])
         self.assertIn('department_breakdown', response.data)
         self.assertIn('latest_active_year', response.data['top_active_teachers'][0])
+
+    def test_academy_dashboard_supports_drilldown_rank_switch_and_comparison_trend(self):
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=3,
+            username='admin3',
+            password='Admin123456',
+            real_name='系统管理员三号',
+        )
+        teacher_a = user_model.objects.create_user(
+            id=100093,
+            username='100093',
+            password='teacher123456',
+            real_name='高被引教师',
+            department='人工智能学院',
+            title='教授',
+        )
+        teacher_b = user_model.objects.create_user(
+            id=100094,
+            username='100094',
+            password='teacher123456',
+            real_name='项目教师',
+            department='人工智能学院',
+            title='教授',
+        )
+
+        paper_a = Paper.objects.create(
+            teacher=teacher_a,
+            title='高被引论文',
+            abstract='这是一个足够长的摘要，用于验证学院看板支持按引用排行和教师钻取。',
+            date_acquired='2025-05-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=15,
+        )
+        paper_a.coauthors.create(name='合作作者甲')
+        Paper.objects.create(
+            teacher=teacher_a,
+            title='上一年论文',
+            abstract='这是另一个足够长的摘要，用于形成范围对比趋势。',
+            date_acquired='2024-05-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=5,
+        )
+        Project.objects.create(
+            teacher=teacher_b,
+            title='重点项目',
+            date_acquired='2025-06-01',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='20.00',
+            status='ONGOING',
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(
+            '/api/achievements/academy-overview/',
+            {
+                'department': '人工智能学院',
+                'teacher_id': teacher_a.id,
+                'teacher_title': '教授',
+                'achievement_type': 'paper',
+                'rank_by': 'citation_total',
+                'has_collaboration': 'true',
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['active_filters']['achievement_type'], 'paper')
+        self.assertEqual(response.data['active_filters']['rank_by'], 'citation_total')
+        self.assertTrue(response.data['active_filters']['has_collaboration'])
+        self.assertIn('achievement_types', response.data['filter_options'])
+        self.assertIn('ranking_modes', response.data['filter_options'])
+        self.assertTrue(response.data['comparison_trend'])
+        self.assertEqual(response.data['ranking_meta']['current_rank_by'], 'citation_total')
+        self.assertEqual(response.data['top_active_teachers'][0]['rank_label'], '总被引')
+        self.assertIn('selected_department_summary', response.data['drilldown'])
+        self.assertIn('selected_teacher_summary', response.data['drilldown'])
+        self.assertEqual(response.data['drilldown']['selected_teacher_summary']['user_id'], teacher_a.id)
+        self.assertTrue(response.data['drilldown']['teacher_recent_achievements'])
+
+    def test_academy_dashboard_export_returns_csv_for_selected_target(self):
+        user_model = get_user_model()
+        admin = user_model.objects.create_superuser(
+            id=4,
+            username='admin4',
+            password='Admin123456',
+            real_name='系统管理员四号',
+        )
+        teacher = user_model.objects.create_user(
+            id=100095,
+            username='100095',
+            password='teacher123456',
+            real_name='导出教师',
+            department='人工智能学院',
+            title='讲师',
+        )
+        Paper.objects.create(
+            teacher=teacher,
+            title='导出论文',
+            abstract='这是一个足够长的摘要，用于验证学院级看板导出增强链路。',
+            date_acquired='2025-07-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=2,
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(
+            '/api/achievements/academy-overview/export/',
+            {'department': '人工智能学院', 'export_target': 'departments'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('text/csv', response['Content-Type'])
+        content = response.content.decode('utf-8')
+        self.assertIn('院系', content)
+        self.assertIn('人工智能学院', content)
+
+
+class PaperGovernanceApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            id=100120,
+            username='100120',
+            password='teacher123456',
+            real_name='成果治理教师',
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_bibtex_revalidate_supports_fix_after_preview(self):
+        invalid_payload = {
+            'entries': [
+                {
+                    'source_index': 1,
+                    'citation_key': 'draft-entry',
+                    'entry_type': 'article',
+                    'title': '',
+                    'abstract': '',
+                    'date_acquired': '',
+                    'paper_type': 'JOURNAL',
+                    'journal_name': '',
+                    'journal_level': '',
+                    'published_volume': '',
+                    'published_issue': '',
+                    'pages': '',
+                    'source_url': '',
+                    'citation_count': 0,
+                    'is_first_author': True,
+                    'is_representative': False,
+                    'doi': '',
+                    'coauthors': [],
+                    'preview_status': 'invalid',
+                    'issues': [],
+                    'issue_details': [],
+                }
+            ]
+        }
+        invalid_response = self.client.post('/api/achievements/papers/import/bibtex-revalidate/', invalid_payload, format='json')
+        self.assertEqual(invalid_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(invalid_response.data['summary']['invalid_count'], 1)
+
+        fixed_payload = invalid_payload.copy()
+        fixed_payload['entries'] = [
+            {
+                **invalid_payload['entries'][0],
+                'title': 'BibTeX 修订后的论文',
+                'journal_name': '测试期刊',
+                'date_acquired': '2025-04-01',
+                'doi': '10.1000/bibtex-revalidate',
+            }
+        ]
+        fixed_response = self.client.post('/api/achievements/papers/import/bibtex-revalidate/', fixed_payload, format='json')
+        self.assertEqual(fixed_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(fixed_response.data['summary']['ready_count'], 1)
+        self.assertEqual(fixed_response.data['entries'][0]['preview_status'], 'ready')
+
+    @patch('achievements.views.AcademicGraphSyncService')
+    @patch('achievements.views.AcademicAI')
+    def test_paper_history_governance_and_compare_endpoints_work(self, academic_ai_cls, graph_sync_service):
+        academic_ai_cls.return_value.extract_tags.return_value = ['成果治理', '操作历史']
+
+        create_response = self.client.post(
+            '/api/achievements/papers/',
+            {
+                'title': '治理主论文',
+                'abstract': '用于验证治理中心下的历史记录、元数据告警与结构化对比接口。',
+                'date_acquired': '2025-04-01',
+                'paper_type': 'JOURNAL',
+                'journal_name': '治理期刊',
+                'citation_count': 5,
+                'doi': '10.1000/governance-main',
+                'coauthors': ['李晨'],
+            },
+            format='json',
+        )
+        second_paper = Paper.objects.create(
+            teacher=self.user,
+            title='治理对比论文',
+            abstract='用于对比的第二篇论文，补齐了更多治理字段。',
+            date_acquired='2025-05-01',
+            paper_type='CONFERENCE',
+            journal_name='治理会议',
+            journal_level='CCF-B',
+            pages='10-18',
+            source_url='https://example.com/governance-compare',
+            citation_count=11,
+            doi='10.1000/governance-compare',
+        )
+
+        paper_id = create_response.data['id']
+        update_response = self.client.patch(
+            f'/api/achievements/papers/{paper_id}/',
+            {
+                'title': '治理主论文（修订版）',
+                'abstract': '用于验证治理中心下的历史记录、元数据告警与结构化对比接口，已补充修订说明。',
+                'date_acquired': '2025-04-02',
+                'paper_type': 'JOURNAL',
+                'journal_name': '治理期刊',
+                'journal_level': '',
+                'citation_count': 6,
+                'doi': '10.1000/governance-main',
+                'coauthors': ['李晨', '王敏'],
+            },
+            format='json',
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+
+        history_response = self.client.get(f'/api/achievements/papers/{paper_id}/history/')
+        governance_response = self.client.get('/api/achievements/papers/governance/')
+        compare_response = self.client.get(
+            '/api/achievements/papers/compare/',
+            {'left_id': paper_id, 'right_id': second_paper.id},
+        )
+
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(history_response.data['history']), 2)
+        self.assertEqual(history_response.data['history'][0]['action'], 'UPDATE')
+        self.assertEqual(history_response.data['history'][1]['action'], 'CREATE')
+
+        self.assertEqual(governance_response.status_code, status.HTTP_200_OK)
+        self.assertIn('summary', governance_response.data)
+        self.assertIn('recent_operations', governance_response.data)
+        self.assertTrue(governance_response.data['compare_candidates'])
+
+        self.assertEqual(compare_response.status_code, status.HTTP_200_OK)
+        self.assertIn('comparison_rows', compare_response.data)
+        self.assertIn('summary', compare_response.data)
+        self.assertEqual(compare_response.data['summary']['shared_coauthors'], [])
+        graph_sync_service.sync_paper.assert_called()
+
+    @patch('achievements.views.AcademicGraphSyncService')
+    def test_export_representative_batch_and_cleanup_apply_work(self, graph_sync_service):
+        paper_a = Paper.objects.create(
+            teacher=self.user,
+            title='待清洗论文 A',
+            abstract='用于验证批量标准化清洗与导出治理结果的论文记录。',
+            date_acquired='2025-01-10',
+            paper_type='JOURNAL',
+            journal_name='导出期刊',
+            doi=' 10.1000/NEEDS-CLEANUP ',
+            source_url=' https://example.com/a ',
+            pages=' 1-9 ',
+        )
+        paper_b = Paper.objects.create(
+            teacher=self.user,
+            title='待运营论文 B',
+            abstract='用于验证代表作批量运营与治理日志生成。',
+            date_acquired='2025-02-10',
+            paper_type='JOURNAL',
+            journal_name='导出期刊',
+            doi='10.1000/b',
+        )
+
+        representative_response = self.client.post(
+            '/api/achievements/papers/representative/batch-update/',
+            {'paper_ids': [paper_a.id, paper_b.id], 'is_representative': True},
+            format='json',
+        )
+        cleanup_response = self.client.post(
+            '/api/achievements/papers/cleanup-apply/',
+            {'paper_ids': [paper_a.id], 'action': 'normalize_text_fields'},
+            format='json',
+        )
+        export_response = self.client.get('/api/achievements/papers/export/')
+
+        self.assertEqual(representative_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(representative_response.data['updated_count'], 2)
+        self.assertEqual(cleanup_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(cleanup_response.data['updated_count'], 1)
+
+        paper_a.refresh_from_db()
+        paper_b.refresh_from_db()
+        self.assertTrue(paper_a.is_representative)
+        self.assertTrue(paper_b.is_representative)
+        self.assertEqual(paper_a.doi, '10.1000/needs-cleanup')
+        self.assertEqual(paper_a.source_url, 'https://example.com/a')
+        self.assertEqual(paper_a.pages, '1-9')
+
+        self.assertEqual(export_response.status_code, status.HTTP_200_OK)
+        self.assertIn('text/csv', export_response['Content-Type'])
+        self.assertIn('标题', export_response.content.decode('utf-8'))
+        self.assertGreaterEqual(PaperOperationLog.objects.filter(teacher=self.user).count(), 3)
+
+
+class TeacherPortraitApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            id=100140,
+            username='100140',
+            password='teacher123456',
+            real_name='画像深化教师',
+            department='人工智能学院',
+            title='副教授',
+        )
+        self.client.force_authenticate(user=self.user)
+
+        paper_a = Paper.objects.create(
+            teacher=self.user,
+            title='2024 阶段论文',
+            abstract='这是一个足够长的摘要，用于验证教师画像阶段对比能力和结构化解释字段。',
+            date_acquired='2024-04-01',
+            paper_type='JOURNAL',
+            journal_name='画像期刊',
+            citation_count=4,
+            doi='10.1000/portrait-2024',
+        )
+        paper_a.coauthors.create(name='阶段合作者甲')
+        paper_b = Paper.objects.create(
+            teacher=self.user,
+            title='2025 阶段论文',
+            abstract='这是另一个足够长的摘要，用于验证教师画像报告导出和趋势承接能力。',
+            date_acquired='2025-05-01',
+            paper_type='CONFERENCE',
+            journal_name='画像会议',
+            citation_count=11,
+            doi='10.1000/portrait-2025',
+        )
+        paper_b.coauthors.create(name='阶段合作者乙')
+
+        Project.objects.create(
+            teacher=self.user,
+            title='画像阶段项目',
+            date_acquired='2025-03-01',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='18.00',
+            status='ONGOING',
+        )
+        IntellectualProperty.objects.create(
+            teacher=self.user,
+            title='画像分析软件',
+            date_acquired='2025-02-10',
+            ip_type='SOFTWARE_COPYRIGHT',
+            registration_number='2025SR140000',
+            is_transformed=True,
+        )
+        TeachingAchievement.objects.create(
+            teacher=self.user,
+            title='画像课程改革',
+            date_acquired='2025-01-15',
+            achievement_type='TEACHING_REFORM',
+            level='校级',
+        )
+        AcademicService.objects.create(
+            teacher=self.user,
+            title='画像论坛报告',
+            date_acquired='2024-06-15',
+            service_type='INVITED_TALK',
+            organization='中国计算机学会',
+        )
+
+    def test_dashboard_stats_includes_snapshot_boundary_and_stage_comparison(self):
+        response = self.client.get('/api/achievements/dashboard-stats/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('weight_spec', response.data)
+        self.assertIn('calculation_summary', response.data)
+        self.assertIn('stage_comparison', response.data)
+        self.assertIn('snapshot_boundary', response.data)
+        self.assertTrue(response.data['stage_comparison']['available'])
+        self.assertEqual(response.data['snapshot_boundary']['persistence_status'], 'not_persisted')
+        self.assertEqual(response.data['snapshot_boundary']['snapshot_version'], 'portrait-runtime-v1')
+        self.assertEqual(response.data['snapshot_boundary']['generation_trigger'], 'dashboard_request')
+        self.assertEqual(response.data['snapshot_boundary']['freeze_status'], 'response_scoped')
+        self.assertTrue(response.data['stage_comparison']['structured_summary'])
+        self.assertTrue(response.data['stage_comparison']['changed_dimensions'][0]['change_summary'])
+        self.assertTrue(response.data['stage_comparison']['changed_dimensions'][0]['drivers'])
+        self.assertIn('weight_logic_summary', response.data['portrait_explanation'])
+        self.assertIn('snapshot_version_note', response.data['portrait_explanation'])
+
+    def test_radar_endpoint_includes_weight_spec_and_calculation_summary(self):
+        response = self.client.get(f'/api/achievements/radar/{self.user.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['weight_spec']), 6)
+        self.assertIn('formula_note', response.data['calculation_summary'])
+        self.assertIn('strongest_dimension', response.data['calculation_summary'])
+
+    def test_portrait_report_supports_json_and_markdown_export(self):
+        json_response = self.client.get(f'/api/achievements/portrait-report/{self.user.id}/')
+        markdown_response = self.client.get(
+            f'/api/achievements/portrait-report/{self.user.id}/',
+            {'export': 'markdown'},
+        )
+
+        self.assertEqual(json_response.status_code, status.HTTP_200_OK)
+        self.assertIn('report_title', json_response.data)
+        self.assertTrue(json_response.data['highlights'])
+        self.assertTrue(json_response.data['sections'])
+        self.assertIn('snapshot_boundary', json_response.data)
+        self.assertIn('snapshot_digest', json_response.data)
+        self.assertEqual(json_response.data['snapshot_boundary']['generation_trigger'], 'report_request')
+        self.assertEqual(json_response.data['snapshot_digest']['version'], 'portrait-runtime-v1')
+
+        self.assertEqual(markdown_response.status_code, status.HTTP_200_OK)
+        self.assertIn('text/markdown', markdown_response['Content-Type'])
+        self.assertIn('教师画像分析报告', markdown_response.content.decode('utf-8'))
+        self.assertIn('快照摘要', markdown_response.content.decode('utf-8'))
+        self.assertIn('变化说明', markdown_response.content.decode('utf-8'))

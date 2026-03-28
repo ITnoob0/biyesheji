@@ -63,6 +63,33 @@ export type PortraitDataMeta = {
   acceptance_scope?: string
 }
 
+export type WeightSpecItem = {
+  key: string
+  name: string
+  weight: number
+  formula_short: string
+  main_inputs: string[]
+  rationale: string
+  current_value: number
+}
+
+export type CalculationSummary = {
+  weight_mode: string
+  formula_note: string
+  total_score: number
+  total_achievements: number
+  strongest_dimension: {
+    key: string
+    name: string
+    value: number
+  }
+  weakest_dimension: {
+    key: string
+    name: string
+    value: number
+  }
+}
+
 export type DimensionSource = {
   name: string
   description: string
@@ -106,16 +133,111 @@ export type PortraitExplanation = {
   transparency_note: string
   trend_note: string
   snapshot_boundary_note: string
+  snapshot_version_note?: string
+  weight_logic_summary?: string
+  report_boundary_note?: string
+}
+
+export type StageComparisonDimension = {
+  key: string
+  name: string
+  current_value: number
+  baseline_value: number
+  delta: number
+  trend: 'up' | 'down' | 'flat'
+  change_summary?: string
+  drivers?: string[]
+  interpretation?: string
+  metric_deltas?: Record<string, number>
+  boundary_note?: string
+}
+
+export type StageComparison = {
+  available: boolean
+  compare_mode?: string
+  reference_type?: string
+  current_label?: string
+  baseline_label?: string
+  current_total_score?: number
+  baseline_total_score?: number
+  score_delta?: number
+  current_total_achievements?: number
+  baseline_total_achievements?: number
+  achievement_delta?: number
+  changed_dimensions?: StageComparisonDimension[]
+  structured_summary?: string
+  largest_change_dimension?: StageComparisonDimension | null
+  summary: string
+  coverage_note: string
+}
+
+export type SnapshotBoundary = {
+  current_mode: string
+  generated_at: string
+  span_years: number
+  anchor_years: number[]
+  persistence_status: string
+  freeze_status: string
+  snapshot_label: string
+  snapshot_version: string
+  version_semantics: string
+  generation_trigger: string
+  generation_trigger_label: string
+  freeze_scope_note: string
+  comparison_ready: boolean
+  current_boundary_note: string
+  frontend_carry_note: string
+  compare_boundary_note: string
+  next_step_note: string
+  recommended_fields: string[]
+  current_snapshot?: {
+    label: string
+    kind: string
+    version: string
+    generated_at: string
+    freeze_scope: string
+    generation_trigger: string
+  }
+}
+
+export type PortraitReportSection = {
+  title: string
+  summary: string
+  bullets: string[]
+}
+
+export type PortraitReportResponse = {
+  report_title: string
+  generated_at: string
+  summary: string
+  highlights: string[]
+  weight_spec: WeightSpecItem[]
+  stage_comparison: StageComparison
+  snapshot_boundary: SnapshotBoundary
+  snapshot_digest: {
+    label: string
+    version: string
+    generated_at: string
+    generation_trigger_label: string
+    freeze_scope_note: string
+    compare_boundary_note: string
+  }
+  sections: PortraitReportSection[]
+  data_meta?: PortraitDataMeta
 }
 
 export type DashboardStatsResponse = {
   statistics?: StatisticItem[]
   radar_data?: Array<{ name: string; value: number }>
   dimension_insights?: DimensionInsight[]
+  weight_spec?: WeightSpecItem[]
+  calculation_summary?: CalculationSummary
   achievement_overview?: AchievementOverview
   recent_achievements?: RecentAchievementRecord[]
   dimension_trend?: DimensionTrendPoint[]
   recent_structure?: RecentStructurePoint[]
+  stage_comparison?: StageComparison
+  snapshot_boundary?: SnapshotBoundary
   portrait_explanation?: PortraitExplanation
   data_meta?: PortraitDataMeta
 }
@@ -124,6 +246,8 @@ export type RadarResponse = {
   radar_dimensions?: Array<{ name: string; value: number }>
   dimension_sources?: DimensionSource[]
   dimension_insights?: DimensionInsight[]
+  weight_spec?: WeightSpecItem[]
+  calculation_summary?: CalculationSummary
   data_meta?: PortraitDataMeta
 }
 
@@ -186,6 +310,23 @@ export const buildPortraitUpdatedLabel = (dataMeta: PortraitDataMeta | null): st
   return new Date(dataMeta.updated_at).toLocaleString('zh-CN', {
     hour12: false,
   })
+}
+
+export const buildPortraitGeneratedLabel = (value?: string | null): string => {
+  if (!value) {
+    return '运行时实时生成'
+  }
+
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+  })
+}
+
+export const buildSnapshotVersionLabel = (snapshotBoundary?: SnapshotBoundary | null): string => {
+  if (!snapshotBoundary?.snapshot_version) {
+    return '当前未定义快照版本'
+  }
+  return `${snapshotBoundary.snapshot_label} · ${snapshotBoundary.snapshot_version}`
 }
 
 export const buildRecentAchievementEmptyText = (records: RecentAchievementRecord[]): string =>

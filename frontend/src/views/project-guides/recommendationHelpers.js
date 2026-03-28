@@ -66,14 +66,29 @@ export const buildDistributionCards = analysis => {
       helper: analysis.teacher_name || '当前教师',
     },
     {
-      label: '高频标签',
-      value: analysis.top_labels?.[0]?.label || '暂无',
-      helper: analysis.top_labels?.[0] ? `出现 ${analysis.top_labels[0].count} 次` : '当前暂无标签分布',
+      label: '反馈覆盖率',
+      value: `${analysis.response_rate || 0}%`,
+      helper: `已反馈 ${analysis.responded_guide_count || 0} 条`,
+    },
+    {
+      label: '计划/已申报',
+      value: `${analysis.plan_to_apply_count || 0} / ${analysis.applied_count || 0}`,
+      helper: analysis.feedback_record_count ? `累计反馈 ${analysis.feedback_record_count} 条` : '当前尚无反馈历史',
     },
     {
       label: '主要规则档位',
       value: Object.entries(analysis.rule_profile_distribution || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '暂无',
       helper: analysis.comparison_teacher_name ? `对比 ${analysis.comparison_teacher_name}` : '管理员视角分析',
+    },
+    {
+      label: '已收藏结果',
+      value: analysis.favorited_count || 0,
+      helper: Object.entries(analysis.feedback_distribution || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '暂无反馈信号',
+    },
+    {
+      label: '高频标签',
+      value: analysis.top_labels?.[0]?.label || '暂无',
+      helper: analysis.top_labels?.[0] ? `出现 ${analysis.top_labels[0].count} 次` : '当前暂无标签分布',
     },
   ]
 }

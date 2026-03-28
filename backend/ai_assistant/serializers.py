@@ -8,9 +8,13 @@ class PortraitAssistantRequestSerializer(serializers.Serializer):
     QUESTION_TYPES = (
         ('portrait_summary', '画像总结'),
         ('portrait_dimension_reason', '画像形成说明'),
+        ('portrait_data_governance', '画像数据口径与缺口说明'),
         ('achievement_summary', '成果概括'),
+        ('achievement_portrait_link', '成果与画像联动说明'),
+        ('achievement_recommendation_link', '成果与推荐联动说明'),
         ('guide_reason', '推荐说明'),
         ('guide_overview', '推荐概览'),
+        ('graph_status', '图谱链路与降级状态'),
         ('academy_summary', '学院统计概览'),
     )
 

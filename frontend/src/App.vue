@@ -176,9 +176,9 @@ const primaryNavItems = computed<PrimaryNavItem[]>(() => {
   }
 
   return [
+    { label: '个人中心', path: '/profile-editor', icon: Document },
     { label: '画像主页', path: '/dashboard', icon: Odometer },
     { label: '成果管理', path: '/entry', icon: Histogram },
-    { label: '个人中心', path: '/profile-editor', icon: Document },
     { label: '智能问答', path: '/assistant-demo', icon: ChatDotRound },
     { label: '推荐结果', path: '/project-recommendations', icon: MagicStick },
   ]

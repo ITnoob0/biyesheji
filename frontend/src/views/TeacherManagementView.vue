@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  buildAccountLifecycleHint,
   buildAdminRouteNotice,
   buildPasswordSecurityNotice,
   resolveApiErrorMessage,
@@ -14,7 +15,9 @@ import {
 import { ensureSessionUserContext, setSessionUser, setSessionNotice, type SessionUser } from '../utils/sessionAuth'
 import type {
   TeacherAccountResponse,
+  TeacherBulkActionResponse,
   TeacherCreateResponse,
+  TeacherManagementSummaryResponse,
   TeacherPasswordResetResponse,
 } from '../types/users'
 
@@ -44,12 +47,27 @@ const teachers = ref<TeacherRecord[]>([])
 const createLoading = ref(false)
 const listLoading = ref(false)
 const resetLoadingId = ref<number | null>(null)
+const bulkLoading = ref(false)
+const selectedTeacherIds = ref<number[]>([])
+const keywordFilter = ref('')
+const accountStatusFilter = ref<'all' | 'active' | 'inactive'>('all')
+const passwordStatusFilter = ref<'all' | 'pending' | 'stable'>('all')
 const lastCreatedAccount = ref<Pick<TeacherCreateResponse, 'employee_id' | 'username' | 'initial_password'> | null>(
   null,
 )
+const lastBulkResult = ref<TeacherBulkActionResponse | null>(null)
 const editDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const editFormRef = ref<FormInstance>()
+const managementSummary = ref<TeacherManagementSummaryResponse>({
+  total_count: 0,
+  active_count: 0,
+  inactive_count: 0,
+  password_reset_required_count: 0,
+  stable_password_count: 0,
+  recovery_guidance: '',
+  future_extension_hint: '',
+})
 
 const createTeacherForm = reactive<CreateTeacherFormState>({
   employee_id: '',
@@ -73,6 +91,9 @@ const editTeacher = reactive<TeacherRecord>({
   title: '',
   email: '',
   contact_phone: '',
+  contact_visibility: 'email_only',
+  contact_visibility_label: '仅公开邮箱',
+  public_contact_channels: [],
   avatar_url: '',
   research_direction: [],
   bio: '',
@@ -86,6 +107,9 @@ const editTeacher = reactive<TeacherRecord>({
   password_reset_required: false,
   password_updated_at: null,
   security_notice: '',
+  account_status_label: '账户可用',
+  password_status_label: '状态正常',
+  next_action_hint: '当前账户状态正常，可继续维护资料、成果和密码。',
   permission_scope: {
     entry_role: 'teacher',
     scope_summary: '教师账号当前可维护自己的资料、密码和成果，并查看自己的画像、推荐、图谱和问答结果。',
@@ -112,6 +136,34 @@ const editRules: FormRules = {
 
 const checkedAdmin = computed(() => Boolean(currentUser.value?.is_admin))
 const focusTeacherId = computed(() => Number(route.query.focus || 0))
+const hasSelection = computed(() => selectedTeacherIds.value.length > 0)
+const filteredTeachers = computed(() =>
+  teachers.value.filter(teacher => {
+    const keyword = keywordFilter.value.trim()
+    if (keyword) {
+      const haystack = [teacher.employee_id, teacher.username, teacher.real_name, teacher.department, teacher.title]
+        .filter(Boolean)
+        .join(' ')
+      if (!haystack.includes(keyword)) {
+        return false
+      }
+    }
+
+    if (accountStatusFilter.value === 'active' && !teacher.is_active) {
+      return false
+    }
+    if (accountStatusFilter.value === 'inactive' && teacher.is_active) {
+      return false
+    }
+    if (passwordStatusFilter.value === 'pending' && !teacher.password_reset_required) {
+      return false
+    }
+    if (passwordStatusFilter.value === 'stable' && teacher.password_reset_required) {
+      return false
+    }
+    return true
+  }),
+)
 
 const toResearchDirection = (source: string) =>
   source
@@ -166,6 +218,15 @@ const loadTeachers = async () => {
   }
 }
 
+const loadManagementSummary = async () => {
+  try {
+    const response = await axios.get<TeacherManagementSummaryResponse>('/api/users/teachers/summary/')
+    managementSummary.value = response.data
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '账户生命周期摘要加载失败'))
+  }
+}
+
 const createTeacher = async () => {
   if (!createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
@@ -186,7 +247,7 @@ const createTeacher = async () => {
 
     ElMessage.success('教师账号创建成功')
     resetCreateForm()
-    await loadTeachers()
+    await Promise.all([loadTeachers(), loadManagementSummary()])
   } catch (error: any) {
     ElMessage.error(resolveApiErrorMessage(error, '教师账号创建失败'))
   } finally {
@@ -223,9 +284,84 @@ const saveTeacherEdit = async () => {
 
     ElMessage.success('教师资料已更新')
     editDialogVisible.value = false
-    await loadTeachers()
+    await Promise.all([loadTeachers(), loadManagementSummary()])
   } catch (error: any) {
     ElMessage.error(resolveApiErrorMessage(error, '教师资料更新失败'))
+  }
+}
+
+const handleSelectionChange = (rows: TeacherRecord[]) => {
+  selectedTeacherIds.value = rows.map(item => item.id)
+}
+
+const toggleTeacherStatus = async (teacher: TeacherRecord, nextActive: boolean) => {
+  try {
+    const response = await axios.patch<TeacherAccountResponse>(`/api/users/teachers/${teacher.id}/`, {
+      is_active: nextActive,
+    })
+    if (currentUser.value?.id === teacher.id) {
+      currentUser.value = setSessionUser(response.data)
+    }
+    ElMessage.success(nextActive ? '教师账户已恢复启用' : '教师账户已停用')
+    await Promise.all([loadTeachers(), loadManagementSummary()])
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '账户状态更新失败'))
+  }
+}
+
+const executeBulkAction = async (action: 'activate' | 'deactivate' | 'reset_password') => {
+  if (!hasSelection.value) {
+    ElMessage.warning('请先勾选至少一条教师账户记录。')
+    return
+  }
+
+  const confirmTitle =
+    action === 'activate'
+      ? '批量恢复启用'
+      : action === 'deactivate'
+        ? '批量停用'
+        : '批量重置密码'
+  const confirmMessage =
+    action === 'activate'
+      ? `确认批量恢复 ${selectedTeacherIds.value.length} 个教师账户吗？`
+      : action === 'deactivate'
+        ? `确认批量停用 ${selectedTeacherIds.value.length} 个教师账户吗？停用后这些教师将无法继续登录。`
+        : `确认批量重置 ${selectedTeacherIds.value.length} 个教师账户密码吗？重置后系统会提示教师尽快修改临时密码。`
+
+  await ElMessageBox.confirm(confirmMessage, confirmTitle, { type: action === 'deactivate' ? 'warning' : 'info' })
+
+  bulkLoading.value = true
+  try {
+    const response = await axios.post<TeacherBulkActionResponse>('/api/users/teachers/bulk-actions/', {
+      action,
+      user_ids: selectedTeacherIds.value,
+    })
+    lastBulkResult.value = response.data
+    managementSummary.value = response.data.management_summary
+    ElMessage.success(response.data.detail)
+
+    if (action === 'reset_password' && response.data.temporary_password) {
+      await ElMessageBox.alert(
+        [
+          `本次处理账户数：${response.data.processed_count}`,
+          `临时密码：${response.data.temporary_password}`,
+          `恢复提示：${response.data.recovery_notice}`,
+        ].join('<br />'),
+        '批量密码重置完成',
+        {
+          confirmButtonText: '我知道了',
+          dangerouslyUseHTMLString: true,
+        },
+      )
+    }
+
+    selectedTeacherIds.value = []
+    teacherTableRef.value?.clearSelection()
+    await loadTeachers()
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '批量账户操作失败'))
+  } finally {
+    bulkLoading.value = false
   }
 }
 
@@ -253,7 +389,7 @@ const resetPassword = async (teacher: TeacherRecord) => {
         dangerouslyUseHTMLString: true,
       },
     )
-    await loadTeachers()
+    await Promise.all([loadTeachers(), loadManagementSummary()])
   } catch (error: any) {
     const detail = error?.response?.status === 403
       ? resolvePermissionDeniedMessage(error?.response?.data?.detail)
@@ -294,7 +430,7 @@ watch(
 onMounted(async () => {
   const adminUser = await ensureAdminUser()
   if (!adminUser) return
-  await loadTeachers()
+  await Promise.all([loadTeachers(), loadManagementSummary()])
 })
 </script>
 
@@ -306,12 +442,13 @@ onMounted(async () => {
           <p class="eyebrow workspace-hero__eyebrow">Teacher Management</p>
           <h1 class="workspace-hero__title">教师管理</h1>
           <p class="hero-copy workspace-hero__text">
-            面向管理员统一维护教师账号、角色身份、启停状态和临时密码重置提醒，保持账户生命周期清晰可控。
+            面向管理员统一维护教师账号、角色身份、启停状态、密码生命周期和批量账户操作，保持账户生命周期清晰可控。
           </p>
           <div class="hero-tags">
             <span class="hero-tag">管理员入口</span>
             <span class="hero-tag">工号登录不变</span>
             <span class="hero-tag">统一权限边界</span>
+            <span class="hero-tag">批量账户操作</span>
           </div>
         </div>
         <div class="hero-actions workspace-page-actions">
@@ -333,6 +470,25 @@ onMounted(async () => {
     </div>
 
     <template v-else>
+      <section class="summary-grid">
+        <el-card class="summary-card workspace-surface-card" shadow="never">
+          <span class="summary-label">教师账户总量</span>
+          <strong class="summary-value">{{ managementSummary.total_count }}</strong>
+        </el-card>
+        <el-card class="summary-card workspace-surface-card" shadow="never">
+          <span class="summary-label">当前启用</span>
+          <strong class="summary-value">{{ managementSummary.active_count }}</strong>
+        </el-card>
+        <el-card class="summary-card workspace-surface-card" shadow="never">
+          <span class="summary-label">当前停用</span>
+          <strong class="summary-value">{{ managementSummary.inactive_count }}</strong>
+        </el-card>
+        <el-card class="summary-card workspace-surface-card" shadow="never">
+          <span class="summary-label">待修改密码</span>
+          <strong class="summary-value">{{ managementSummary.password_reset_required_count }}</strong>
+        </el-card>
+      </section>
+
       <section class="management-shell">
         <el-card class="create-card workspace-surface-card" shadow="never">
           <template #header>
@@ -429,15 +585,65 @@ onMounted(async () => {
             </div>
           </template>
 
+          <el-alert :title="managementSummary.recovery_guidance" type="info" :closable="false" show-icon />
+          <el-alert
+            :title="managementSummary.future_extension_hint"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="summary-guidance"
+          />
+
+          <div class="toolbar-row">
+            <div class="toolbar-filters">
+              <el-input v-model="keywordFilter" placeholder="按工号、姓名、院系筛选" clearable />
+              <el-select v-model="accountStatusFilter">
+                <el-option label="全部账户状态" value="all" />
+                <el-option label="仅看已启用" value="active" />
+                <el-option label="仅看已停用" value="inactive" />
+              </el-select>
+              <el-select v-model="passwordStatusFilter">
+                <el-option label="全部密码状态" value="all" />
+                <el-option label="仅看待修改密码" value="pending" />
+                <el-option label="仅看状态正常" value="stable" />
+              </el-select>
+            </div>
+
+            <div class="toolbar-actions">
+              <el-button :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('activate')">批量恢复</el-button>
+              <el-button :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('deactivate')">批量停用</el-button>
+              <el-button type="warning" :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('reset_password')">
+                批量重置密码
+              </el-button>
+            </div>
+          </div>
+
+          <el-result
+            v-if="lastBulkResult"
+            icon="success"
+            title="最近一次批量操作结果"
+            :sub-title="`${lastBulkResult.detail} 已处理 ${lastBulkResult.processed_count} 个账户，跳过 ${lastBulkResult.skipped_count} 个账户。`"
+          >
+            <template #extra>
+              <div class="result-box">
+                <p>操作类型：{{ lastBulkResult.action }}</p>
+                <p v-if="lastBulkResult.temporary_password">临时密码：{{ lastBulkResult.temporary_password }}</p>
+                <p>{{ lastBulkResult.recovery_notice }}</p>
+              </div>
+            </template>
+          </el-result>
+
           <el-table
             ref="teacherTableRef"
             v-loading="listLoading"
-            :data="teachers"
+            :data="filteredTeachers"
             stripe
             highlight-current-row
             :row-class-name="rowClassName"
             empty-text="暂无教师记录"
+            @selection-change="handleSelectionChange"
           >
+            <el-table-column type="selection" width="48" />
             <el-table-column prop="employee_id" label="工号(ID)" width="120" />
             <el-table-column prop="username" label="登录账号" width="140" />
             <el-table-column prop="real_name" label="姓名" width="120" />
@@ -452,26 +658,36 @@ onMounted(async () => {
             <el-table-column label="账号状态" width="120">
               <template #default="{ row }">
                 <el-tag :type="row.is_active ? 'success' : 'danger'" effect="plain">
-                  {{ row.is_active ? '启用' : '停用' }}
+                  {{ row.account_status_label || (row.is_active ? '启用' : '停用') }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column label="密码状态" width="140">
               <template #default="{ row }">
                 <el-tag :type="row.password_reset_required ? 'warning' : 'success'" effect="plain">
-                  {{ row.password_reset_required ? '待修改密码' : '状态正常' }}
+                  {{ row.password_status_label || (row.password_reset_required ? '待修改密码' : '状态正常') }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column label="安全提示" min-width="220">
               <template #default="{ row }">
-                <span class="security-copy">{{ buildPasswordSecurityNotice(row) }}</span>
+                <div class="security-copy">
+                  <div>{{ buildPasswordSecurityNotice(row) }}</div>
+                  <div class="security-secondary">{{ buildAccountLifecycleHint(row) }}</div>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="280" fixed="right">
+            <el-table-column label="操作" width="360" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
                 <el-button link type="success" @click="router.push(`/profile/${row.id}`)">查看画像</el-button>
+                <el-button
+                  link
+                  :type="row.is_active ? 'danger' : 'primary'"
+                  @click="toggleTeacherStatus(row, !row.is_active)"
+                >
+                  {{ row.is_active ? '停用账户' : '恢复启用' }}
+                </el-button>
                 <el-button link type="warning" :loading="resetLoadingId === row.id" @click="resetPassword(row)">
                   重置密码
                 </el-button>
@@ -527,6 +743,13 @@ onMounted(async () => {
         <el-alert
           :title="buildPasswordSecurityNotice(editTeacher)"
           :type="editTeacher.password_reset_required ? 'warning' : 'info'"
+          :closable="false"
+          show-icon
+        />
+
+        <el-alert
+          :title="buildAccountLifecycleHint(editTeacher)"
+          :type="editTeacher.is_active ? 'info' : 'error'"
           :closable="false"
           show-icon
         />
@@ -617,10 +840,39 @@ h1 {
 .hero-actions,
 .card-header,
 .actions,
-.dialog-actions {
+.dialog-actions,
+.toolbar-row,
+.toolbar-filters,
+.toolbar-actions {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.summary-grid {
+  max-width: 1180px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.summary-card {
+  border: none;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+}
+
+.summary-label {
+  display: block;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.summary-value {
+  font-size: 30px;
+  color: #0f172a;
 }
 
 .management-shell {
@@ -656,6 +908,27 @@ h1 {
   margin-top: 10px;
 }
 
+.toolbar-row {
+  justify-content: space-between;
+  margin: 18px 0;
+  align-items: stretch;
+}
+
+.toolbar-filters {
+  flex: 1;
+}
+
+.toolbar-filters :deep(.el-input),
+.toolbar-filters :deep(.el-select) {
+  width: 100%;
+  max-width: 260px;
+}
+
+.toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .result-box {
   margin-bottom: 16px;
   padding: 16px 20px;
@@ -664,10 +937,18 @@ h1 {
   text-align: left;
 }
 
+.summary-guidance {
+  margin-top: 12px;
+}
+
 .result-box p,
 .security-copy {
   margin: 8px 0;
   line-height: 1.6;
+}
+
+.security-secondary {
+  color: #94a3b8;
 }
 
 :deep(.focus-row) {
@@ -685,9 +966,13 @@ h1 {
 
   .hero-main,
   .hero-actions,
+  .summary-grid,
   .two-cols,
   .card-header,
-  .dialog-actions {
+  .dialog-actions,
+  .toolbar-row,
+  .toolbar-filters,
+  .toolbar-actions {
     flex-direction: column;
     grid-template-columns: 1fr;
     align-items: stretch;

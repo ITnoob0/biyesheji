@@ -7,12 +7,28 @@ export type TabName =
 
 export type BibtexPreviewStatus = 'ready' | 'duplicate' | 'invalid'
 
+export interface BibtexIssueDetail {
+  code: string
+  category: string
+  field?: string
+  severity: string
+  message: string
+}
+
 export interface CoAuthorDetail {
   id: number
   name: string
   organization: string
   is_internal: boolean
   internal_teacher: number | null
+}
+
+export interface MetadataAlertDetail {
+  code: string
+  field: string
+  label: string
+  severity: string
+  message: string
 }
 
 export interface TeacherOwnedAchievementRecord {
@@ -42,6 +58,7 @@ export interface PaperRecord extends TeacherOwnedAchievementRecord {
   keywords: string[]
   coauthor_details: CoAuthorDetail[]
   metadata_alerts: string[]
+  metadata_alert_details: MetadataAlertDetail[]
 }
 
 export interface ProjectRecord extends TeacherOwnedAchievementRecord {
@@ -237,6 +254,8 @@ export interface BibtexPreviewEntry {
   coauthors: string[]
   preview_status: BibtexPreviewStatus
   issues: string[]
+  issue_details: BibtexIssueDetail[]
+  issue_categories: string[]
 }
 
 export interface BibtexPreviewSummary {
@@ -244,6 +263,7 @@ export interface BibtexPreviewSummary {
   ready_count: number
   duplicate_count: number
   invalid_count: number
+  category_counts?: Record<string, number>
 }
 
 export interface BibtexPreviewResponse {
@@ -254,13 +274,25 @@ export interface BibtexPreviewResponse {
   acceptance_scope: string
 }
 
+export interface BibtexImportFailureRecord {
+  source_index?: number
+  title: string
+  doi: string
+  reason_code?: string
+  reason_label?: string
+  reason_category?: string
+  issue_summary?: string
+  errors: Record<string, string[] | string>
+}
+
 export interface BibtexImportResponse {
   imported_count: number
   skipped_count: number
   failed_count: number
+  classified_counts?: Record<string, number>
   imported_records: Array<{ id: number; title: string; doi: string }>
-  skipped_entries: Array<{ source_index?: number; title: string; doi: string; issue_summary?: string; errors: Record<string, string[] | string> }>
-  failed_entries: Array<{ source_index?: number; title: string; doi: string; issue_summary?: string; errors: Record<string, string[] | string> }>
+  skipped_entries: BibtexImportFailureRecord[]
+  failed_entries: BibtexImportFailureRecord[]
 }
 
 export interface PaperSummaryRecord {
@@ -273,6 +305,7 @@ export interface PaperSummaryRecord {
   citation_count: number
   is_representative: boolean
   metadata_alerts: string[]
+  metadata_alert_details: MetadataAlertDetail[]
 }
 
 export interface PaperSummaryResponse {
@@ -286,4 +319,105 @@ export interface PaperSummaryResponse {
   yearly_distribution: Array<{ year: number; count: number }>
   type_distribution: Array<{ paper_type: string; label: string; count: number }>
   recent_records: PaperSummaryRecord[]
+  metadata_alert_breakdown?: Array<{ code: string; label: string; severity: string; count: number }>
+}
+
+export interface PaperOperationLogRecord {
+  id: number
+  paper: number | null
+  action: string
+  action_label: string
+  source: string
+  source_label: string
+  summary: string
+  changed_fields: string[]
+  metadata_flags: string[]
+  paper_title_snapshot: string
+  paper_doi_snapshot: string
+  created_at: string
+}
+
+export interface CleanupSuggestion {
+  key: string
+  label: string
+  description: string
+  count: number
+  example_ids: number[]
+}
+
+export interface RepresentativeOverview {
+  count: number
+  top_items: Array<{
+    id: number
+    title: string
+    journal_name: string
+    date_acquired: string
+    citation_count: number
+    metadata_alerts: string[]
+  }>
+}
+
+export interface PaperGovernanceResponse {
+  summary: PaperSummaryResponse
+  representative_overview: RepresentativeOverview
+  cleanup_suggestions: CleanupSuggestion[]
+  compare_candidates: Array<{
+    id: number
+    title: string
+    journal_name: string
+    date_acquired: string
+    citation_count: number
+    is_representative: boolean
+  }>
+  recent_operations: PaperOperationLogRecord[]
+}
+
+export interface PaperCompareRow {
+  field: string
+  label: string
+  left: string | number
+  right: string | number
+}
+
+export interface PaperComparisonResponse {
+  left: {
+    id: number
+    title: string
+    metadata_alerts: MetadataAlertDetail[]
+    keywords: string[]
+    coauthors: string[]
+  }
+  right: {
+    id: number
+    title: string
+    metadata_alerts: MetadataAlertDetail[]
+    keywords: string[]
+    coauthors: string[]
+  }
+  comparison_rows: PaperCompareRow[]
+  summary: {
+    citation_gap: number
+    metadata_completeness_gap: number
+    shared_keywords: string[]
+    shared_coauthors: string[]
+    left_alert_count: number
+    right_alert_count: number
+  }
+}
+
+export interface PaperHistoryResponse {
+  paper_id: number
+  history: PaperOperationLogRecord[]
+}
+
+export interface PaperRepresentativeBatchResponse {
+  updated_count: number
+  updated_ids: number[]
+  is_representative: boolean
+}
+
+export interface PaperCleanupResponse {
+  updated_count: number
+  updated_ids: number[]
+  action: string
 }

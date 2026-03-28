@@ -5,6 +5,9 @@ export function buildGraphSourceSummary(meta: GraphTopologyMeta | null | undefin
   source: string
   notice: string
   badge: string
+  sourceScopeNote: string
+  degradationNote: string
+  interactionNote: string
   calculationNote: string
   fallbackTip: string
 }

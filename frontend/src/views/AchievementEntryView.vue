@@ -20,8 +20,23 @@
       </div>
     </section>
 
+    <section v-if="linkContext" class="content-shell link-context-shell">
+      <el-alert
+        :title="linkContextTitle"
+        type="info"
+        :description="linkContextDescription"
+        :closable="false"
+        show-icon
+      />
+    </section>
+
     <section class="overview-grid content-shell">
-      <el-card shadow="never" class="overview-card workspace-surface-card">
+      <el-card
+        id="achievement-records-section"
+        shadow="never"
+        class="overview-card workspace-surface-card"
+        :class="{ 'evidence-section-highlight': linkContext?.section === 'achievement-records' }"
+      >
         <template #header>
           <div class="card-header workspace-section-head">
             <span>成果管理概览</span>
@@ -61,7 +76,13 @@
           </div>
         </template>
         <div v-if="recentAchievements.length" class="recent-list">
-          <div v-for="item in recentAchievements" :key="`${item.type}-${item.id}`" class="recent-item">
+          <div
+            v-for="item in recentAchievements"
+            :id="recentAchievementEvidenceId(item.type, item.id)"
+            :key="`${item.type}-${item.id}`"
+            class="recent-item"
+            :class="{ 'recent-item--active': isActiveRecentAchievement(item.type, item.id) }"
+          >
             <div>
               <strong>{{ item.title }}</strong>
               <p>{{ item.type_label }} · {{ item.detail }}</p>
@@ -69,6 +90,11 @@
             <div class="recent-meta">
               <span>{{ item.date_acquired }}</span>
               <el-tag size="small" type="info" effect="plain">{{ item.highlight }}</el-tag>
+              <div class="recent-actions">
+                <el-button link type="primary" @click="goToPortraitDimensionFromAchievement(item.type, item.id)">画像维度</el-button>
+                <el-button link type="success" @click="goToRecommendationFromAchievement(item.type, item.id)">推荐解释</el-button>
+                <el-button link type="warning" @click="goToAssistantFromAchievement(item.type, item.id)">问答说明</el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -274,9 +300,9 @@
               <el-table-column label="联动入口" width="210">
                 <template #default="{ row }">
                   <div class="table-action-group workspace-table-actions">
-                    <el-button link type="primary" @click="goToPortraitAndGraph">画像/图谱</el-button>
-                    <el-button link type="success" @click="goToRecommendation">推荐</el-button>
-                    <el-button link type="warning" @click="goToAssistant">问答</el-button>
+                    <el-button link type="primary" @click="goToPortraitDimensionFromAchievement('paper', row.id)">画像/图谱</el-button>
+                    <el-button link type="success" @click="goToRecommendationFromAchievement('paper', row.id)">推荐</el-button>
+                    <el-button link type="warning" @click="goToAssistantFromAchievement('paper', row.id)">问答</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -289,6 +315,12 @@
             </el-table>
           </el-card>
         </div>
+        <PaperGovernancePanel
+          :papers="papers"
+          :query-state="queryMap.papers"
+          @refresh="handleGovernanceRefresh"
+          @edit-paper="handleGovernanceEditPaper"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="科研项目" name="projects">
@@ -592,12 +624,20 @@
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PaperBibtexImportDialog from './achievement-entry/PaperBibtexImportDialog.vue'
+import PaperGovernancePanel from './achievement-entry/PaperGovernancePanel.vue'
 import { createAchievement, deleteAchievement, fetchAchievementList, fetchPaperSummary, updateAchievement } from './achievement-entry/api'
 import { removeAchievementRecord, upsertAchievementRecord } from './achievement-entry/recordState.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import {
+  buildCrossModuleQuery,
+  focusEvidenceSection,
+  mapAchievementTypeToEntryTab,
+  mapAchievementTypeToPortraitDimension,
+  parseCrossModuleLink,
+} from '../utils/crossModuleLinking'
 import type { DashboardStatsResponse, RecentAchievementRecord } from './dashboard/portrait'
 import {
   achievementEndpointMap,
@@ -619,6 +659,7 @@ import type {
   AchievementQueryState,
   IpFormState,
   IpRecord,
+  BibtexImportResponse,
   PaperSummaryResponse,
   PaperFormState,
   PaperRecord,
@@ -631,7 +672,9 @@ import type {
   TeachingRecord,
 } from './achievement-entry/types'
 
+const route = useRoute()
 const router = useRouter()
+const linkContext = computed(() => parseCrossModuleLink(route.query))
 const activeTab = ref<TabName>('papers')
 const pageLoading = ref(false)
 const sessionUser = ref<SessionUser | null>(null)
@@ -720,6 +763,21 @@ const teacherLabel = computed(() => {
 })
 
 const recentAchievements = computed<RecentAchievementRecord[]>(() => dashboardStats.value?.recent_achievements || [])
+const linkContextTitle = computed(() => {
+  if (linkContext.value?.source === 'recommendation') {
+    return '当前从推荐模块回跳，已定位到成果证据区。'
+  }
+  if (linkContext.value?.source === 'assistant') {
+    return '当前从问答来源卡片回跳，已定位到成果证据区。'
+  }
+  if (linkContext.value?.source === 'portrait') {
+    return '当前从画像模块回跳，已定位到成果证据区。'
+  }
+  return '当前已定位到成果证据区。'
+})
+const linkContextDescription = computed(
+  () => linkContext.value?.note || '当前成果联动只回跳到本人可编辑、可核验的真实成果记录，不会虚构支撑证据。',
+)
 
 const paperYearOptions = computed(() => buildPaperYearOptions(paperSummary.value))
 
@@ -751,6 +809,11 @@ const achievementOverviewCards = computed(() => [
     helper: '缺少链接、页码或期刊级别的论文记录',
   },
 ])
+
+const recentAchievementEvidenceId = (type: string, id: number) => `recent-achievement-${type}-${id}`
+
+const isActiveRecentAchievement = (type: string, id: number) =>
+  linkContext.value?.recordType === type && linkContext.value?.recordId === id
 
 const requiredRule = (message: string) => [{ required: true, message, trigger: 'blur' }]
 
@@ -848,7 +911,7 @@ const fetchDashboardStats = async (): Promise<void> => {
 }
 
 const fetchPaperInsights = async (): Promise<void> => {
-  paperSummary.value = await fetchPaperSummary()
+  paperSummary.value = await fetchPaperSummary(queryMap.papers)
 }
 
 const refreshAllRecords = async (): Promise<void> => {
@@ -857,9 +920,28 @@ const refreshAllRecords = async (): Promise<void> => {
     sessionUser.value = await ensureSessionUserContext()
     await Promise.all((Object.keys(achievementEndpointMap) as TabName[]).map(fetchRecords))
     await Promise.all([fetchDashboardStats(), fetchPaperInsights()])
+    await nextTick()
+    focusAchievementEvidence()
   } finally {
     pageLoading.value = false
   }
+}
+
+const focusAchievementEvidence = (): void => {
+  if (linkContext.value?.recordType) {
+    activeTab.value = mapAchievementTypeToEntryTab(linkContext.value.recordType) as TabName
+  }
+
+  if (linkContext.value?.section !== 'achievement-records') {
+    return
+  }
+
+  focusEvidenceSection(
+    'achievement-records-section',
+    linkContext.value?.recordType && linkContext.value?.recordId
+      ? recentAchievementEvidenceId(linkContext.value.recordType, linkContext.value.recordId)
+      : undefined,
+  )
 }
 
 const resetPaperForm = (): void => {
@@ -1105,8 +1187,26 @@ const removeRecord = async (tab: TabName, id: number): Promise<void> => {
   }
 }
 
-const handleBibtexImported = async (): Promise<void> => {
+const handleBibtexImported = async (payload: BibtexImportResponse): Promise<void> => {
   await Promise.all([fetchRecords('papers'), fetchDashboardStats(), fetchPaperInsights()])
+  if (payload.imported_records.length === 1) {
+    const target = papers.value.find(item => item.id === payload.imported_records[0]?.id)
+    if (target) {
+      startEditRecord('papers', target)
+      ElMessage.info('已为你打开导入论文的修订表单，可继续补充元数据。')
+    }
+  }
+}
+
+const handleGovernanceRefresh = async (): Promise<void> => {
+  await Promise.all([fetchRecords('papers'), fetchDashboardStats(), fetchPaperInsights()])
+}
+
+const handleGovernanceEditPaper = (paperId: number): void => {
+  const target = papers.value.find(item => item.id === paperId)
+  if (target) {
+    startEditRecord('papers', target)
+  }
 }
 
 const goToPortraitAndGraph = (): void => {
@@ -1121,12 +1221,58 @@ const goToAssistant = (): void => {
   void router.push('/assistant-demo')
 }
 
+const goToPortraitDimensionFromAchievement = (type: string, id: number): void => {
+  void router.push({
+    name: 'dashboard',
+    query: buildCrossModuleQuery({
+      source: 'achievement',
+      page: 'portrait',
+      section: 'portrait-dimensions',
+      dimension_key: mapAchievementTypeToPortraitDimension(type),
+      record_type: type,
+      record_id: String(id),
+    }),
+  })
+}
+
+const goToRecommendationFromAchievement = (type: string, id: number): void => {
+  void router.push({
+    name: 'project-recommendations',
+    query: buildCrossModuleQuery({
+      source: 'achievement',
+      page: 'recommendations',
+      section: 'recommendation-evidence',
+      dimension_key: mapAchievementTypeToPortraitDimension(type),
+      record_type: type,
+      record_id: String(id),
+    }),
+  })
+}
+
+const goToAssistantFromAchievement = (type: string, id: number): void => {
+  void router.push({
+    name: 'assistant-demo',
+    query: buildCrossModuleQuery({
+      source: 'achievement',
+      page: 'assistant',
+      section: 'assistant-answer',
+      question_type: 'achievement_summary',
+      record_type: type,
+      record_id: String(id),
+    }),
+  })
+}
+
 const goToProfileCenter = (): void => {
   void router.push('/profile-editor')
 }
 
 onMounted(() => {
   void refreshAllRecords()
+})
+
+watch(linkContext, () => {
+  focusAchievementEvidence()
 })
 </script>
 
@@ -1165,6 +1311,10 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+  margin-bottom: 20px;
+}
+
+.link-context-shell {
   margin-bottom: 20px;
 }
 
@@ -1237,6 +1387,14 @@ onMounted(() => {
   border-bottom: 1px solid #e7eef6;
 }
 
+.recent-item--active,
+.evidence-section-highlight {
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14);
+  border-radius: 18px;
+  padding: 14px 16px;
+}
+
 .recent-item:last-child {
   border-bottom: none;
 }
@@ -1246,6 +1404,13 @@ onMounted(() => {
   justify-items: end;
   gap: 8px;
   text-align: right;
+}
+
+.recent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .hero-actions,

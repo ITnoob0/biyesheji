@@ -1,11 +1,12 @@
+from __future__ import annotations
+
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
 from django.db import transaction
-from django.db.models.functions import ExtractYear
+from django.db.models import Q
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,14 +23,48 @@ from users.access import (
     ensure_teacher_user,
 )
 
-from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes
-from .import_serializers import BibtexConfirmImportSerializer, BibtexPreviewRequestSerializer
-from .models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, ResearchKeyword, TeachingAchievement
-from .portrait_analysis import build_dimension_trend, build_portrait_explanation, build_recent_structure
+from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes, revalidate_bibtex_entries
+from .governance import (
+    build_compare_payload,
+    build_governance_overview,
+    build_metadata_flag_codes,
+    diff_paper_fields,
+    export_papers_as_csv,
+    log_paper_operation,
+    metadata_alert_count_expression,
+    normalize_selected_papers,
+    snapshot_paper_fields,
+)
+from .import_serializers import (
+    BibtexConfirmImportSerializer,
+    BibtexPreviewRequestSerializer,
+    BibtexRevalidateSerializer,
+)
+from .models import (
+    AcademicService,
+    IntellectualProperty,
+    Paper,
+    PaperKeyword,
+    Project,
+    ResearchKeyword,
+    TeachingAchievement,
+)
+from .portrait_analysis import (
+    build_dimension_trend,
+    build_portrait_explanation,
+    build_portrait_report,
+    build_recent_structure,
+    build_snapshot_boundary,
+    build_stage_comparison,
+    export_portrait_report_markdown,
+)
 from .scoring_engine import TeacherScoringEngine
 from .serializers import (
     AcademicServiceSerializer,
     IntellectualPropertySerializer,
+    PaperCleanupApplySerializer,
+    PaperOperationLogSerializer,
+    PaperRepresentativeBatchSerializer,
     PaperSerializer,
     ProjectSerializer,
     TeachingAchievementSerializer,
@@ -47,7 +82,6 @@ def parse_bool_query_param(value: str) -> bool | None:
 
 def get_requested_teacher(request, user_id: int | None = None):
     target_user_id = user_id or request.query_params.get('user_id', '').strip()
-
     if target_user_id:
         try:
             normalized_user_id = int(target_user_id)
@@ -62,23 +96,20 @@ def get_requested_teacher(request, user_id: int | None = None):
 
         ensure_self_or_admin_user(request.user, target_user, PROFILE_SCOPE_MESSAGE)
         return target_user
-
     return request.user
 
 
 def get_portrait_data_meta(user):
     created_candidates = []
-
     for model in (Paper, Project, IntellectualProperty, TeachingAchievement, AcademicService):
         latest = model.objects.filter(teacher=user).order_by('-created_at').values_list('created_at', flat=True).first()
         if latest:
             created_candidates.append(latest)
 
     latest_created_at = max(created_candidates) if created_candidates else None
-
     return {
         'updated_at': latest_created_at.isoformat() if latest_created_at else None,
-        'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；近年趋势按成果年份回溯估算，不等同于历史快照；拓扑图支持 Neo4j 失败时回退到 MySQL 关系数据。',
+        'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；图谱分析继续保留 Neo4j 可选、MySQL 回退链路。',
         'acceptance_scope': '本能力纳入当前阶段验收。',
     }
 
@@ -94,7 +125,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'type_label': '论文成果',
                 'title': paper.title,
                 'date_acquired': paper.date_acquired.isoformat(),
-                'detail': f'{paper.get_paper_type_display()} · {paper.journal_name}',
+                'detail': f'{paper.get_paper_type_display()} / {paper.journal_name}',
                 'highlight': '代表作' if paper.is_representative else f'引用 {paper.citation_count} 次',
             }
         )
@@ -107,7 +138,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'type_label': '科研项目',
                 'title': project.title,
                 'date_acquired': project.date_acquired.isoformat(),
-                'detail': f'{project.get_level_display()} · {project.get_role_display()}',
+                'detail': f'{project.get_level_display()} / {project.get_role_display()}',
                 'highlight': f'经费 {project.funding_amount} 万元',
             }
         )
@@ -120,7 +151,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'type_label': '知识产权',
                 'title': item.title,
                 'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_ip_type_display()} · 登记号 {item.registration_number}',
+                'detail': f'{item.get_ip_type_display()} / 登记号 {item.registration_number}',
                 'highlight': '已转化' if item.is_transformed else '未转化',
             }
         )
@@ -133,7 +164,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'type_label': '教学成果',
                 'title': item.title,
                 'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_achievement_type_display()} · {item.level}',
+                'detail': f'{item.get_achievement_type_display()} / {item.level}',
                 'highlight': '育人成果',
             }
         )
@@ -146,16 +177,36 @@ def build_recent_achievements(user, limit: int = 6):
                 'type_label': '学术服务',
                 'title': item.title,
                 'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_service_type_display()} · {item.organization}',
+                'detail': f'{item.get_service_type_display()} / {item.organization}',
                 'highlight': '学术共同体贡献',
             }
         )
 
-    return sorted(
-        recent_records,
-        key=lambda item: (item['date_acquired'], item['id']),
-        reverse=True,
-    )[:limit]
+    return sorted(recent_records, key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
+
+
+def classify_import_errors(errors: dict) -> dict:
+    flattened = {key: ' '.join(str(item) for item in value) if isinstance(value, list) else str(value) for key, value in errors.items()}
+    if 'doi' in flattened and '相同 DOI' in flattened['doi']:
+        return {
+            'reason_code': 'duplicate_existing_doi',
+            'reason_label': '重复 DOI',
+            'reason_category': 'duplicate_existing',
+            'issue_summary': '当前账号下已存在相同 DOI 的论文，已跳过导入。',
+        }
+    if any(field in flattened for field in ('title', 'journal_name', 'date_acquired')):
+        return {
+            'reason_code': 'missing_required_fields',
+            'reason_label': '缺少必填字段',
+            'reason_category': 'missing_required',
+            'issue_summary': '关键字段校验未通过，请补全题目、期刊/会议和时间后重试。',
+        }
+    return {
+        'reason_code': 'validation_error',
+        'reason_label': '字段校验失败',
+        'reason_category': 'invalid_value',
+        'issue_summary': '字段校验未通过，请根据错误提示修正后重试。',
+    }
 
 
 class TeacherRadarView(APIView):
@@ -178,6 +229,8 @@ class TeacherRadarView(APIView):
                 'radar_dimensions': radar_result['radar_dimensions'],
                 'dimension_sources': radar_result['dimension_sources'],
                 'dimension_insights': radar_result['dimension_insights'],
+                'weight_spec': radar_result['weight_spec'],
+                'calculation_summary': radar_result['calculation_summary'],
                 'data_meta': get_portrait_data_meta(user),
             }
         )
@@ -239,7 +292,7 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
 class PaperViewSet(TeacherOwnedAchievementViewSet):
     queryset = (
         Paper.objects.select_related('teacher')
-        .prefetch_related('coauthors', 'paperkeyword_set__keyword')
+        .prefetch_related('coauthors', 'paperkeyword_set__keyword', 'operation_logs')
         .all()
         .order_by('-date_acquired', '-created_at')
     )
@@ -247,22 +300,45 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'journal_name', 'doi')
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().annotate(metadata_alert_count=metadata_alert_count_expression())
+
         paper_type = self.request.query_params.get('paper_type', '').strip()
         if paper_type:
             queryset = queryset.filter(paper_type=paper_type)
+
         year = self.request.query_params.get('year', '').strip()
         if year.isdigit():
             queryset = queryset.filter(date_acquired__year=int(year))
+
         year_from = self.request.query_params.get('year_from', '').strip()
         if year_from.isdigit():
             queryset = queryset.filter(date_acquired__year__gte=int(year_from))
+
         year_to = self.request.query_params.get('year_to', '').strip()
         if year_to.isdigit():
             queryset = queryset.filter(date_acquired__year__lte=int(year_to))
+
         is_representative = parse_bool_query_param(self.request.query_params.get('is_representative', ''))
         if is_representative is not None:
             queryset = queryset.filter(is_representative=is_representative)
+
+        has_metadata_alerts = parse_bool_query_param(self.request.query_params.get('has_metadata_alerts', ''))
+        if has_metadata_alerts is True:
+            queryset = queryset.filter(metadata_alert_count__gt=0)
+        elif has_metadata_alerts is False:
+            queryset = queryset.filter(metadata_alert_count=0)
+
+        missing_field = self.request.query_params.get('missing_field', '').strip()
+        if missing_field in {'doi', 'pages', 'source_url', 'journal_level'}:
+            queryset = queryset.filter(**{missing_field: ''})
+
+        citation_min = self.request.query_params.get('citation_min', '').strip()
+        if citation_min.isdigit():
+            queryset = queryset.filter(citation_count__gte=int(citation_min))
+
+        citation_max = self.request.query_params.get('citation_max', '').strip()
+        if citation_max.isdigit():
+            queryset = queryset.filter(citation_count__lte=int(citation_max))
 
         ordering_map = {
             'date_desc': ('-date_acquired', '-created_at'),
@@ -273,11 +349,78 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             'title_desc': ('-title', '-date_acquired', '-created_at'),
             'created_desc': ('-created_at',),
             'created_asc': ('created_at',),
+            'representative_desc': ('-is_representative', '-citation_count', '-date_acquired', '-created_at'),
+            'metadata_alerts_desc': ('-metadata_alert_count', '-date_acquired', '-created_at'),
         }
         sort_by = self.request.query_params.get('sort_by', '').strip()
         if sort_by in ordering_map:
             queryset = queryset.order_by(*ordering_map[sort_by])
         return queryset
+
+    def perform_create(self, serializer):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        paper = serializer.save(teacher=self.request.user)
+        log_paper_operation(
+            paper=paper,
+            teacher=self.request.user,
+            action='CREATE',
+            source='manual',
+            summary='新增论文记录',
+            changed_fields=[
+                'title',
+                'abstract',
+                'date_acquired',
+                'paper_type',
+                'journal_name',
+                'journal_level',
+                'published_volume',
+                'published_issue',
+                'pages',
+                'source_url',
+                'citation_count',
+                'is_first_author',
+                'is_representative',
+                'doi',
+                'coauthors',
+            ],
+            metadata_flags=build_metadata_flag_codes(paper),
+        )
+        self.sync_graph(paper)
+
+    def perform_update(self, serializer):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, serializer.instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        before = snapshot_paper_fields(serializer.instance)
+        paper = serializer.save()
+        changed_fields = diff_paper_fields(before, paper)
+        log_paper_operation(
+            paper=paper,
+            teacher=self.request.user,
+            action='UPDATE',
+            source='manual',
+            summary='更新论文信息',
+            changed_fields=changed_fields,
+            metadata_flags=build_metadata_flag_codes(paper),
+        )
+        self.sync_graph(paper)
+
+    def perform_destroy(self, instance):
+        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        identifier = instance.id
+        log_paper_operation(
+            paper=instance,
+            teacher=self.request.user,
+            action='DELETE',
+            source='manual',
+            summary='删除论文记录',
+            changed_fields=[],
+            metadata_flags=build_metadata_flag_codes(instance),
+            title_snapshot=instance.title,
+            doi_snapshot=instance.doi,
+        )
+        instance.delete()
+        self.delete_graph_snapshot(identifier)
 
     @action(
         detail=False,
@@ -309,10 +452,17 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             {
                 **preview_data,
                 'parser': 'bibtex',
-                'pdf_import_note': 'PDF 元数据解析暂未纳入当前阶段验收，已为后续版本预留。',
-                'acceptance_scope': '本能力纳入当前阶段验收。',
+                'pdf_import_note': 'PDF 元数据解析仍为预留能力，当前治理增强只覆盖 BibTeX 主链路。',
+                'acceptance_scope': '当前已覆盖 BibTeX 预览、修订、确认导入与导入后治理。',
             }
         )
+
+    @action(detail=False, methods=['post'], url_path='import/bibtex-revalidate')
+    def bibtex_revalidate(self, request):
+        serializer = BibtexRevalidateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        preview_data = revalidate_bibtex_entries(serializer.validated_data['entries'], request.user)
+        return Response(preview_data)
 
     @action(detail=False, methods=['post'], url_path='import/bibtex-confirm')
     def bibtex_confirm(self, request):
@@ -322,9 +472,25 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         imported_records = []
         skipped_entries = []
         failed_entries = []
+        classified_counts: dict[str, int] = {}
 
         for entry in serializer.validated_data['entries']:
-            payload = {
+            if entry.get('preview_status') == 'duplicate':
+                payload = {
+                    'source_index': entry.get('source_index'),
+                    'title': entry.get('title', ''),
+                    'doi': entry.get('doi', ''),
+                    'reason_code': 'duplicate_preview',
+                    'reason_label': '预览阶段判定重复',
+                    'reason_category': 'duplicate_existing',
+                    'issue_summary': '重复记录已跳过：该条目在预览阶段已判定为重复记录。',
+                    'errors': {'preview_status': ['duplicate']},
+                }
+                skipped_entries.append(payload)
+                classified_counts[payload['reason_code']] = classified_counts.get(payload['reason_code'], 0) + 1
+                continue
+
+            paper_payload = {
                 'title': entry['title'],
                 'abstract': entry.get('abstract', ''),
                 'date_acquired': entry['date_acquired'],
@@ -342,51 +508,79 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 'coauthors': entry.get('coauthors', []),
             }
 
-            paper_serializer = self.get_serializer(data=payload, context={'request': request})
+            paper_serializer = self.get_serializer(data=paper_payload, context={'request': request})
             if not paper_serializer.is_valid():
-                target_collection = skipped_entries if 'doi' in paper_serializer.errors else failed_entries
+                classification = classify_import_errors(paper_serializer.errors)
+                target_collection = skipped_entries if classification['reason_category'].startswith('duplicate') else failed_entries
                 target_collection.append(
                     {
                         'source_index': entry.get('source_index'),
                         'title': entry.get('title', ''),
                         'doi': entry.get('doi', ''),
-                        'issue_summary': '重复记录已跳过，请先核对当前账号下的现有论文。'
-                        if 'doi' in paper_serializer.errors
-                        else '字段校验未通过，请根据错误提示修正后重试。',
+                        **classification,
                         'errors': paper_serializer.errors,
                     }
                 )
+                classified_counts[classification['reason_code']] = classified_counts.get(classification['reason_code'], 0) + 1
                 continue
 
             try:
                 with transaction.atomic():
                     paper = paper_serializer.save(teacher=request.user)
+                    log_paper_operation(
+                        paper=paper,
+                        teacher=request.user,
+                        action='IMPORT',
+                        source='bibtex',
+                        summary='通过 BibTeX 导入论文',
+                        changed_fields=[
+                            'title',
+                            'abstract',
+                            'date_acquired',
+                            'paper_type',
+                            'journal_name',
+                            'journal_level',
+                            'published_volume',
+                            'published_issue',
+                            'pages',
+                            'source_url',
+                            'citation_count',
+                            'is_first_author',
+                            'is_representative',
+                            'doi',
+                            'coauthors',
+                        ],
+                        metadata_flags=build_metadata_flag_codes(paper),
+                    )
                     self.sync_graph(paper)
             except Exception as exc:
+                classification = {
+                    'reason_code': 'storage_failure',
+                    'reason_label': '写入失败',
+                    'reason_category': 'storage_failure',
+                    'issue_summary': '论文写入失败，请稍后重试或联系管理员检查日志。',
+                }
                 failed_entries.append(
                     {
                         'source_index': entry.get('source_index'),
                         'title': entry.get('title', ''),
                         'doi': entry.get('doi', ''),
-                        'issue_summary': '写入论文数据失败，请稍后重试或联系管理员检查日志。',
+                        **classification,
                         'errors': {'detail': [str(exc)]},
                     }
                 )
+                classified_counts[classification['reason_code']] = classified_counts.get(classification['reason_code'], 0) + 1
                 continue
 
-            imported_records.append(
-                {
-                    'id': paper.id,
-                    'title': paper.title,
-                    'doi': paper.doi,
-                }
-            )
+            imported_records.append({'id': paper.id, 'title': paper.title, 'doi': paper.doi})
+            classified_counts['imported'] = classified_counts.get('imported', 0) + 1
 
         return Response(
             {
                 'imported_count': len(imported_records),
                 'skipped_count': len(skipped_entries),
                 'failed_count': len(failed_entries),
+                'classified_counts': classified_counts,
                 'imported_records': imported_records,
                 'skipped_entries': skipped_entries,
                 'failed_entries': failed_entries,
@@ -395,68 +589,111 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
+        return Response(build_governance_overview(self.get_queryset(), request.user)['summary'])
+
+    @action(detail=False, methods=['get'], url_path='governance')
+    def governance(self, request):
+        return Response(build_governance_overview(self.get_queryset(), request.user))
+
+    @action(detail=False, methods=['get'], url_path='export')
+    def export(self, request):
+        content = export_papers_as_csv(self.get_queryset())
+        response = HttpResponse(content, content_type='text/csv; charset=utf-8')
+        filename = f'papers-governance-{timezone.now().strftime("%Y%m%d-%H%M%S")}.csv'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    @action(detail=False, methods=['get'], url_path='compare')
+    def compare(self, request):
+        left_id = request.query_params.get('left_id', '').strip()
+        right_id = request.query_params.get('right_id', '').strip()
+        if not (left_id.isdigit() and right_id.isdigit()):
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message='请提供两个可比较的论文 ID。',
+                code='paper_compare_invalid',
+                request=request,
+                next_step='请在成果治理面板中重新选择两篇论文后再发起对比。',
+            )
+
         queryset = self.get_queryset()
-        yearly_distribution = list(
-            queryset.annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(count=Count('id'))
-            .order_by('-year')
-        )
-        type_distribution = list(
-            queryset.values('paper_type')
-            .annotate(count=Count('id'))
-            .order_by('-count', 'paper_type')
-        )
-        latest_records = queryset.order_by('-date_acquired', '-created_at')[:5]
+        papers = {paper.id: paper for paper in queryset.filter(id__in=[int(left_id), int(right_id)])}
+        if len(papers) != 2:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='待对比论文不存在或无访问权限。',
+                code='paper_compare_not_found',
+                request=request,
+                next_step='请确认两篇论文都属于当前可访问范围。',
+            )
 
-        duplicate_doi_groups = list(
-            queryset.exclude(doi='')
-            .values('doi')
-            .annotate(count=Count('id'))
-            .filter(count__gt=1)
-            .order_by('-count', 'doi')
-        )
+        return Response(build_compare_payload(papers[int(left_id)], papers[int(right_id)]))
 
+    @action(detail=False, methods=['post'], url_path='representative/batch-update')
+    def batch_update_representative(self, request):
+        ensure_teacher_user(request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        serializer = PaperRepresentativeBatchSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        queryset = self.get_queryset().filter(id__in=serializer.validated_data['paper_ids'])
+        updated_ids = list(queryset.values_list('id', flat=True))
+        if not updated_ids:
+            return Response({'updated_count': 0, 'updated_ids': []})
+
+        queryset.update(is_representative=serializer.validated_data['is_representative'])
+        updated_papers = list(Paper.objects.filter(id__in=updated_ids))
+        for paper in updated_papers:
+            log_paper_operation(
+                paper=paper,
+                teacher=request.user,
+                action='UPDATE',
+                source='manual',
+                summary='批量调整代表作标记',
+                changed_fields=['is_representative'],
+                metadata_flags=build_metadata_flag_codes(paper),
+            )
         return Response(
             {
-                'total_count': queryset.count(),
-                'representative_count': queryset.filter(is_representative=True).count(),
-                'recent_count': queryset.filter(date_acquired__year__gte=timezone.now().year - 2).count(),
-                'missing_doi_count': queryset.filter(doi='').count(),
-                'missing_source_url_count': queryset.filter(source_url='').count(),
-                'incomplete_metadata_count': queryset.filter(
-                    Q(pages='') | Q(source_url='') | Q(journal_level='')
-                ).count(),
-                'duplicate_doi_count': len(duplicate_doi_groups),
-                'yearly_distribution': [
-                    {'year': item['year'], 'count': item['count']}
-                    for item in yearly_distribution
-                    if item['year'] is not None
-                ],
-                'type_distribution': [
-                    {
-                        'paper_type': item['paper_type'],
-                        'label': dict(Paper.PAPER_TYPES).get(item['paper_type'], item['paper_type']),
-                        'count': item['count'],
-                    }
-                    for item in type_distribution
-                ],
-                'recent_records': [
-                    {
-                        'id': paper.id,
-                        'title': paper.title,
-                        'date_acquired': paper.date_acquired.isoformat(),
-                        'paper_type': paper.paper_type,
-                        'paper_type_display': paper.get_paper_type_display(),
-                        'journal_name': paper.journal_name,
-                        'citation_count': paper.citation_count,
-                        'is_representative': paper.is_representative,
-                        'metadata_alerts': PaperSerializer(paper, context={'request': request}).data.get('metadata_alerts', []),
-                    }
-                    for paper in latest_records
-                ],
+                'updated_count': len(updated_ids),
+                'updated_ids': updated_ids,
+                'is_representative': serializer.validated_data['is_representative'],
             }
         )
+
+    @action(detail=False, methods=['post'], url_path='cleanup-apply')
+    def cleanup_apply(self, request):
+        ensure_teacher_user(request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        serializer = PaperCleanupApplySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        queryset = list(self.get_queryset().filter(id__in=serializer.validated_data['paper_ids']))
+        if serializer.validated_data['action'] != 'normalize_text_fields':
+            return Response({'updated_count': 0, 'updated_ids': []})
+
+        updated_papers = normalize_selected_papers(queryset)
+        for paper in updated_papers:
+            log_paper_operation(
+                paper=paper,
+                teacher=request.user,
+                action='UPDATE',
+                source='system',
+                summary='执行批量文本标准化清洗',
+                changed_fields=['doi', 'source_url', 'pages', 'journal_level', 'published_volume', 'published_issue'],
+                metadata_flags=build_metadata_flag_codes(paper),
+            )
+        return Response(
+            {
+                'updated_count': len(updated_papers),
+                'updated_ids': [paper.id for paper in updated_papers],
+                'action': serializer.validated_data['action'],
+            }
+        )
+
+    @action(detail=True, methods=['get'], url_path='history')
+    def history(self, request, pk=None):
+        paper = self.get_object()
+        serializer = PaperOperationLogSerializer(paper.operation_logs.all()[:20], many=True)
+        return Response({'paper_id': paper.id, 'history': serializer.data})
 
     def sync_graph(self, instance):
         keywords = self._extract_keywords(instance)
@@ -473,17 +710,14 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     def _extract_keywords(self, instance):
         PaperKeyword.objects.filter(paper=instance).delete()
-
         if not instance.abstract or len(instance.abstract.strip()) < 10:
             return []
 
         ai = AcademicAI()
         keywords = ai.extract_tags(instance.title, instance.abstract)
-
         for keyword_name in keywords:
             keyword_obj, _ = ResearchKeyword.objects.get_or_create(name=keyword_name)
             PaperKeyword.objects.get_or_create(paper=instance, keyword=keyword_obj)
-
         return keywords
 
 
@@ -594,7 +828,7 @@ class TeacherDashboardStatsView(APIView):
                 'icon': 'Document',
                 'iconClass': 'icon-blue',
                 'trend': None,
-                'helper': f"总被引 {metrics['citation_total']} 次",
+                'helper': f'总被引 {metrics["citation_total"]} 次',
             },
             {
                 'title': '项目与知识产权',
@@ -603,7 +837,7 @@ class TeacherDashboardStatsView(APIView):
                 'icon': 'Reading',
                 'iconClass': 'icon-green',
                 'trend': None,
-                'helper': f"项目 {metrics['project_count']} 项 / 知识产权 {metrics['ip_count']} 项",
+                'helper': f'项目 {metrics["project_count"]} 项 / 知识产权 {metrics["ip_count"]} 项',
             },
             {
                 'title': '教学与学术服务',
@@ -612,7 +846,7 @@ class TeacherDashboardStatsView(APIView):
                 'icon': 'User',
                 'iconClass': 'icon-orange',
                 'trend': None,
-                'helper': f"教学成果 {metrics['teaching_count']} 项 / 学术服务 {metrics['service_count']} 项",
+                'helper': f'教学成果 {metrics["teaching_count"]} 项 / 学术服务 {metrics["service_count"]} 项',
             },
             {
                 'title': '综合画像评分',
@@ -630,6 +864,8 @@ class TeacherDashboardStatsView(APIView):
                 'statistics': statistics,
                 'radar_data': radar_result['radar_dimensions'],
                 'dimension_insights': radar_result['dimension_insights'],
+                'weight_spec': radar_result['weight_spec'],
+                'calculation_summary': radar_result['calculation_summary'],
                 'achievement_overview': {
                     'paper_count': metrics['paper_count'],
                     'project_count': metrics['project_count'],
@@ -642,7 +878,36 @@ class TeacherDashboardStatsView(APIView):
                 'recent_achievements': build_recent_achievements(user),
                 'dimension_trend': build_dimension_trend(user),
                 'recent_structure': build_recent_structure(user),
+                'stage_comparison': build_stage_comparison(user),
+                'snapshot_boundary': build_snapshot_boundary(user),
                 'portrait_explanation': build_portrait_explanation(),
                 'data_meta': get_portrait_data_meta(user),
             }
         )
+
+
+class TeacherPortraitReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id: int) -> Response | HttpResponse:
+        user = get_requested_teacher(request, user_id=user_id)
+        if user is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='教师账户不存在。',
+                code='teacher_not_found',
+                request=request,
+                next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
+            )
+
+        export_format = request.query_params.get('export', '').strip().lower()
+        if export_format == 'markdown':
+            content = export_portrait_report_markdown(user)
+            response = HttpResponse(content, content_type='text/markdown; charset=utf-8')
+            filename = f'teacher-portrait-report-{user.id}-{timezone.now().strftime("%Y%m%d-%H%M%S")}.md'
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        report_payload = build_portrait_report(user)
+        report_payload['data_meta'] = get_portrait_data_meta(user)
+        return Response(report_payload)

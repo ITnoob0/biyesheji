@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import type { PasswordChangeResponse } from '../../types/users'
 import {
+  buildAccountLifecycleHint,
   buildPasswordSecurityNotice,
   formatPasswordUpdatedAt,
   resolveApiErrorMessage,
@@ -41,8 +42,12 @@ const rules: FormRules<PasswordFormState> = {
 }
 
 const securityNotice = computed(() => buildPasswordSecurityNotice(props.currentUser))
+const lifecycleHint = computed(() => buildAccountLifecycleHint(props.currentUser))
 const roleLabel = computed(() => resolveRoleLabel(props.currentUser))
 const passwordUpdatedAtLabel = computed(() => formatPasswordUpdatedAt(props.currentUser?.password_updated_at))
+const accountStatusLabel = computed(() => props.currentUser?.account_status_label || (props.currentUser?.is_active ? '账户可用' : '账户停用'))
+const passwordStatusLabel = computed(() => props.currentUser?.password_status_label || (props.currentUser?.password_reset_required ? '待修改密码' : '状态正常'))
+const passwordFormDisabled = computed(() => props.currentUser?.is_active === false)
 
 const resetForm = () => {
   Object.assign(passwordForm, {
@@ -97,6 +102,13 @@ const changePassword = async () => {
         show-icon
       />
 
+      <el-alert
+        :title="lifecycleHint"
+        :type="currentUser?.is_active === false ? 'error' : 'info'"
+        :closable="false"
+        show-icon
+      />
+
       <div class="meta-grid">
         <div class="meta-item">
           <span class="meta-label">当前身份</span>
@@ -106,16 +118,24 @@ const changePassword = async () => {
           <span class="meta-label">密码更新时间</span>
           <strong>{{ passwordUpdatedAtLabel }}</strong>
         </div>
+        <div class="meta-item">
+          <span class="meta-label">账户状态</span>
+          <strong>{{ accountStatusLabel }}</strong>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">密码状态</span>
+          <strong>{{ passwordStatusLabel }}</strong>
+        </div>
       </div>
     </div>
 
     <el-form ref="formRef" :model="passwordForm" :rules="rules" label-position="top">
       <div class="form-grid">
         <el-form-item label="当前密码" prop="current_password">
-          <el-input v-model="passwordForm.current_password" type="password" show-password />
+          <el-input v-model="passwordForm.current_password" type="password" show-password :disabled="passwordFormDisabled" />
         </el-form-item>
         <el-form-item label="新密码" prop="new_password">
-          <el-input v-model="passwordForm.new_password" type="password" show-password />
+          <el-input v-model="passwordForm.new_password" type="password" show-password :disabled="passwordFormDisabled" />
         </el-form-item>
       </div>
 
@@ -124,13 +144,14 @@ const changePassword = async () => {
           v-model="passwordForm.confirm_password"
           type="password"
           show-password
+          :disabled="passwordFormDisabled"
           @keyup.enter="changePassword"
         />
       </el-form-item>
 
       <div class="panel-actions">
-        <el-button @click="resetForm">重置</el-button>
-        <el-button type="primary" :loading="loading" @click="changePassword">修改密码</el-button>
+        <el-button @click="resetForm" :disabled="passwordFormDisabled">重置</el-button>
+        <el-button type="primary" :loading="loading" :disabled="passwordFormDisabled" @click="changePassword">修改密码</el-button>
       </div>
     </el-form>
   </el-card>

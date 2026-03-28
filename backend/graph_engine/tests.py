@@ -4,7 +4,16 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from achievements.models import CoAuthor, Paper, PaperKeyword, ResearchKeyword
+from achievements.models import (
+    AcademicService,
+    CoAuthor,
+    IntellectualProperty,
+    Paper,
+    PaperKeyword,
+    Project,
+    ResearchKeyword,
+    TeachingAchievement,
+)
 
 
 User = get_user_model()
@@ -36,6 +45,37 @@ class GraphTopologyFallbackTests(APITestCase):
         CoAuthor.objects.create(paper=paper, name='校外合作者', is_internal=False)
         keyword, _ = ResearchKeyword.objects.get_or_create(name='教师画像')
         PaperKeyword.objects.create(paper=paper, keyword=keyword)
+        project = Project.objects.create(
+            teacher=self.user,
+            title='图谱与教师研究产出联动项目',
+            date_acquired='2026-03-02',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='12.50',
+            status='ONGOING',
+        )
+        ip = IntellectualProperty.objects.create(
+            teacher=self.user,
+            title='教师画像图谱系统软件著作权',
+            date_acquired='2026-03-03',
+            ip_type='SOFTWARE_COPYRIGHT',
+            registration_number='IP-2026-001',
+            is_transformed=False,
+        )
+        teaching = TeachingAchievement.objects.create(
+            teacher=self.user,
+            title='图谱与画像融合教改成果',
+            date_acquired='2026-03-04',
+            achievement_type='TEACHING_REFORM',
+            level='校级',
+        )
+        service = AcademicService.objects.create(
+            teacher=self.user,
+            title='学术图数据治理专题论坛报告',
+            date_acquired='2026-03-05',
+            service_type='INVITED_TALK',
+            organization='教育数据治理协作组织',
+        )
 
         response = self.client.get(self.url)
 
@@ -47,12 +87,22 @@ class GraphTopologyFallbackTests(APITestCase):
         meta = response.data['meta']
         self.assertEqual(meta['source'], 'mysql')
         self.assertTrue(meta['fallback_used'])
-        self.assertGreaterEqual(meta['node_count'], 2)
-        self.assertGreaterEqual(meta['link_count'], 1)
+        self.assertGreaterEqual(meta['node_count'], 6)
+        self.assertGreaterEqual(meta['link_count'], 5)
+        self.assertIn('source_scope_note', meta)
+        self.assertIn('degradation_note', meta)
+        self.assertIn('interaction_note', meta)
+        self.assertIn('analysis_level', meta)
+        self.assertIn('fallback_tip', meta)
 
         self.assertTrue(any('nodeTypeLabel' in node for node in response.data['nodes']))
         self.assertTrue(any('detailLines' in node for node in response.data['nodes']))
-        self.assertTrue(any(node.get('name') == '高校教师科研画像数据融合方法研究' for node in response.data['nodes']))
+        self.assertTrue(any(node.get('name') == paper.title for node in response.data['nodes']))
+        self.assertTrue(any(node.get('recordType') == 'paper' and node.get('entityId') == paper.id for node in response.data['nodes']))
+        self.assertTrue(any(node.get('recordType') == 'project' and node.get('entityId') == project.id for node in response.data['nodes']))
+        self.assertTrue(any(node.get('recordType') == 'intellectual_property' and node.get('entityId') == ip.id for node in response.data['nodes']))
+        self.assertTrue(any(node.get('recordType') == 'teaching_achievement' and node.get('entityId') == teaching.id for node in response.data['nodes']))
+        self.assertTrue(any(node.get('recordType') == 'academic_service' and node.get('entityId') == service.id for node in response.data['nodes']))
 
         self.assertTrue(any('relationLabel' in link for link in response.data['links']))
         self.assertTrue(any('description' in link for link in response.data['links']))
@@ -60,13 +110,13 @@ class GraphTopologyFallbackTests(APITestCase):
         self.assertIn('highlight_cards', response.data['analysis'])
         self.assertIn('scope_note', response.data['analysis'])
         self.assertIn('collaboration_overview', response.data['analysis'])
+        self.assertIn('collaboration_circle_overview', response.data['analysis'])
         self.assertIn('collaborator_type_breakdown', response.data['analysis'])
         self.assertIn('theme_hotspots', response.data['analysis'])
         self.assertEqual(response.data['analysis']['collaborator_type_breakdown']['internal_count'], 1)
         self.assertEqual(response.data['analysis']['collaborator_type_breakdown']['external_count'], 1)
+        self.assertEqual(response.data['analysis']['collaboration_circle_overview']['extended_collaborator_count'], 2)
         self.assertEqual(response.data['analysis']['theme_hotspots']['top_keywords'][0]['name'], '教师画像')
-        self.assertIn('analysis_level', response.data['meta'])
-        self.assertIn('fallback_tip', response.data['meta'])
 
     def test_empty_relational_topology_keeps_compatible_response_shape(self):
         response = self.client.get(self.url)
@@ -78,9 +128,40 @@ class GraphTopologyFallbackTests(APITestCase):
         self.assertEqual(response.data['meta']['source'], 'mysql')
         self.assertTrue(response.data['meta']['fallback_used'])
         self.assertIn('notice', response.data['meta'])
+        self.assertIn('source_scope_note', response.data['meta'])
+        self.assertIn('degradation_note', response.data['meta'])
+        self.assertIn('interaction_note', response.data['meta'])
         self.assertIn('fallback_tip', response.data['meta'])
         self.assertEqual(response.data['analysis']['collaboration_overview']['paper_count'], 0)
+        self.assertEqual(response.data['analysis']['collaboration_circle_overview']['core_collaborator_count'], 0)
         self.assertEqual(response.data['analysis']['theme_hotspots']['top_keywords'], [])
+
+    def test_collaboration_circle_overview_uses_lightweight_thresholds(self):
+        for index in range(3):
+            paper = Paper.objects.create(
+                teacher=self.user,
+                title=f'合作圈层验证论文 {index + 1}',
+                abstract='围绕合作圈层一期轻量阈值划分进行验证。',
+                date_acquired=f'2026-03-0{index + 1}',
+                doi=f'10.1234/circle-test-{index + 1}',
+                paper_type='JOURNAL',
+                journal_name='图谱分析验证期刊',
+            )
+            CoAuthor.objects.create(paper=paper, name='核心合作者', is_internal=False)
+            if index < 2:
+                CoAuthor.objects.create(paper=paper, name='活跃合作者', is_internal=True)
+            if index == 0:
+                CoAuthor.objects.create(paper=paper, name='扩展合作者', is_internal=False)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        circle = response.data['analysis']['collaboration_circle_overview']
+        self.assertEqual(circle['core_collaborator_count'], 1)
+        self.assertEqual(circle['active_collaborator_count'], 1)
+        self.assertEqual(circle['extended_collaborator_count'], 1)
+        self.assertEqual(circle['core_collaborators'][0]['name'], '核心合作者')
+        self.assertIn('轻量', circle['threshold_note'])
 
     @override_settings(ENABLE_NEO4J=True)
     def test_graph_still_falls_back_to_mysql_when_neo4j_runtime_is_unavailable(self):
@@ -101,6 +182,7 @@ class GraphTopologyFallbackTests(APITestCase):
         self.assertEqual(response.data['meta']['source'], 'mysql')
         self.assertTrue(response.data['meta']['fallback_used'])
         self.assertIn('MySQL', response.data['meta']['fallback_tip'])
+        self.assertIn('degradation_note', response.data['meta'])
         self.assertTrue(response.data['nodes'])
         self.assertTrue(response.data['links'])
 
@@ -148,14 +230,14 @@ class GraphTopologyFallbackTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['meta']['source'], 'mysql')
-        self.assertTrue(any(node.get('name') == '管理员查看的图谱论文' for node in response.data['nodes']))
+        self.assertTrue(any(node.get('name') == paper.title for node in response.data['nodes']))
 
     @patch('graph_engine.signals.threading.Thread')
     def test_paper_save_signal_does_not_start_full_sync_by_default(self, thread_cls):
         Paper.objects.create(
             teacher=self.user,
             title='默认关闭信号同步的论文',
-            abstract='围绕第二轮图谱链路收口进行验证，确认默认不会触发全量 Neo4j 重建。',
+            abstract='围绕图谱同步链路收口进行验证，确认默认不会触发全量 Neo4j 重建。',
             date_acquired='2026-03-02',
             doi='10.1234/graph-signal-disabled',
             paper_type='JOURNAL',

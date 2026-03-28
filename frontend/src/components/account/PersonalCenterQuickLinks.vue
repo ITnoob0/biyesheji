@@ -59,6 +59,13 @@ const quickLinks = computed(() => [
       </div>
     </template>
 
+    <el-alert
+      title="个人中心已作为教师默认工作台入口，以下模块可从这里继续进入；顶部品牌按钮也会优先返回个人中心。"
+      type="info"
+      :closable="false"
+      show-icon
+    />
+
     <div class="link-grid">
       <article v-for="item in quickLinks" :key="item.key" class="link-item">
         <div class="link-head">
@@ -99,6 +106,7 @@ const quickLinks = computed(() => [
 .link-grid {
   display: grid;
   gap: 16px;
+  margin-top: 16px;
 }
 
 .link-item {

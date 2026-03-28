@@ -1,12 +1,14 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from .governance import build_paper_metadata_alert_details, build_paper_metadata_alerts
 from .models import (
     AcademicService,
     CoAuthor,
     IntellectualProperty,
     Paper,
     PaperKeyword,
+    PaperOperationLog,
     Project,
     TeachingAchievement,
 )
@@ -51,6 +53,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     paper_type_display = serializers.CharField(source='get_paper_type_display', read_only=True)
     publication_year = serializers.SerializerMethodField()
     metadata_alerts = serializers.SerializerMethodField()
+    metadata_alert_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Paper
@@ -79,12 +82,14 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'coauthor_details',
             'keywords',
             'metadata_alerts',
+            'metadata_alert_details',
         )
         read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + (
             'coauthor_details',
             'keywords',
             'publication_year',
             'metadata_alerts',
+            'metadata_alert_details',
         )
 
     def validate_journal_name(self, value):
@@ -109,7 +114,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         request = self.context.get('request')
-        doi = (attrs.get('doi') or '').strip()
+        doi = (attrs.get('doi') or '').strip().lower()
 
         if doi and request and request.user and request.user.is_authenticated:
             existing = Paper.objects.filter(teacher=request.user, doi=doi)
@@ -119,16 +124,9 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
                 raise serializers.ValidationError({'doi': '当前账号下已存在相同 DOI 的论文。'})
             attrs['doi'] = doi
 
-        if 'journal_level' in attrs and attrs['journal_level']:
-            attrs['journal_level'] = attrs['journal_level'].strip()
-        if 'published_volume' in attrs and attrs['published_volume']:
-            attrs['published_volume'] = attrs['published_volume'].strip()
-        if 'published_issue' in attrs and attrs['published_issue']:
-            attrs['published_issue'] = attrs['published_issue'].strip()
-        if 'pages' in attrs and attrs['pages']:
-            attrs['pages'] = attrs['pages'].strip()
-        if 'source_url' in attrs and attrs['source_url']:
-            attrs['source_url'] = attrs['source_url'].strip()
+        for field in ('journal_level', 'published_volume', 'published_issue', 'pages', 'source_url'):
+            if field in attrs and attrs[field]:
+                attrs[field] = attrs[field].strip()
 
         return attrs
 
@@ -140,14 +138,11 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
 
     def update(self, instance, validated_data):
         coauthor_names = validated_data.pop('coauthors', None)
-
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-
         if coauthor_names is not None:
             self._replace_coauthors(instance, coauthor_names)
-
         return instance
 
     def get_keywords(self, obj):
@@ -158,18 +153,10 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
         return obj.date_acquired.year if obj.date_acquired else None
 
     def get_metadata_alerts(self, obj):
-        alerts = []
+        return build_paper_metadata_alerts(obj)
 
-        if not obj.doi:
-            alerts.append('缺少 DOI，可补充后提升成果检索与去重准确性。')
-        if not obj.pages:
-            alerts.append('缺少页码范围，建议补充成果出处信息。')
-        if not obj.source_url:
-            alerts.append('缺少来源链接，建议补充论文原始访问地址。')
-        if not obj.journal_level:
-            alerts.append('缺少期刊级别，可补充 SCI、EI、CCF 等标识。')
-
-        return alerts
+    def get_metadata_alert_details(self, obj):
+        return build_paper_metadata_alert_details(obj)
 
     def _replace_coauthors(self, paper, coauthor_names):
         paper.coauthors.all().delete()
@@ -273,3 +260,39 @@ class AcademicServiceSerializer(TeacherOwnedAchievementSerializer):
         if len(cleaned) < 2:
             raise serializers.ValidationError('服务机构不能为空。')
         return cleaned
+
+
+class PaperOperationLogSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source='get_action_display', read_only=True)
+    source_label = serializers.CharField(source='get_source_display', read_only=True)
+
+    class Meta:
+        model = PaperOperationLog
+        fields = (
+            'id',
+            'paper',
+            'action',
+            'action_label',
+            'source',
+            'source_label',
+            'summary',
+            'changed_fields',
+            'metadata_flags',
+            'paper_title_snapshot',
+            'paper_doi_snapshot',
+            'created_at',
+        )
+
+
+class PaperRepresentativeBatchSerializer(serializers.Serializer):
+    paper_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False)
+    is_representative = serializers.BooleanField()
+
+
+class PaperCleanupApplySerializer(serializers.Serializer):
+    ACTION_CHOICES = (
+        ('normalize_text_fields', '标准化 DOI/链接/卷期页'),
+    )
+
+    paper_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False)
+    action = serializers.ChoiceField(choices=ACTION_CHOICES)

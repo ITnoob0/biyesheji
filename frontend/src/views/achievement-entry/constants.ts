@@ -10,10 +10,16 @@ export const achievementEndpointMap: Record<TabName, string> = {
 
 export const paperImportEndpointMap = {
   bibtexPreview: '/api/achievements/papers/import/bibtex-preview/',
+  bibtexRevalidate: '/api/achievements/papers/import/bibtex-revalidate/',
   bibtexConfirm: '/api/achievements/papers/import/bibtex-confirm/',
 }
 
 export const paperSummaryEndpoint = '/api/achievements/papers/summary/'
+export const paperGovernanceEndpoint = '/api/achievements/papers/governance/'
+export const paperCompareEndpoint = '/api/achievements/papers/compare/'
+export const paperExportEndpoint = '/api/achievements/papers/export/'
+export const paperRepresentativeBatchEndpoint = '/api/achievements/papers/representative/batch-update/'
+export const paperCleanupApplyEndpoint = '/api/achievements/papers/cleanup-apply/'
 
 export const paperTypeOptions = [
   { label: '期刊论文', value: 'JOURNAL' },
@@ -86,7 +92,7 @@ export const normalizeAchievementList = <T>(data: unknown): T[] =>
 
 export const parseCoauthorInput = (raw: string): string[] =>
   raw
-    .split(/[\n,，、]+/)
+    .split(/[\n,，、;；]+/)
     .map(item => item.trim())
     .filter(Boolean)
 
@@ -104,4 +110,6 @@ export const paperSortOptions = [
   { label: '按题目 A-Z', value: 'title_asc' },
   { label: '按题目 Z-A', value: 'title_desc' },
   { label: '按创建时间从新到旧', value: 'created_desc' },
+  { label: '代表作优先', value: 'representative_desc' },
+  { label: '异常优先处理', value: 'metadata_alerts_desc' },
 ]

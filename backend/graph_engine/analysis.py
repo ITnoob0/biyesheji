@@ -36,6 +36,49 @@ def _build_collaboration_overview(teacher):
     }
 
 
+def _build_collaboration_circle_overview(teacher):
+    collaborator_rows = [
+        {'name': item['coauthors__name'], 'count': item['count']}
+        for item in (
+            Paper.objects.filter(teacher=teacher, coauthors__isnull=False)
+            .values('coauthors__name')
+            .annotate(count=Count('coauthors__id'))
+            .order_by('-count', 'coauthors__name')
+        )
+        if item['coauthors__name']
+    ]
+
+    core_ring = [item for item in collaborator_rows if item['count'] >= 3]
+    active_ring = [item for item in collaborator_rows if item['count'] == 2]
+    extended_ring = [item for item in collaborator_rows if item['count'] == 1]
+    total = len(collaborator_rows)
+
+    if not total:
+        return {
+            'core_collaborator_count': 0,
+            'active_collaborator_count': 0,
+            'extended_collaborator_count': 0,
+            'core_collaborators': [],
+            'active_collaborators': [],
+            'extended_collaborators': [],
+            'description': '当前尚未形成可用的合作圈层概览，录入更多论文与合作作者后可逐步形成。',
+            'threshold_note': '当前圈层规则保留为轻量阈值说明，不执行复杂社区发现算法。',
+        }
+
+    return {
+        'core_collaborator_count': len(core_ring),
+        'active_collaborator_count': len(active_ring),
+        'extended_collaborator_count': len(extended_ring),
+        'core_collaborators': core_ring[:4],
+        'active_collaborators': active_ring[:4],
+        'extended_collaborators': extended_ring[:4],
+        'description': (
+            '当前按共同署名次数做轻量圈层概览：3 次及以上视为核心合作圈，2 次视为活跃合作圈，1 次视为扩展合作圈。'
+        ),
+        'threshold_note': '当前圈层分析只基于已加载合作关系做轻量阈值划分，不等同于复杂社区发现或图聚类结果。',
+    }
+
+
 def _build_collaborator_type_breakdown(teacher):
     counters = Counter(
         Paper.objects.filter(teacher=teacher, coauthors__isnull=False).values_list('coauthors__is_internal', flat=True)
@@ -121,6 +164,7 @@ def _build_theme_hotspots(teacher):
 
 def build_graph_analysis(teacher):
     collaboration_overview = _build_collaboration_overview(teacher)
+    collaboration_circle_overview = _build_collaboration_circle_overview(teacher)
     collaborator_type_breakdown = _build_collaborator_type_breakdown(teacher)
     theme_hotspots = _build_theme_hotspots(teacher)
 
@@ -169,6 +213,15 @@ def build_graph_analysis(teacher):
                 else '录入论文摘要并生成关键词后会形成研究主题热点分析。'
             ),
         },
+        {
+            'title': '合作圈层概览',
+            'value': (
+                f"核心 {collaboration_circle_overview['core_collaborator_count']} / 活跃 {collaboration_circle_overview['active_collaborator_count']}"
+                if collaboration_overview['collaborator_total']
+                else '暂无'
+            ),
+            'detail': collaboration_circle_overview['description'],
+        },
     ]
 
     return {
@@ -180,10 +233,11 @@ def build_graph_analysis(teacher):
             'keyword_total': len(theme_hotspots['top_keywords']),
         },
         'collaboration_overview': collaboration_overview,
+        'collaboration_circle_overview': collaboration_circle_overview,
         'collaborator_type_breakdown': collaborator_type_breakdown,
         'theme_hotspots': theme_hotspots,
         'highlight_cards': highlight_cards,
-        'scope_note': '当前属于轻量图分析展示，提供合作网络概览、合作者类型和研究主题热点，不构成复杂图挖掘平台。',
+        'scope_note': '当前属于轻量图分析展示，已提供合作网络概览、合作圈层概览、合作者类型和研究主题热点，不构成复杂图挖掘平台。',
         'analysis_level': 'lightweight-analysis',
-        'analysis_method_note': '当前分析以图节点关系、合作作者标记和论文关键词频次为基础，适合解释与演示，不等同于社区发现、路径推理或主题聚类结果。',
+        'analysis_method_note': '当前分析以图节点关系、合作作者标记和论文关键词频次为基础，适合解释与演示；合作圈层为轻量阈值划分，不等同于社区发现、复杂路径推理或主题聚类结果。',
     }

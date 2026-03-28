@@ -12,9 +12,20 @@
       </div>
       <div class="hero-actions workspace-page-actions">
         <el-button plain @click="router.push('/dashboard')">返回画像主页</el-button>
+        <el-button plain @click="historyVisible = true">查看历史</el-button>
         <el-button plain @click="openAssistantDemo">问答说明</el-button>
         <el-button type="primary" :loading="loading" @click="loadRecommendations">刷新推荐</el-button>
       </div>
+    </section>
+
+    <section v-if="linkContext" class="content-shell link-context-shell">
+      <el-alert
+        :title="linkContextTitle"
+        type="info"
+        :description="linkContextDescription"
+        :closable="false"
+        show-icon
+      />
     </section>
 
     <section class="content-shell control-shell">
@@ -102,6 +113,7 @@
           <el-tag type="info" effect="plain">{{ recommendationData?.data_meta.current_strategy || '规则增强型推荐' }}</el-tag>
           <el-tag type="warning" effect="plain">{{ recommendationData?.data_meta.sorting_note || '默认按推荐分数排序' }}</el-tag>
           <el-tag type="success" effect="plain">结果数 {{ recommendationItems.length }}</el-tag>
+          <el-tag type="primary" effect="plain">收藏 {{ favoriteGuideIds.length }}</el-tag>
           <el-tag v-if="recommendationData?.comparison_teacher_snapshot" type="primary" effect="plain">
             已开启教师对比
           </el-tag>
@@ -137,6 +149,20 @@
             {{ recommendationData?.teacher_snapshot.recent_activity_count ?? 0 }} 项
             <span v-if="recommendationData?.teacher_snapshot.activity_level"> · {{ recommendationData?.teacher_snapshot.activity_level }}</span>
           </p>
+        </div>
+        <div class="snapshot-block">
+          <strong>画像优势维度</strong>
+          <div class="tag-list">
+            <el-tag
+              v-for="item in recommendationData?.teacher_snapshot.portrait_top_dimensions || []"
+              :key="`portrait-${item.key}`"
+              type="warning"
+              effect="plain"
+            >
+              {{ item.name }} {{ item.value }}
+            </el-tag>
+            <span v-if="!(recommendationData?.teacher_snapshot.portrait_top_dimensions || []).length" class="muted">暂无画像维度摘要。</span>
+          </div>
         </div>
       </el-card>
 
@@ -219,6 +245,115 @@
             <strong>当前路线说明</strong>
             <p>{{ recommendationData?.data_meta.current_strategy || '当前仍以规则增强路线为主，未进入复杂模型推荐。' }}</p>
           </div>
+          <div class="meta-item">
+            <strong>反馈与历史边界</strong>
+            <p>{{ recommendationData?.data_meta.feedback_scope_note || '当前反馈仅采集轻量显式信号。' }}</p>
+            <p>{{ recommendationData?.data_meta.history_scope_note || '当前历史记录的是规则增强结果快照。' }}</p>
+            <p>{{ recommendationData?.data_meta.feedback_ranking_boundary || '当前仅预留反馈影响排序边界。' }}</p>
+          </div>
+        </div>
+      </el-card>
+    </section>
+
+    <section class="content-shell snapshot-grid">
+      <el-card shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>画像联动说明</span>
+            <el-tag type="warning" effect="plain">推荐与画像关系</el-tag>
+          </div>
+        </template>
+        <div class="snapshot-block">
+          <strong>当前画像总分</strong>
+          <p class="muted">{{ recommendationData?.portrait_link_summary?.teacher_total_score ?? 0 }} 分</p>
+        </div>
+        <div class="snapshot-block">
+          <strong>优先参考维度</strong>
+          <div class="tag-list">
+            <el-tag
+              v-for="item in recommendationData?.portrait_link_summary?.top_dimensions || []"
+              :key="`link-${item.key}`"
+              type="success"
+              effect="plain"
+            >
+              {{ item.name }} · {{ item.value }}
+            </el-tag>
+          </div>
+        </div>
+        <div class="snapshot-block">
+          <strong>联动说明</strong>
+          <p class="muted">{{ recommendationData?.portrait_link_summary?.link_note || recommendationData?.data_meta.portrait_link_note }}</p>
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>推荐历史预览</span>
+            <el-tag type="info" effect="plain">持续积累</el-tag>
+          </div>
+        </template>
+        <div class="meta-list">
+          <div class="meta-item">
+            <strong>历史批次</strong>
+            <p>{{ recommendationData?.history_batch_token || '当前尚未生成批次' }}</p>
+          </div>
+          <div class="meta-item">
+            <strong>反馈统计</strong>
+            <div class="tag-list">
+              <el-tag
+                v-for="(count, label) in recommendationData?.feedback_summary?.distribution || {}"
+                :key="`feedback-${label}`"
+                type="primary"
+                effect="plain"
+              >
+                {{ label }} · {{ count }}
+              </el-tag>
+              <span v-if="!Object.keys(recommendationData?.feedback_summary?.distribution || {}).length" class="muted">当前尚未积累反馈信号。</span>
+            </div>
+          </div>
+          <div class="meta-item">
+            <strong>闭环概览</strong>
+            <div class="tag-list">
+              <el-tag type="success" effect="plain">
+                已反馈 {{ recommendationData?.feedback_summary?.responded_guide_count ?? 0 }} / {{ recommendationData?.feedback_summary?.current_recommendation_count ?? recommendationItems.length }}
+              </el-tag>
+              <el-tag type="primary" effect="plain">覆盖率 {{ recommendationData?.feedback_summary?.response_rate ?? 0 }}%</el-tag>
+              <el-tag type="warning" effect="plain">收藏 {{ recommendationData?.feedback_summary?.favorite_count ?? favoriteGuideIds.length }}</el-tag>
+              <el-tag type="success" effect="plain">计划申报 {{ recommendationData?.feedback_summary?.plan_to_apply_count ?? 0 }}</el-tag>
+              <el-tag type="info" effect="plain">已申报 {{ recommendationData?.feedback_summary?.applied_count ?? 0 }}</el-tag>
+            </div>
+          </div>
+          <div class="meta-item">
+            <strong>最近历史</strong>
+            <div class="history-preview-list">
+              <div v-for="item in recommendationHistory.slice(0, 4)" :key="item.id" class="history-preview-item">
+                <strong>{{ item.guide_title_snapshot }}</strong>
+                <p>{{ item.priority_label }} · {{ item.recommendation_score }} 分</p>
+                <p>{{ item.feedback_label || '未反馈' }} · {{ item.generated_at }}</p>
+              </div>
+              <p v-if="!recommendationHistory.length" class="muted">当前尚无推荐历史记录。</p>
+            </div>
+          </div>
+          <div class="meta-item">
+            <strong>最近反馈</strong>
+            <div class="history-preview-list">
+              <div
+                v-for="item in recommendationData?.feedback_summary?.recent_feedback_items || []"
+                :key="`${item.guide_id}-${item.last_feedback_at}`"
+                class="history-preview-item"
+              >
+                <strong>{{ item.guide_title }}</strong>
+                <p>{{ item.feedback_label }} · {{ item.last_feedback_at }}</p>
+                <p v-if="item.feedback_note" class="muted">{{ item.feedback_note }}</p>
+              </div>
+              <p v-if="!(recommendationData?.feedback_summary?.recent_feedback_items || []).length" class="muted">当前还没有可回看的反馈记录。</p>
+            </div>
+          </div>
+          <div class="meta-item">
+            <strong>策略边界</strong>
+            <p>{{ recommendationData?.feedback_summary?.strategy_note || recommendationData?.data_meta.feedback_scope_note }}</p>
+          </div>
         </div>
       </el-card>
     </section>
@@ -251,6 +386,16 @@
             </el-tag>
           </div>
         </div>
+        <div class="tag-section">
+          <span class="tag-label">响应情况</span>
+          <div class="tag-list">
+            <el-tag type="success" effect="plain">反馈覆盖 {{ recommendationData?.admin_analysis?.response_rate ?? 0 }}%</el-tag>
+            <el-tag type="primary" effect="plain">正向反馈 {{ recommendationData?.admin_analysis?.positive_feedback_count ?? 0 }}</el-tag>
+            <el-tag type="warning" effect="plain">暂不相关 {{ recommendationData?.admin_analysis?.negative_feedback_count ?? 0 }}</el-tag>
+            <el-tag type="info" effect="plain">计划申报 {{ recommendationData?.admin_analysis?.plan_to_apply_count ?? 0 }}</el-tag>
+            <el-tag type="success" effect="plain">已申报 {{ recommendationData?.admin_analysis?.applied_count ?? 0 }}</el-tag>
+          </div>
+        </div>
       </el-card>
     </section>
 
@@ -258,8 +403,15 @@
       <el-empty :description="recommendationData?.empty_state || '当前暂无匹配的项目指南推荐。'" />
     </div>
 
-    <section v-else class="recommendation-list content-shell">
-      <el-card v-for="item in recommendationItems" :key="item.id" class="recommendation-card workspace-surface-card" shadow="hover">
+    <section v-else id="recommendation-evidence-section" class="recommendation-list content-shell">
+      <el-card
+        v-for="item in recommendationItems"
+        :id="recommendationCardId(item.id)"
+        :key="item.id"
+        class="recommendation-card workspace-surface-card"
+        :class="{ 'recommendation-card--active': isRecommendationCardActive(item) }"
+        shadow="hover"
+      >
         <div class="recommendation-head">
           <div>
             <div class="title-row">
@@ -276,7 +428,12 @@
             </p>
           </div>
           <div class="compact-row">
-            <el-button link :type="isFavorited(item.id) ? 'warning' : 'info'" @click="toggleFavorite(item.id)">
+            <el-button
+              link
+              :disabled="!interactionEnabled"
+              :type="isFavorited(item.id) ? 'warning' : 'info'"
+              @click="toggleFavorite(item)"
+            >
               {{ isFavorited(item.id) ? '取消收藏' : '收藏' }}
             </el-button>
             <el-button link type="success" @click="openAssistantDemo(item.id)">智能解读</el-button>
@@ -324,10 +481,65 @@
           <span class="tag-label">解释维度</span>
           <div class="dimension-grid">
             <div v-for="dimension in item.explanation_dimensions" :key="dimension.key" class="dimension-card">
-              <strong>{{ dimension.label }}</strong>
-              <span>+{{ dimension.score }}</span>
+              <div class="dimension-card-head">
+                <strong>{{ dimension.label }}</strong>
+                <span>+{{ dimension.score }}</span>
+              </div>
+              <el-progress :percentage="Math.min(Number(dimension.share_percent || 0), 100)" :stroke-width="8" :show-text="false" />
               <p>{{ dimension.detail }}</p>
+              <p>贡献占比 {{ dimension.share_percent }}%</p>
             </div>
+          </div>
+        </div>
+
+        <div class="tag-section">
+          <span class="tag-label">画像联动</span>
+          <div class="dimension-grid">
+            <div v-for="dimension in item.portrait_dimension_links" :key="`portrait-${dimension.key}`" class="dimension-card">
+              <div class="dimension-card-head">
+                <strong>{{ dimension.label }}</strong>
+                <span>{{ dimension.current_value }}</span>
+              </div>
+              <p>{{ dimension.detail }}</p>
+              <p>联动关系：{{ dimension.relation }}</p>
+              <div class="dimension-card-actions">
+                <el-button link type="primary" @click="openPortraitDimensionEvidence(dimension.key)">查看画像维度</el-button>
+                <el-button link type="warning" @click="openAssistantDemo(item.id)">问答说明</el-button>
+              </div>
+            </div>
+            <p v-if="!item.portrait_dimension_links.length" class="muted">当前暂无显著画像联动说明。</p>
+          </div>
+        </div>
+
+        <div class="tag-section">
+          <span class="tag-label">支撑成果</span>
+          <div class="dimension-grid">
+            <div
+              v-for="record in item.supporting_records"
+              :key="`${record.type}-${record.id}`"
+              class="dimension-card"
+            >
+              <div class="dimension-card-head">
+                <strong>{{ record.title }}</strong>
+                <span>{{ record.date_acquired }}</span>
+              </div>
+              <p>{{ record.detail }}</p>
+              <p>{{ record.reason }}</p>
+              <div class="dimension-card-actions">
+                <el-button
+                  v-if="!currentUser?.is_admin"
+                  link
+                  type="primary"
+                  @click="openSupportingRecordEvidence(record.type, record.id)"
+                >
+                  查看支撑成果
+                </el-button>
+                <el-button link type="success" @click="openPortraitDimensionEvidence(mapAchievementTypeToPortraitDimension(record.type))">
+                  查看画像维度
+                </el-button>
+              </div>
+            </div>
+            <p v-if="!item.supporting_records.length" class="muted">当前暂无可直接定位的支撑成果，将继续保留画像维度和指南规则解释。</p>
           </div>
         </div>
 
@@ -352,26 +564,98 @@
           <p class="muted">{{ item.comparison_summary }}</p>
         </div>
 
+        <div class="tag-section">
+          <span class="tag-label">反馈采集</span>
+          <div class="compact-row feedback-row">
+            <el-tag v-if="item.latest_feedback_label" type="success" effect="plain">当前反馈：{{ item.latest_feedback_label }}</el-tag>
+            <el-button size="small" :disabled="!interactionEnabled" @click="openFeedbackDialog(item, 'INTERESTED')">感兴趣</el-button>
+            <el-button size="small" :disabled="!interactionEnabled" @click="openFeedbackDialog(item, 'PLAN_TO_APPLY')">计划申报</el-button>
+            <el-button size="small" :disabled="!interactionEnabled" @click="openFeedbackDialog(item, 'APPLIED')">已申报</el-button>
+            <el-button size="small" :disabled="!interactionEnabled" @click="openFeedbackDialog(item, 'NOT_RELEVANT')">暂不相关</el-button>
+          </div>
+          <p v-if="item.last_feedback_at" class="muted">最近反馈时间：{{ item.last_feedback_at }}</p>
+          <p v-if="item.latest_feedback_note" class="muted">{{ item.latest_feedback_note }}</p>
+        </div>
+
         <div class="footer-line">
           <span v-if="item.support_amount">资助强度：{{ item.support_amount }}</span>
           <span v-if="item.eligibility_notes">申报要求：{{ item.eligibility_notes }}</span>
         </div>
       </el-card>
     </section>
+
+    <el-drawer v-model="historyVisible" title="推荐历史记录" size="540px">
+      <div class="history-drawer">
+        <div v-for="item in recommendationHistory" :key="item.id" class="history-drawer-item">
+          <div class="dimension-card-head">
+            <strong>{{ item.guide_title_snapshot }}</strong>
+            <el-tag type="primary" effect="plain">{{ item.recommendation_score }} 分</el-tag>
+          </div>
+          <p class="muted">{{ item.priority_label }} · {{ item.generated_at }}</p>
+          <div class="tag-list">
+            <el-tag size="small" effect="plain">{{ item.rule_profile_snapshot }}</el-tag>
+            <el-tag v-if="item.feedback_label" size="small" type="success" effect="plain">{{ item.feedback_label }}</el-tag>
+            <el-tag v-if="item.is_favorited_snapshot" size="small" type="warning" effect="plain">已收藏</el-tag>
+          </div>
+          <p v-if="item.requested_by_name" class="muted">触发账号：{{ item.requested_by_name }}</p>
+        </div>
+        <p v-if="!recommendationHistory.length" class="muted">当前尚无推荐历史。</p>
+      </div>
+    </el-drawer>
+
+    <el-dialog
+      v-model="feedbackDialogVisible"
+      width="520px"
+      :title="feedbackDialogGuideTitle ? `记录反馈：${feedbackDialogGuideTitle}` : '记录推荐反馈'"
+    >
+      <div class="meta-list">
+        <div class="meta-item">
+          <strong>反馈信号</strong>
+          <div class="tag-list">
+            <el-tag type="success" effect="plain">{{ feedbackSignalLabel }}</el-tag>
+            <span class="muted">当前只采集轻量显式反馈，用于规则复盘和后续策略优化，不直接重排推荐。</span>
+          </div>
+        </div>
+        <div class="meta-item">
+          <strong>反馈备注</strong>
+          <el-input
+            v-model="feedbackDialogNote"
+            type="textarea"
+            :rows="4"
+            maxlength="300"
+            show-word-limit
+            placeholder="可选填写：为什么感兴趣、为什么暂不相关、预计何时申报等。"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <div class="compact-row">
+          <el-button @click="feedbackDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="feedbackSubmitting" @click="confirmFeedback">保存反馈</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import {
+  buildCrossModuleQuery,
+  buildScopedTeacherQuery,
+  focusEvidenceSection,
+  mapAchievementTypeToPortraitDimension,
+  parseCrossModuleLink,
+  resolvePortraitRoute,
+} from '../utils/crossModuleLinking'
 import type { TeacherAccountResponse } from '../types/users'
-import { loadFavoriteGuideIds, toggleFavoriteGuideId } from './project-guides/recommendationState.js'
 import { buildDistributionCards, buildRecommendationSortOptions, filterRecommendationItems, sortRecommendationItems } from './project-guides/recommendationHelpers.js'
-import type { RecommendationItem, RecommendationResponse } from './project-guides/types'
+import type { RecommendationFeedbackSignal, RecommendationHistoryItem, RecommendationItem, RecommendationResponse } from './project-guides/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -389,9 +673,45 @@ const selectedLabel = ref('')
 const favoritesOnly = ref(false)
 const selectedSort = ref('score')
 const favoriteGuideIds = ref<number[]>([])
+const recommendationHistory = ref<RecommendationHistoryItem[]>([])
+const historyVisible = ref(false)
 const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
+const linkContext = computed(() => parseCrossModuleLink(route.query))
+const feedbackDialogVisible = ref(false)
+const feedbackSubmitting = ref(false)
+const feedbackDialogGuideId = ref<number | null>(null)
+const feedbackDialogGuideTitle = ref('')
+const feedbackDialogSignal = ref<RecommendationFeedbackSignal>('INTERESTED')
+const feedbackDialogNote = ref('')
 
 const sortOptions = buildRecommendationSortOptions()
+const feedbackSignalLabelMap: Record<Exclude<RecommendationFeedbackSignal, ''>, string> = {
+  INTERESTED: '感兴趣',
+  NOT_RELEVANT: '暂不相关',
+  PLAN_TO_APPLY: '计划申报',
+  APPLIED: '已申报',
+}
+
+const targetTeacherId = computed(() => selectedTeacherId.value || Number(route.query.user_id) || currentUser.value?.id || 0)
+
+const linkContextTitle = computed(() => {
+  if (linkContext.value?.source === 'portrait') {
+    return '当前从画像模块进入，已定位到推荐证据区。'
+  }
+  if (linkContext.value?.source === 'achievement') {
+    return '当前从成果模块进入，已定位到对应推荐证据区。'
+  }
+  if (linkContext.value?.source === 'assistant') {
+    return '当前从问答来源卡片回跳，已定位到对应推荐证据区。'
+  }
+  return '当前已定位到推荐证据区。'
+})
+
+const linkContextDescription = computed(
+  () =>
+    linkContext.value?.note ||
+    '当前推荐页只展示真实指南、真实画像维度联动和真实支撑成果；管理员仍不会获得教师成果录入权限。',
+)
 
 const focusTagOptions = computed(() => {
   const tags = new Set<string>()
@@ -436,6 +756,11 @@ const recommendationItems = computed<RecommendationItem[]>(() => {
   return sortRecommendationItems(filtered, selectedSort.value)
 })
 
+const interactionEnabled = computed(() => Boolean(recommendationData.value?.data_meta.interaction_enabled))
+const feedbackSignalLabel = computed(() =>
+  feedbackDialogSignal.value ? feedbackSignalLabelMap[feedbackDialogSignal.value as Exclude<RecommendationFeedbackSignal, ''>] : '',
+)
+
 const loadTeacherOptions = async () => {
   if (!currentUser.value?.is_admin) return
 
@@ -457,7 +782,10 @@ const loadRecommendations = async () => {
 
     const { data } = await axios.get<RecommendationResponse>('/api/project-guides/recommendations/', { params })
     recommendationData.value = data
-    favoriteGuideIds.value = loadFavoriteGuideIds(data.teacher_snapshot.user_id)
+    favoriteGuideIds.value = data.favorites?.guide_ids || []
+    recommendationHistory.value = data.history_preview || []
+    await nextTick()
+    focusRecommendationEvidence()
   } catch (error) {
     console.error(error)
     errorNotice.value = buildApiErrorNotice(error, {
@@ -470,8 +798,79 @@ const loadRecommendations = async () => {
   }
 }
 
+const recommendationCardId = (guideId: number) => `recommendation-card-${guideId}`
+
+const matchesRecommendationContext = (item: RecommendationItem) => {
+  if (linkContext.value?.guideId && item.id === linkContext.value.guideId) {
+    return true
+  }
+  if (linkContext.value?.dimensionKey && item.portrait_dimension_links.some(dimension => dimension.key === linkContext.value?.dimensionKey)) {
+    return true
+  }
+  if (
+    linkContext.value?.recordType &&
+    linkContext.value?.recordId &&
+    item.supporting_records.some(record => record.type === linkContext.value?.recordType && record.id === linkContext.value?.recordId)
+  ) {
+    return true
+  }
+  return false
+}
+
+const isRecommendationCardActive = (item: RecommendationItem) => matchesRecommendationContext(item)
+
+const focusRecommendationEvidence = () => {
+  if (!linkContext.value?.section) {
+    return
+  }
+
+  const matchedGuideId = recommendationItems.value.find(item => matchesRecommendationContext(item))?.id
+  focusEvidenceSection(
+    'recommendation-evidence-section',
+    matchedGuideId ? recommendationCardId(matchedGuideId) : undefined,
+  )
+}
+
+const loadRecommendationHistory = async () => {
+  const params: Record<string, number> | undefined =
+    currentUser.value?.is_admin && (selectedTeacherId.value || route.query.user_id)
+      ? { user_id: Number(selectedTeacherId.value || route.query.user_id) }
+      : undefined
+  const { data } = await axios.get<{ history: RecommendationHistoryItem[] }>('/api/project-guides/recommendation-history/', { params })
+  recommendationHistory.value = data.history || []
+}
+
 const openGuide = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const openPortraitDimensionEvidence = (dimensionKey: string) => {
+  router.push(
+    resolvePortraitRoute(
+      currentUser.value,
+      targetTeacherId.value,
+      buildCrossModuleQuery({
+        source: 'recommendation',
+        page: 'portrait',
+        section: 'portrait-dimensions',
+        dimension_key: dimensionKey,
+      }),
+    ),
+  )
+}
+
+const openSupportingRecordEvidence = (recordType: string, recordId: number) => {
+  router.push({
+    name: 'AchievementEntry',
+    query: buildCrossModuleQuery({
+      source: 'recommendation',
+      page: 'achievement-entry',
+      section: 'achievement-records',
+      record_type: recordType,
+      record_id: String(recordId),
+      dimension_key: mapAchievementTypeToPortraitDimension(recordType),
+    }),
+  })
 }
 
 const handleTeacherChanged = async () => {
@@ -482,26 +881,82 @@ const handleCompareTeacherChanged = async () => {
   await loadRecommendations()
 }
 
-const toggleFavorite = (guideId: number) => {
-  const teacherId = recommendationData.value?.teacher_snapshot.user_id || currentUser.value?.id
-  if (!teacherId) return
+const toggleFavorite = async (item: RecommendationItem) => {
+  if (!interactionEnabled.value) {
+    ElMessage.warning('当前仅支持教师本人收藏推荐结果。')
+    return
+  }
 
-  favoriteGuideIds.value = toggleFavoriteGuideId(teacherId, guideId)
+  const nextFavorited = !isFavorited(item.id)
+  await axios.post(`/api/project-guides/${item.id}/favorite/`, { is_favorited: nextFavorited })
+  favoriteGuideIds.value = nextFavorited
+    ? [...new Set([...favoriteGuideIds.value, item.id])]
+    : favoriteGuideIds.value.filter(id => id !== item.id)
+  item.is_favorited = nextFavorited
+  ElMessage.success(nextFavorited ? '已收藏该指南。' : '已取消收藏。')
+  await loadRecommendationHistory()
+  if (recommendationData.value?.feedback_summary) {
+    recommendationData.value.feedback_summary.favorite_count = favoriteGuideIds.value.length
+  }
 }
 
 const isFavorited = (guideId: number) => favoriteGuideIds.value.includes(guideId)
 
+const openFeedbackDialog = (item: RecommendationItem, signal: RecommendationFeedbackSignal) => {
+  if (!interactionEnabled.value) {
+    ElMessage.warning('当前仅支持教师本人提交推荐反馈。')
+    return
+  }
+
+  feedbackDialogGuideId.value = item.id
+  feedbackDialogGuideTitle.value = item.title
+  feedbackDialogSignal.value = signal
+  feedbackDialogNote.value = item.latest_feedback_note || ''
+  feedbackDialogVisible.value = true
+}
+
+const confirmFeedback = async () => {
+  if (!feedbackDialogGuideId.value || !feedbackDialogSignal.value) {
+    return
+  }
+
+  feedbackSubmitting.value = true
+  try {
+    const { data } = await axios.post(`/api/project-guides/${feedbackDialogGuideId.value}/feedback/`, {
+      feedback_signal: feedbackDialogSignal.value,
+      feedback_note: feedbackDialogNote.value,
+    })
+
+    const targetItem = recommendationData.value?.recommendations.find(item => item.id === feedbackDialogGuideId.value)
+    if (targetItem) {
+      targetItem.latest_feedback_signal = data.feedback_signal
+      targetItem.latest_feedback_label = data.feedback_label
+      targetItem.latest_feedback_note = data.feedback_note
+      targetItem.last_feedback_at = data.last_feedback_at
+    }
+
+    feedbackDialogVisible.value = false
+    ElMessage.success('推荐反馈已记录。')
+    await loadRecommendations()
+    await loadRecommendationHistory()
+  } finally {
+    feedbackSubmitting.value = false
+  }
+}
+
 const openAssistantDemo = (guideId?: number) => {
   const query: Record<string, string> = {}
 
-  const targetTeacherId = selectedTeacherId.value || Number(route.query.user_id) || currentUser.value?.id
-  if (targetTeacherId) {
-    query.user_id = String(targetTeacherId)
+  if (targetTeacherId.value) {
+    query.user_id = String(targetTeacherId.value)
   }
   if (guideId) {
     query.guide_id = String(guideId)
     query.question_type = 'guide_reason'
   }
+  query.source = 'recommendation'
+  query.page = 'assistant'
+  query.section = 'assistant-answer'
 
   router.push({
     name: 'assistant-demo',
@@ -520,6 +975,17 @@ onMounted(async () => {
   await loadTeacherOptions()
   await loadRecommendations()
 })
+
+watch(
+  () => route.query,
+  async nextQuery => {
+    if (currentUser.value?.is_admin) {
+      selectedTeacherId.value = nextQuery.user_id ? Number(nextQuery.user_id) : undefined
+      compareTeacherId.value = nextQuery.compare_user_id ? Number(nextQuery.compare_user_id) : undefined
+    }
+    await loadRecommendations()
+  },
+)
 </script>
 
 <style scoped>
@@ -611,6 +1077,10 @@ h2 {
   margin-bottom: 20px;
 }
 
+.link-context-shell {
+  margin-bottom: 20px;
+}
+
 .page-error-alert {
   margin-bottom: 16px;
   border-radius: 18px;
@@ -682,6 +1152,19 @@ h2 {
   line-height: 1.7;
 }
 
+.dimension-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dimension-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .snapshot-block + .snapshot-block {
   margin-top: 18px;
 }
@@ -719,6 +1202,10 @@ h2 {
 .recommendation-card :deep(.el-card__body) {
   display: grid;
   gap: 14px;
+}
+
+.recommendation-card--active {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
 .subline,
@@ -759,6 +1246,23 @@ h2 {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.history-preview-list,
+.history-drawer {
+  display: grid;
+  gap: 12px;
+}
+
+.history-preview-item,
+.history-drawer-item {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f7faf9;
+}
+
+.feedback-row {
+  align-items: center;
 }
 
 @media (max-width: 1080px) {

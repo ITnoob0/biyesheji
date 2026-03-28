@@ -2,12 +2,18 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { FormInstance, FormRules, UploadRequestOptions } from 'element-plus'
 import { useRouter } from 'vue-router'
 import PasswordSecurityPanel from '../components/account/PasswordSecurityPanel.vue'
 import PersonalCenterQuickLinks from '../components/account/PersonalCenterQuickLinks.vue'
 import RepresentativeAchievementsPanel from '../components/account/RepresentativeAchievementsPanel.vue'
-import { buildPasswordSecurityNotice, resolveApiErrorMessage, resolveRoleLabel } from '../utils/authPresentation.js'
+import {
+  buildPasswordSecurityNotice,
+  buildPublicContactSummary,
+  resolveApiErrorMessage,
+  resolveContactVisibilityLabel,
+  resolveRoleLabel,
+} from '../utils/authPresentation.js'
 import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
 import type { AchievementOverview, DashboardStatsResponse, RecentAchievementRecord } from './dashboard/portrait'
@@ -24,6 +30,7 @@ interface ProfileFormState {
   title: string
   email: string
   contact_phone: string
+  contact_visibility: 'email_only' | 'phone_only' | 'both' | 'internal_only'
   avatar_url: string
   discipline: string
   research_direction_input: string
@@ -32,10 +39,17 @@ interface ProfileFormState {
   h_index: number
 }
 
+interface AvatarUploadResponse {
+  detail: string
+  avatar_url: string
+  user: TeacherAccountResponse
+}
+
 const router = useRouter()
 const currentUser = ref<SessionUser | null>(null)
 const loading = ref(false)
 const summaryLoading = ref(false)
+const avatarUploading = ref(false)
 const profileFormRef = ref<FormInstance>()
 const recentAchievements = ref<RecentAchievementRecord[]>([])
 const achievementOverview = ref<AchievementOverview>({
@@ -54,6 +68,7 @@ const profileForm = reactive<ProfileFormState>({
   title: '',
   email: '',
   contact_phone: '',
+  contact_visibility: 'email_only',
   avatar_url: '',
   discipline: '',
   research_direction_input: '',
@@ -67,6 +82,13 @@ const rules: FormRules<ProfileFormState> = {
   department: [{ required: true, message: '请输入所属院系', trigger: 'blur' }],
   title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
 }
+
+const contactVisibilityOptions = [
+  { value: 'email_only', label: '仅公开邮箱', helper: '推荐用于工作联系场景，页面资料卡只展示邮箱。' },
+  { value: 'phone_only', label: '仅公开电话', helper: '适合希望快速电话联系的场景。' },
+  { value: 'both', label: '公开邮箱和电话', helper: '资料卡同时展示邮箱和电话，方便多渠道联系。' },
+  { value: 'internal_only', label: '仅内部可见', helper: '联系方式不进入公开资料摘要，仅本人和管理员可见。' },
+] as const
 
 const parseTagInput = (source: string) =>
   source
@@ -91,6 +113,68 @@ const avatarText = computed(() => displayName.value.trim().slice(0, 1).toUpperCa
 const permissionScope = computed(() => currentUser.value?.permission_scope ?? null)
 const publicDisplayFields = publicDisplayFieldLabels
 const internalDisplayFields = internalManagementFieldLabels
+const contactVisibilityLabel = computed(() => resolveContactVisibilityLabel(profileForm.contact_visibility))
+const publicContactChannels = computed(() => {
+  const channels = []
+  if (['email_only', 'both'].includes(profileForm.contact_visibility) && profileForm.email.trim()) {
+    channels.push({ key: 'email', label: '联系邮箱', value: profileForm.email.trim() })
+  }
+  if (['phone_only', 'both'].includes(profileForm.contact_visibility) && profileForm.contact_phone.trim()) {
+    channels.push({ key: 'phone', label: '联系电话', value: profileForm.contact_phone.trim() })
+  }
+  return channels
+})
+const publicContactSummary = computed(() =>
+  buildPublicContactSummary({
+    contact_visibility: profileForm.contact_visibility,
+    public_contact_channels: publicContactChannels.value,
+  }),
+)
+const profileCompleteness = computed(() => {
+  const checkpoints = [
+    profileForm.real_name,
+    profileForm.department,
+    profileForm.title,
+    profileForm.discipline,
+    profileForm.research_direction_input,
+    profileForm.research_interests,
+    profileForm.bio,
+    profileForm.avatar_url,
+  ]
+  const completed = checkpoints.filter(item => String(item || '').trim()).length
+  return Math.round((completed / checkpoints.length) * 100)
+})
+const latestAchievementLabel = computed(() => {
+  const latest = recentAchievements.value[0]
+  if (!latest?.date_acquired) return '暂无成果更新'
+  return `${latest.date_acquired.slice(0, 10)} 最近更新`
+})
+const statusCards = computed(() => [
+  {
+    key: 'completeness',
+    label: '公开资料完整度',
+    value: `${profileCompleteness.value}%`,
+    helper: profileCompleteness.value >= 80 ? '资料已较完整，可直接支撑画像与推荐摘要。' : '建议继续完善头像、简介、研究方向和联系方式。',
+  },
+  {
+    key: 'contact',
+    label: '联系方式展示策略',
+    value: contactVisibilityLabel.value,
+    helper: publicContactSummary.value,
+  },
+  {
+    key: 'security',
+    label: '账户安全状态',
+    value: currentUser.value?.password_reset_required ? '待修改密码' : '状态正常',
+    helper: securityNotice.value,
+  },
+  {
+    key: 'achievements',
+    label: '近期成果状态',
+    value: `${achievementOverview.value.total_achievements} 项成果`,
+    helper: latestAchievementLabel.value,
+  },
+])
 
 const hydrateProfileForm = (user: SessionUser) => {
   Object.assign(profileForm, {
@@ -99,6 +183,7 @@ const hydrateProfileForm = (user: SessionUser) => {
     title: user.title || '',
     email: user.email || '',
     contact_phone: user.contact_phone || '',
+    contact_visibility: user.contact_visibility || 'email_only',
     avatar_url: user.avatar_url || '',
     discipline: user.discipline || '',
     research_direction_input: (user.research_direction || []).join('，'),
@@ -133,6 +218,42 @@ const loadSummary = async () => {
   }
 }
 
+const beforeAvatarUpload = (file: File) => {
+  const isImage = file.type.startsWith('image/')
+  const isLt2M = file.size / 1024 / 1024 < 2
+  if (!isImage) {
+    ElMessage.error('头像上传仅支持图片文件。')
+    return false
+  }
+  if (!isLt2M) {
+    ElMessage.error('头像文件不能超过 2MB。')
+    return false
+  }
+  return true
+}
+
+const uploadAvatar = async (options: UploadRequestOptions) => {
+  avatarUploading.value = true
+  const formData = new FormData()
+  formData.append('avatar', options.file)
+
+  try {
+    const response = await axios.post<AvatarUploadResponse>('/api/users/me/avatar/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    currentUser.value = setSessionUser(response.data.user)
+    hydrateProfileForm(currentUser.value)
+    ElMessage.success(response.data.detail)
+    options.onSuccess?.(response.data)
+  } catch (error: any) {
+    const message = resolveApiErrorMessage(error, '头像上传失败')
+    ElMessage.error(message)
+    options.onError?.(error)
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
 const saveProfile = async () => {
   if (!profileFormRef.value) return
   const valid = await profileFormRef.value.validate().catch(() => false)
@@ -146,6 +267,7 @@ const saveProfile = async () => {
       title: profileForm.title,
       email: profileForm.email,
       contact_phone: profileForm.contact_phone,
+      contact_visibility: profileForm.contact_visibility,
       avatar_url: profileForm.avatar_url,
       discipline: profileForm.discipline,
       research_direction: parseTagInput(profileForm.research_direction_input),
@@ -202,9 +324,18 @@ onMounted(async () => {
       </div>
 
       <div class="hero-actions workspace-page-actions">
-        <el-button type="primary" @click="router.push('/dashboard')">查看画像主页</el-button>
+        <el-button type="primary" @click="router.push('/entry')">进入成果管理</el-button>
+        <el-button plain @click="router.push('/dashboard')">查看画像主页</el-button>
         <el-button plain @click="loadSummary" :loading="summaryLoading">刷新中心摘要</el-button>
       </div>
+    </section>
+
+    <section class="status-grid">
+      <article v-for="item in statusCards" :key="item.key" class="status-card workspace-surface-card">
+        <span class="status-card__label">{{ item.label }}</span>
+        <strong class="status-card__value">{{ item.value }}</strong>
+        <p class="status-card__helper">{{ item.helper }}</p>
+      </article>
     </section>
 
     <section class="center-layout">
@@ -232,7 +363,7 @@ onMounted(async () => {
               <strong>{{ profileForm.real_name || displayName }}</strong>
               <p>{{ profileForm.bio || '你可以在这里维护个人简介，让画像、推荐和问答输入更完整。' }}</p>
               <div class="preview-meta">
-                <span>{{ contactSummary || '待补充联系方式' }}</span>
+                <span>{{ publicContactSummary }}</span>
                 <span>{{ profileForm.department || '待补充院系' }}</span>
                 <span>{{ profileForm.title || '待补充职称' }}</span>
               </div>
@@ -244,10 +375,24 @@ onMounted(async () => {
               <el-form-item label="姓名" prop="real_name">
                 <el-input v-model="profileForm.real_name" />
               </el-form-item>
-              <el-form-item label="头像地址">
-                <el-input v-model="profileForm.avatar_url" placeholder="请输入头像图片 URL" />
+              <el-form-item label="头像上传">
+                <div class="avatar-upload-panel">
+                  <el-upload
+                    :show-file-list="false"
+                    :http-request="uploadAvatar"
+                    :before-upload="beforeAvatarUpload"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                  >
+                    <el-button type="primary" plain :loading="avatarUploading">上传本地头像</el-button>
+                  </el-upload>
+                  <span class="field-helper">支持 JPG / PNG / WEBP / GIF，单文件不超过 2MB。</span>
+                </div>
               </el-form-item>
             </div>
+
+            <el-form-item label="头像地址备用方式">
+              <el-input v-model="profileForm.avatar_url" placeholder="也可直接填写头像图片 URL" />
+            </el-form-item>
 
             <div class="grid two-cols">
               <el-form-item label="所属院系" prop="department">
@@ -266,6 +411,28 @@ onMounted(async () => {
                 <el-input v-model="profileForm.contact_phone" placeholder="如 13800000000" />
               </el-form-item>
             </div>
+
+            <el-form-item label="联系方式公开策略">
+              <el-radio-group v-model="profileForm.contact_visibility" class="contact-visibility-group">
+                <el-radio-button
+                  v-for="item in contactVisibilityOptions"
+                  :key="item.value"
+                  :label="item.value"
+                >
+                  {{ item.label }}
+                </el-radio-button>
+              </el-radio-group>
+              <div class="visibility-note-list">
+                <p
+                  v-for="item in contactVisibilityOptions"
+                  :key="`note-${item.value}`"
+                  :class="{ 'visibility-note--active': item.value === profileForm.contact_visibility }"
+                  class="visibility-note"
+                >
+                  {{ item.helper }}
+                </p>
+              </div>
+            </el-form-item>
 
             <div class="grid two-cols">
               <el-form-item label="研究领域">
@@ -293,6 +460,27 @@ onMounted(async () => {
             <div class="field-tag-list compact">
               <el-tag v-for="tag in profileHighlights" :key="tag" type="success" effect="plain">{{ tag }}</el-tag>
               <span v-if="!profileHighlights.length" class="muted">暂未维护研究方向和研究兴趣标签</span>
+            </div>
+
+            <div class="field-visibility-panel">
+              <div class="field-visibility-card">
+                <span>当前公开联系方式</span>
+                <div class="field-tag-list compact">
+                  <el-tag
+                    v-for="item in publicContactChannels"
+                    :key="item.key"
+                    type="primary"
+                    effect="plain"
+                  >
+                    {{ item.label }}：{{ item.value }}
+                  </el-tag>
+                  <span v-if="!publicContactChannels.length" class="muted">当前联系方式仅内部可见或尚未补充。</span>
+                </div>
+              </div>
+              <div class="field-visibility-card">
+                <span>公开 / 内部边界说明</span>
+                <p>公开字段会用于系统内个人资料卡、画像摘要和推荐输入摘要；工号、登录账号、账户状态和密码状态仍仅供本人及管理员查看。</p>
+              </div>
             </div>
 
             <el-form-item label="个人简介">
@@ -352,6 +540,14 @@ onMounted(async () => {
             <div class="internal-item">
               <span>安全提示</span>
               <strong>{{ securityNotice }}</strong>
+            </div>
+            <div class="internal-item">
+              <span>联系方式展示策略</span>
+              <strong>{{ contactVisibilityLabel }}</strong>
+            </div>
+            <div class="internal-item">
+              <span>内部联系方式总览</span>
+              <strong>{{ contactSummary || '待补充联系方式' }}</strong>
             </div>
           </div>
 
@@ -506,6 +702,41 @@ h1 {
   align-items: center;
 }
 
+.status-grid {
+  max-width: 1180px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.status-card {
+  border: none;
+  border-radius: 22px;
+  padding: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+}
+
+.status-card__label {
+  display: block;
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.status-card__value {
+  display: block;
+  color: #0f172a;
+  font-size: 28px;
+}
+
+.status-card__helper {
+  margin: 12px 0 0;
+  color: #64748b;
+  line-height: 1.7;
+}
+
 .center-layout {
   max-width: 1180px;
   margin: 0 auto 20px;
@@ -568,6 +799,17 @@ h1 {
   margin-top: 4px;
 }
 
+.avatar-upload-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.field-helper {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .grid {
   display: grid;
   gap: 16px;
@@ -580,6 +822,57 @@ h1 {
 .actions {
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.contact-visibility-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.visibility-note-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.visibility-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f8fbff;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.visibility-note--active {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.field-visibility-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.field-visibility-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.field-visibility-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.field-visibility-card p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.7;
 }
 
 .internal-grid {
@@ -627,6 +920,7 @@ h1 {
 }
 
 @media (max-width: 1180px) {
+  .status-grid,
   .center-layout {
     grid-template-columns: 1fr;
   }
@@ -640,6 +934,7 @@ h1 {
   .hero-panel,
   .hero-profile,
   .hero-actions,
+  .status-grid,
   .profile-preview,
   .two-cols,
   .card-header,

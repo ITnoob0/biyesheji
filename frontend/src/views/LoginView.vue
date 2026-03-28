@@ -6,7 +6,11 @@ import { ElMessage } from 'element-plus'
 import type { TokenObtainPairResponse } from '../types/auth'
 import { resolvePostLoginRedirect } from '../utils/sessionFlow.js'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
-import { buildPasswordSecurityNotice, resolveLoginFailureMessage } from '../utils/authPresentation.js'
+import {
+  buildPasswordSecurityNotice,
+  buildSessionRecoveryNotice,
+  resolveLoginFailureMessage,
+} from '../utils/authPresentation.js'
 import { resolvePostLoginLandingPath } from '../utils/workspaceNavigation.js'
 import {
   clearSessionAuth,
@@ -22,6 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const loginErrorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
+const expiredRecoveryNotice = ref('')
 
 const redirectHint = computed(() =>
   typeof route.query.redirect === 'string' && route.query.redirect.trim()
@@ -69,6 +74,10 @@ const handleLogin = async () => {
 onMounted(() => {
   const expiredReason = consumeSessionExpiredReason()
   if (expiredReason) {
+    expiredRecoveryNotice.value = buildSessionRecoveryNotice(
+      expiredReason,
+      typeof route.query.redirect === 'string' && route.query.redirect.trim().length > 0,
+    )
     ElMessage.warning(expiredReason)
   }
 })
@@ -101,7 +110,15 @@ onMounted(() => {
       />
 
       <el-alert
-        title="若密码由管理员初始化或重置，登录后请尽快在“基础档案”页修改密码。"
+        v-if="expiredRecoveryNotice"
+        :title="expiredRecoveryNotice"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
+      <el-alert
+        title="若密码由管理员初始化或重置，登录后请尽快在“个人中心”页修改密码。"
         type="warning"
         :closable="false"
         show-icon

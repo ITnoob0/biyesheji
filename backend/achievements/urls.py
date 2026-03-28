@@ -1,13 +1,14 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .management_dashboard import AcademyOverviewDashboardView
+from .management_dashboard import AcademyOverviewDashboardView, AcademyOverviewExportView
 from .views import (
     AcademicServiceViewSet,
     IntellectualPropertyViewSet,
     PaperViewSet,
     ProjectViewSet,
     TeacherDashboardStatsView,
+    TeacherPortraitReportView,
     TeacherRadarView,
     TeachingAchievementViewSet,
 )
@@ -23,5 +24,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('dashboard-stats/', TeacherDashboardStatsView.as_view(), name='dashboard_stats'),
     path('radar/<int:user_id>/', TeacherRadarView.as_view(), name='teacher_radar'),
+    path('portrait-report/<int:user_id>/', TeacherPortraitReportView.as_view(), name='teacher_portrait_report'),
     path('academy-overview/', AcademyOverviewDashboardView.as_view(), name='academy_overview_dashboard'),
+    path('academy-overview/export/', AcademyOverviewExportView.as_view(), name='academy_overview_export'),
 ]

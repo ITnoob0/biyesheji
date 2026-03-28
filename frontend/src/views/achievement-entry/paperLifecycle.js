@@ -28,7 +28,7 @@ export const buildPaperMetadataHints = form => {
   const hints = []
 
   if (!String(form.doi || '').trim()) {
-    hints.push('建议补充 DOI，便于后续查重、检索和画像联动。')
+    hints.push('建议补充 DOI，便于后续去重、检索和画像联动。')
   }
   if (!String(form.pages || '').trim()) {
     hints.push('建议补充页码范围，方便后续成果核验。')
@@ -55,6 +55,15 @@ export const buildImportFeedbackLines = payload => {
     `重复跳过 ${payload.skipped_count} 条`,
     `写入失败 ${payload.failed_count} 条`,
   ]
+
+  if (payload.classified_counts) {
+    const classifiedSummary = Object.entries(payload.classified_counts)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(' / ')
+    if (classifiedSummary) {
+      lines.push(`分类结果：${classifiedSummary}`)
+    }
+  }
 
   const firstSkipped = payload.skipped_entries[0]
   if (firstSkipped?.issue_summary) {

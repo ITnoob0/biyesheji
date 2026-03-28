@@ -17,6 +17,14 @@ export interface YearlyTrendRecord {
   achievement_total: number
 }
 
+export interface ScopeComparisonTrendRecord {
+  year: number
+  scope_achievement_total: number
+  baseline_achievement_total: number
+  scope_paper_count: number
+  baseline_paper_count: number
+}
+
 export interface DepartmentDistributionRecord {
   name: string
   value: number
@@ -36,6 +44,8 @@ export interface TopActiveTeacherRecord {
   citation_total: number
   achievement_total: number
   latest_active_year: number | null
+  rank_value: number
+  rank_label: string
 }
 
 export interface CollaborationOverview {
@@ -52,6 +62,8 @@ export interface AcademyDataMeta {
   realtime_metrics: string[]
   offline_candidate_metrics: string[]
   export_note: string
+  drilldown_scope_note: string
+  statistics_boundary_note: string
 }
 
 export interface AcademyTeacherOption {
@@ -66,6 +78,8 @@ export interface AcademyFilterOptions {
   teacher_titles: string[]
   teachers: AcademyTeacherOption[]
   years: number[]
+  achievement_types: Array<{ value: string; label: string }>
+  ranking_modes: Array<{ value: string; label: string }>
 }
 
 export interface AcademyActiveFilters {
@@ -74,6 +88,8 @@ export interface AcademyActiveFilters {
   teacher_title: string
   year: number | null
   has_collaboration: boolean | null
+  achievement_type: string
+  rank_by: string
 }
 
 export interface DepartmentBreakdownRecord {
@@ -82,7 +98,11 @@ export interface DepartmentBreakdownRecord {
   achievement_total: number
   paper_count: number
   project_count: number
+  ip_count: number
+  teaching_count: number
+  service_count: number
   collaboration_count: number
+  citation_total: number
 }
 
 export interface AcademyTrendSummary {
@@ -112,12 +132,64 @@ export interface AcademyComparisonSummary {
 export interface AcademyOverviewResponse {
   statistics: AcademyStatisticItem[]
   yearly_trend: YearlyTrendRecord[]
+  comparison_trend: ScopeComparisonTrendRecord[]
   trend_summary: AcademyTrendSummary
   comparison_summary: AcademyComparisonSummary
   department_distribution: DepartmentDistributionRecord[]
   department_breakdown: DepartmentBreakdownRecord[]
   top_active_teachers: TopActiveTeacherRecord[]
   collaboration_overview: CollaborationOverview
+  ranking_meta: {
+    current_rank_by: string
+    current_rank_label: string
+  }
+  drilldown: {
+    selected_department_summary?: {
+      department: string
+      teacher_count: number
+      top_teacher_count: number
+      recent_record_count: number
+    } | null
+    department_top_teachers: TopActiveTeacherRecord[]
+    department_recent_achievements: Array<{
+      type: string
+      title: string
+      teacher_name: string
+      department: string
+      date_acquired: string
+      detail: string
+    }>
+    selected_teacher_summary?: {
+      user_id: number
+      teacher_name: string
+      department: string
+      title: string
+      achievement_total: number
+      paper_count: number
+      project_count: number
+      ip_count: number
+      teaching_count: number
+      service_count: number
+      citation_total: number
+      collaboration_count: number
+    } | null
+    teacher_recent_achievements: Array<{
+      type: string
+      title: string
+      teacher_name: string
+      department: string
+      date_acquired: string
+      detail: string
+    }>
+  }
+  recent_scope_records: Array<{
+    type: string
+    title: string
+    teacher_name: string
+    department: string
+    date_acquired: string
+    detail: string
+  }>
   data_meta: AcademyDataMeta
   active_filters: AcademyActiveFilters
   filter_options: AcademyFilterOptions

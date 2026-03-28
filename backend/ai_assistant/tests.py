@@ -88,6 +88,8 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['guide_snapshot']['guide_id'], self.guide.id)
         self.assertTrue(response.data['data_sources'])
         self.assertTrue(response.data['related_reasons'])
+        self.assertEqual(response.data['source_details'][0]['link']['page'], 'recommendations')
+        self.assertEqual(response.data['source_details'][0]['link']['guide_id'], self.guide.id)
 
     def test_teacher_can_request_portrait_dimension_reason(self):
         self.client.force_authenticate(self.teacher)
@@ -103,6 +105,56 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['question_type'], 'portrait_dimension_reason')
         self.assertTrue(response.data['related_reasons'])
         self.assertTrue(response.data['source_details'])
+        self.assertEqual(response.data['source_details'][0]['link']['page'], 'portrait')
+        self.assertEqual(response.data['source_details'][0]['link']['section'], 'portrait-dimensions')
+
+    def test_teacher_can_request_portrait_data_governance(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'portrait_data_governance',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'portrait_data_governance')
+        self.assertIn('source_governance', response.data)
+        self.assertEqual(response.data['source_details'][0]['module_label'], '画像模块')
+        self.assertTrue(response.data['source_governance']['verification_note'])
+
+    def test_teacher_can_request_achievement_recommendation_link(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'achievement_recommendation_link',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'achievement_recommendation_link')
+        self.assertEqual(response.data['guide_snapshot']['guide_id'], self.guide.id)
+        self.assertTrue(response.data['related_reasons'])
+        self.assertEqual(response.data['source_details'][0]['link']['page'], 'recommendations')
+
+    def test_teacher_can_request_graph_status(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'graph_status',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['question_type'], 'graph_status')
+        self.assertEqual(response.data['source_details'][0]['link']['page'], 'portrait')
+        self.assertEqual(response.data['source_details'][0]['link']['section'], 'portrait-graph')
+        self.assertTrue(response.data['source_governance']['degraded_flags'])
 
     def test_teacher_can_request_guide_overview(self):
         self.client.force_authenticate(self.teacher)
@@ -134,6 +186,7 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertEqual(response.data['question_type'], 'academy_summary')
         self.assertEqual(response.data['academy_snapshot']['department'], '计算机学院')
         self.assertEqual(response.data['academy_snapshot']['year'], 2025)
+        self.assertEqual(response.data['source_details'][0]['link']['page'], 'academy-dashboard')
 
     def test_admin_can_request_other_teacher_answer(self):
         self.client.force_authenticate(self.admin)
@@ -185,6 +238,29 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertIn('error', response.data)
         self.assertTrue(response.data['error']['next_step'])
         self.assertTrue(response.data['request_id'])
+
+    def test_data_poor_teacher_gets_fallback_for_achievement_portrait_link(self):
+        poor_teacher = get_user_model().objects.create_user(
+            id=100033,
+            username='100033',
+            password='teacher123456',
+            real_name='样本不足教师',
+        )
+
+        self.client.force_authenticate(poor_teacher)
+        response = self.client.post(
+            '/api/ai-assistant/portrait-qa/',
+            {
+                'question_type': 'achievement_portrait_link',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'fallback')
+        self.assertEqual(response.data['question_type'], 'achievement_portrait_link')
+        self.assertTrue(response.data['failure_notice'])
+        self.assertTrue(response.data['source_governance']['unavailable_flags'])
 
     @patch('ai_assistant.views.PortraitAssistantService.build_answer')
     def test_assistant_returns_fallback_payload_when_answer_generation_fails(self, build_answer):

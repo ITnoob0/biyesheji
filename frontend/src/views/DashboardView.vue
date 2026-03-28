@@ -42,6 +42,16 @@
       </div>
     </section>
 
+    <section v-if="linkContext" class="link-context-shell workspace-content-shell">
+      <el-alert
+        :title="linkContextTitle"
+        type="info"
+        :description="linkContextDescription"
+        :closable="false"
+        show-icon
+      />
+    </section>
+
     <section class="metric-grid">
       <el-card v-for="item in statistics" :key="item.title" class="metric-card workspace-surface-card" shadow="hover">
         <div class="metric-top">
@@ -111,7 +121,12 @@
         </div>
       </el-card>
 
-      <el-card class="radar-card workspace-surface-card" shadow="never">
+      <el-card
+        id="portrait-dimension-evidence-section"
+        class="radar-card workspace-surface-card"
+        :class="{ 'evidence-section-highlight': linkContext?.section === 'portrait-dimensions' }"
+        shadow="never"
+      >
         <template #header>
           <div class="section-head workspace-section-head">
             <span>综合能力雷达评估</span>
@@ -127,7 +142,13 @@
         </div>
 
         <div class="dimension-insight-grid">
-          <div v-for="item in dimensionInsights" :key="item.key" class="dimension-insight-item">
+          <div
+            v-for="item in dimensionInsights"
+            :id="dimensionEvidenceId(item.key)"
+            :key="item.key"
+            class="dimension-insight-item"
+            :class="{ 'dimension-insight-item--active': linkContext?.dimensionKey === item.key }"
+          >
             <div class="dimension-insight-head">
               <strong>{{ item.name }}</strong>
               <el-tag size="small" effect="plain" :type="item.level === '优势维度' ? 'success' : item.level === '稳定维度' ? 'info' : 'warning'">
@@ -140,6 +161,10 @@
               <el-tag v-for="evidence in item.evidence" :key="evidence" size="small" effect="plain" type="info">
                 {{ evidence }}
               </el-tag>
+            </div>
+            <div class="dimension-evidence-actions">
+              <el-button link type="primary" @click="openRecommendationEvidence(item.key)">查看推荐理由</el-button>
+              <el-button link type="warning" @click="openAssistantForDimension(item.key)">问答说明</el-button>
             </div>
           </div>
         </div>
@@ -171,7 +196,12 @@
     </section>
 
     <section class="chart-grid">
-      <el-card class="graph-card workspace-surface-card" shadow="never">
+      <el-card
+        id="portrait-graph-evidence-section"
+        class="graph-card workspace-surface-card"
+        shadow="never"
+        :class="{ 'evidence-section-highlight': linkContext?.section === 'portrait-graph' }"
+      >
         <template #header>
           <div class="section-head workspace-section-head">
             <span>学术社交拓扑图</span>
@@ -231,7 +261,12 @@
         </div>
       </el-card>
 
-      <el-card class="link-card workspace-surface-card" shadow="never">
+      <el-card
+        id="portrait-explanation-evidence-section"
+        class="link-card workspace-surface-card"
+        :class="{ 'evidence-section-highlight': linkContext?.section === 'portrait-explanation' }"
+        shadow="never"
+      >
         <template #header>
           <div class="section-head workspace-section-head">
             <span>画像如何形成</span>
@@ -260,8 +295,24 @@
       </el-card>
     </section>
 
+    <PortraitDeepAnalysisPanel
+      :stage-comparison="stageComparison"
+      :snapshot-boundary="snapshotBoundary"
+      :calculation-summary="calculationSummary"
+      :weight-spec="weightSpec"
+      :portrait-explanation="portraitExplanation"
+      :portrait-report="portraitReport"
+      :exporting="reportExporting"
+      @export-report="exportPortraitReport"
+    />
+
     <section class="bottom-grid">
-      <el-card class="paper-card workspace-surface-card" shadow="never">
+      <el-card
+        id="portrait-achievement-evidence-section"
+        class="paper-card workspace-surface-card"
+        :class="{ 'evidence-section-highlight': linkContext?.section === 'portrait-achievements' }"
+        shadow="never"
+      >
         <template #header>
           <div class="section-head workspace-section-head">
             <span>代表性成果</span>
@@ -271,13 +322,24 @@
 
         <div v-if="!recentAchievements.length" class="empty-text workspace-muted">暂无成果记录，可先前往成果录入页补充数据。</div>
 
-        <div v-for="item in recentAchievements" :key="`${item.type}-${item.id}`" class="achievement-item">
+        <div
+          v-for="item in recentAchievements"
+          :id="achievementEvidenceId(item.type, item.id)"
+          :key="`${item.type}-${item.id}`"
+          class="achievement-item"
+          :class="{ 'achievement-item--active': isActiveAchievementEvidence(item.type, item.id) }"
+        >
           <div class="achievement-head">
             <h3>{{ item.title }}</h3>
             <el-tag :type="resolveAchievementTagType(item.type)" effect="plain">{{ item.type_label }}</el-tag>
           </div>
           <p class="achievement-meta">{{ item.detail }} · {{ item.date_acquired }}</p>
           <p class="achievement-highlight">{{ item.highlight }}</p>
+          <div class="achievement-actions">
+            <el-button v-if="!currentUser?.is_admin" link type="primary" @click="openAchievementEntryEvidence(item.type, item.id)">支撑成果</el-button>
+            <el-button link type="success" @click="openRecommendationFromAchievement(item.type, item.id)">推荐解释</el-button>
+            <el-button link type="warning" @click="openAssistantFromAchievement(item.type, item.id)">问答说明</el-button>
+          </div>
         </div>
       </el-card>
 
@@ -328,15 +390,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { CaretBottom, CaretTop } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AcademicGraph from './AcademicGraph.vue'
+import PortraitDeepAnalysisPanel from './dashboard/PortraitDeepAnalysisPanel.vue'
 import RadarChart from '../components/RadarChart.vue'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
+import {
+  buildCrossModuleQuery,
+  buildScopedTeacherQuery,
+  focusEvidenceSection,
+  mapAchievementTypeToPortraitDimension,
+  parseCrossModuleLink,
+} from '../utils/crossModuleLinking'
 import type { TeacherAccountResponse } from '../types/users'
 import { buildDimensionTrendNarrative, buildKeywordEvolution, buildThemeFocusSummary } from './dashboard/portraitInsights.js'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
@@ -351,6 +421,7 @@ import {
   buildTopKeywords,
   buildTrendOption,
   type AchievementOverview,
+  type CalculationSummary,
   type DashboardStatsResponse,
   type DimensionInsight,
   type DimensionTrendPoint,
@@ -358,11 +429,15 @@ import {
   type PaperRecord,
   type PortraitDataMeta,
   type PortraitExplanation,
+  type PortraitReportResponse,
   type RadarResponse,
   type RecentAchievementRecord,
   type RecentStructurePoint,
+  type SnapshotBoundary,
+  type StageComparison,
   type StatisticItem,
   type TeacherDetail,
+  type WeightSpecItem,
 } from './dashboard/portrait'
 
 const route = useRoute()
@@ -380,6 +455,12 @@ const portraitDataMeta = ref<PortraitDataMeta | null>(null)
 const dimensionTrend = ref<DimensionTrendPoint[]>([])
 const recentStructure = ref<RecentStructurePoint[]>([])
 const portraitExplanation = ref<PortraitExplanation | null>(null)
+const stageComparison = ref<StageComparison | null>(null)
+const snapshotBoundary = ref<SnapshotBoundary | null>(null)
+const calculationSummary = ref<CalculationSummary | null>(null)
+const weightSpec = ref<WeightSpecItem[]>([])
+const portraitReport = ref<PortraitReportResponse | null>(null)
+const reportExporting = ref(false)
 const achievementOverview = ref<AchievementOverview>({
   paper_count: 0,
   project_count: 0,
@@ -428,6 +509,26 @@ const portraitUpdatedLabel = computed(() => buildPortraitUpdatedLabel(portraitDa
 const keywordEvolution = computed(() => buildKeywordEvolution(papers.value))
 const themeFocusSummary = computed(() => buildThemeFocusSummary(papers.value))
 const dimensionTrendNarrative = computed(() => buildDimensionTrendNarrative(dimensionTrend.value))
+const linkContext = computed(() => parseCrossModuleLink(route.query))
+
+const linkContextTitle = computed(() => {
+  if (linkContext.value?.source === 'achievement') {
+    return '当前从成果模块回跳，已定位到画像证据区。'
+  }
+  if (linkContext.value?.source === 'recommendation') {
+    return '当前从推荐模块回跳，已定位到对应画像证据区。'
+  }
+  if (linkContext.value?.source === 'assistant') {
+    return '当前从问答来源卡片回跳，已定位到对应画像证据区。'
+  }
+  return '当前已定位到画像证据区。'
+})
+
+const linkContextDescription = computed(
+  () =>
+    linkContext.value?.note ||
+    '当前联动只基于当前权限范围内的真实画像与成果数据，不会跳到无证据支撑的占位页面。',
+)
 
 const achievementMixSummary = computed(
   () =>
@@ -441,6 +542,13 @@ const resolveTargetUserId = (sessionUser: SessionUser): number => {
   }
   return sessionUser.id
 }
+
+const dimensionEvidenceId = (dimensionKey: string) => `portrait-dimension-${dimensionKey}`
+
+const achievementEvidenceId = (type: string, id: number) => `portrait-achievement-${type}-${id}`
+
+const isActiveAchievementEvidence = (type: string, id: number) =>
+  linkContext.value?.recordType === type && linkContext.value?.recordId === id
 
 const ensureUser = async (): Promise<SessionUser | null> => {
   const sessionUser = await ensureSessionUserContext()
@@ -483,7 +591,11 @@ const loadDashboardData = async () => {
   dimensionTrend.value = response.data.dimension_trend ?? []
   recentStructure.value = response.data.recent_structure ?? []
   portraitExplanation.value = response.data.portrait_explanation ?? null
+  stageComparison.value = response.data.stage_comparison ?? null
+  snapshotBoundary.value = response.data.snapshot_boundary ?? null
   dimensionInsights.value = response.data.dimension_insights ?? []
+  weightSpec.value = response.data.weight_spec ?? []
+  calculationSummary.value = response.data.calculation_summary ?? null
   portraitDataMeta.value = response.data.data_meta ?? null
   achievementOverview.value = response.data.achievement_overview ?? achievementOverview.value
 }
@@ -493,6 +605,13 @@ const loadRadarData = async () => {
   radarData.value = response.data.radar_dimensions ?? []
   dimensionSources.value = response.data.dimension_sources ?? []
   dimensionInsights.value = response.data.dimension_insights ?? dimensionInsights.value
+  weightSpec.value = response.data.weight_spec ?? weightSpec.value
+  calculationSummary.value = response.data.calculation_summary ?? calculationSummary.value
+}
+
+const loadPortraitReport = async () => {
+  const response = await axios.get<PortraitReportResponse>(`/api/achievements/portrait-report/${userId.value}/`)
+  portraitReport.value = response.data
 }
 
 const loadPapers = async () => {
@@ -537,10 +656,12 @@ const refreshPortrait = async () => {
   if (!sessionUser) return
 
   try {
-    await Promise.all([loadTeacherDetail(), loadDashboardData(), loadRadarData(), loadPapers()])
+    await Promise.all([loadTeacherDetail(), loadDashboardData(), loadRadarData(), loadPapers(), loadPortraitReport()])
     renderTrendChart()
     renderDimensionTrendChart()
     renderStructureChart()
+    await nextTick()
+    focusDashboardEvidence()
   } catch (error) {
     console.error(error)
     const errorNotice = buildApiErrorNotice(error, {
@@ -551,6 +672,63 @@ const refreshPortrait = async () => {
     })
 
     ElMessage.error([errorNotice.message, errorNotice.guidance].filter(Boolean).join(' '))
+  }
+}
+
+const focusDashboardEvidence = () => {
+  if (!linkContext.value?.section) {
+    return
+  }
+
+  if (linkContext.value.section === 'portrait-dimensions') {
+    focusEvidenceSection(
+      'portrait-dimension-evidence-section',
+      linkContext.value.dimensionKey ? dimensionEvidenceId(linkContext.value.dimensionKey) : undefined,
+    )
+    return
+  }
+
+  if (linkContext.value.section === 'portrait-achievements') {
+    focusEvidenceSection(
+      'portrait-achievement-evidence-section',
+      linkContext.value.recordType && linkContext.value.recordId
+        ? achievementEvidenceId(linkContext.value.recordType, linkContext.value.recordId)
+        : undefined,
+    )
+    return
+  }
+
+  if (linkContext.value.section === 'portrait-explanation') {
+    focusEvidenceSection('portrait-explanation-evidence-section')
+    return
+  }
+
+  if (linkContext.value.section === 'portrait-graph') {
+    focusEvidenceSection('portrait-graph-evidence-section')
+  }
+}
+
+const exportPortraitReport = async () => {
+  reportExporting.value = true
+  try {
+    const response = await axios.get(`/api/achievements/portrait-report/${userId.value}/`, {
+      params: { export: 'markdown' },
+      responseType: 'blob',
+    })
+    const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'text/markdown;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `teacher-portrait-report-${userId.value}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+    ElMessage.success('教师画像报告已导出。')
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('教师画像报告导出失败，请稍后重试。')
+  } finally {
+    reportExporting.value = false
   }
 }
 
@@ -565,10 +743,93 @@ const openRecommendationPage = () => {
   })
 }
 
+const openRecommendationEvidence = (dimensionKey: string) => {
+  router.push({
+    name: 'project-recommendations',
+    query: buildScopedTeacherQuery(
+      currentUser.value,
+      userId.value,
+      buildCrossModuleQuery({
+        source: 'portrait',
+        page: 'recommendations',
+        section: 'recommendation-evidence',
+        dimension_key: dimensionKey,
+      }),
+    ),
+  })
+}
+
+const openRecommendationFromAchievement = (type: string, id: number) => {
+  router.push({
+    name: 'project-recommendations',
+    query: buildScopedTeacherQuery(
+      currentUser.value,
+      userId.value,
+      buildCrossModuleQuery({
+        source: 'portrait',
+        page: 'recommendations',
+        section: 'recommendation-evidence',
+        dimension_key: mapAchievementTypeToPortraitDimension(type),
+        record_type: type,
+        record_id: String(id),
+      }),
+    ),
+  })
+}
+
 const openAssistantDemo = () => {
   router.push({
     name: 'assistant-demo',
     query: currentUser.value?.is_admin ? { user_id: String(userId.value) } : undefined,
+  })
+}
+
+const openAssistantForDimension = (dimensionKey: string) => {
+  router.push({
+    name: 'assistant-demo',
+    query: buildScopedTeacherQuery(
+      currentUser.value,
+      userId.value,
+      buildCrossModuleQuery({
+        source: 'portrait',
+        page: 'assistant',
+        section: 'assistant-answer',
+        question_type: 'portrait_dimension_reason',
+        dimension_key: dimensionKey,
+      }),
+    ),
+  })
+}
+
+const openAssistantFromAchievement = (type: string, id: number) => {
+  router.push({
+    name: 'assistant-demo',
+    query: buildScopedTeacherQuery(
+      currentUser.value,
+      userId.value,
+      buildCrossModuleQuery({
+        source: 'portrait',
+        page: 'assistant',
+        section: 'assistant-answer',
+        question_type: 'achievement_summary',
+        record_type: type,
+        record_id: String(id),
+      }),
+    ),
+  })
+}
+
+const openAchievementEntryEvidence = (type: string, id: number) => {
+  router.push({
+    name: 'AchievementEntry',
+    query: buildCrossModuleQuery({
+      source: 'portrait',
+      page: 'achievement-entry',
+      section: 'achievement-records',
+      record_type: type,
+      record_id: String(id),
+      dimension_key: mapAchievementTypeToPortraitDimension(type),
+    }),
   })
 }
 
@@ -595,6 +856,10 @@ watch(
     void refreshPortrait()
   },
 )
+
+watch(linkContext, () => {
+  focusDashboardEvidence()
+})
 
 onMounted(() => {
   void refreshPortrait()
@@ -712,6 +977,10 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 16px;
+  margin-bottom: 20px;
+}
+
+.link-context-shell {
   margin-bottom: 20px;
 }
 
@@ -877,6 +1146,13 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.dimension-insight-item--active,
+.achievement-item--active,
+.evidence-section-highlight {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+}
+
 .dimension-insight-head,
 .keyword-year-head {
   display: flex;
@@ -973,6 +1249,13 @@ onUnmounted(() => {
 .achievement-highlight {
   margin-top: 6px;
   color: #334155;
+}
+
+.dimension-evidence-actions,
+.achievement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .icon-blue {

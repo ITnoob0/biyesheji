@@ -1,8 +1,12 @@
 import { resolvePostLoginRedirect } from '../src/utils/sessionFlow.js'
 import {
+  buildAccountLifecycleHint,
   buildAdminRouteNotice,
   buildAdminPortraitSelectionNotice,
   buildPasswordSecurityNotice,
+  buildPublicContactSummary,
+  buildSessionRecoveryNotice,
+  resolveContactVisibilityLabel,
   buildSelfOnlyNotice,
   resolveLoginFailureMessage,
   resolveRoleLabel,
@@ -19,11 +23,7 @@ import {
   buildPaperDuplicateWarnings,
   buildPaperMetadataHints,
 } from '../src/views/achievement-entry/paperLifecycle.js'
-import {
-  buildDimensionTrendNarrative,
-  buildKeywordEvolution,
-  buildThemeFocusSummary,
-} from '../src/views/dashboard/portraitInsights.js'
+import { buildDimensionTrendNarrative, buildKeywordEvolution, buildThemeFocusSummary } from '../src/views/dashboard/portraitInsights.js'
 import { buildGraphSourceSummary } from '../src/views/graph/sourceState.js'
 import {
   buildDistributionCards,
@@ -44,10 +44,14 @@ const verifyRedirectRecovery = () => {
   assert(resolvePostLoginRedirect('', '') === '/dashboard', '无 redirect 时应回到画像首页')
 
   assert(resolveWorkspaceHomePath({ is_admin: true }) === '/dashboard', '管理员工作台首页应支持画像主页')
-  assert(resolveWorkspaceHomePath({ is_admin: false }) === '/dashboard', '教师工作台首页应落到画像主页')
+  assert(resolveWorkspaceHomePath({ is_admin: false }) === '/profile-editor', '教师工作台首页应落到个人中心')
   assert(
     resolvePostLoginLandingPath('/dashboard', { id: 1, is_admin: true }) === '/dashboard',
     '管理员登录后应允许回到自己的画像主页',
+  )
+  assert(
+    resolvePostLoginLandingPath('', { id: 100001, is_admin: false }) === '/profile-editor',
+    '教师登录后默认应进入个人中心',
   )
   assert(
     resolvePostLoginLandingPath('/profile/1', { id: 1, is_admin: true }) === '/profile/1',
@@ -156,11 +160,17 @@ const verifyGraphFallbackSummary = () => {
     notice: '当前图谱已自动回退到 MySQL 关系数据展示。',
     fallback_tip: '当前已使用 MySQL 关系数据继续展示图谱主体与轻量分析。',
     calculation_note: '当前图分析主要依据教师成果、合作作者与论文关键词进行轻量统计。',
+    source_scope_note: '当前图谱覆盖教师、论文、合作者、关键词以及项目、知识产权、教学成果和学术服务等节点。',
+    degradation_note: '当前图谱已按 MySQL 回退链路提供主体展示与轻量分析，不执行复杂图计算。',
+    interaction_note: '当前节点交互、路径说明与圈层概览只在当前已加载子图内解释。',
   })
   assert(summary.title === 'MySQL 回退链路', '图谱回退时应显示 MySQL 回退说明')
   assert(summary.source === 'MYSQL', '图谱数据来源标签应标准化输出')
   assert(summary.badge === '已降级', '图谱回退时应显示降级标记')
   assert(summary.fallbackTip.includes('轻量分析'), '图谱回退时应明确说明降级后仍可使用的能力')
+  assert(summary.sourceScopeNote.includes('项目'), '图谱来源摘要应说明当前节点覆盖范围')
+  assert(summary.degradationNote.includes('MySQL'), '图谱来源摘要应说明当前降级链路')
+  assert(summary.interactionNote.includes('路径说明'), '图谱来源摘要应说明当前交互与路径解释边界')
 }
 
 const verifyPortraitInsights = () => {
@@ -251,10 +261,16 @@ const verifyRecommendationFiltering = () => {
     recommended_count: 2,
     priority_distribution: { 重点关注: 1, 可作备选: 1 },
     rule_profile_distribution: { 主题优先: 1, 均衡规则: 1 },
+    response_rate: 50,
+    responded_guide_count: 1,
+    plan_to_apply_count: 1,
+    applied_count: 0,
+    feedback_record_count: 2,
     top_labels: [{ label: '主题贴合', count: 2 }],
   })
-  assert(cards.length >= 3, '管理员分析摘要应输出分布卡片')
+  assert(cards.length >= 5, '管理员分析摘要应输出更完整的反馈闭环卡片')
   assert(cards[0].value === 2, '管理员分析摘要应包含推荐总量')
+  assert(cards[1].value === '50%', '管理员分析摘要应包含反馈覆盖率')
 }
 
 const verifyAuthPresentation = () => {
@@ -268,6 +284,14 @@ const verifyAuthPresentation = () => {
   assert(
     buildPasswordSecurityNotice({ is_active: false }).includes('停用'),
     '停用账户应提示联系管理员恢复',
+  )
+  assert(
+    buildAccountLifecycleHint({ password_reset_required: true }).includes('尽快'),
+    '账户生命周期提示应提醒教师尽快修改临时密码',
+  )
+  assert(
+    buildAccountLifecycleHint({ is_active: false }).includes('恢复启用'),
+    '停用账户的生命周期提示应说明恢复启用要求',
   )
   assert(
     buildAdminRouteNotice('教师管理入口') === '当前账号为教师身份，不能访问教师管理入口。',
@@ -289,6 +313,24 @@ const verifyAuthPresentation = () => {
   assert(
     resolveLoginFailureMessage(inactiveError) === '账户已停用，请联系管理员处理。',
     '登录失败提示应优先使用后端返回的明确原因',
+  )
+  assert(
+    buildSessionRecoveryNotice('登录状态已失效，请重新登录。', true).includes('返回刚才访问的页面'),
+    '会话恢复提示应说明重新登录后的恢复路径',
+  )
+  assert(resolveContactVisibilityLabel('both') === '公开邮箱和电话', '联系方式展示策略标签应支持双通道公开')
+  assert(
+    buildPublicContactSummary({
+      public_contact_channels: [
+        { label: '联系邮箱', value: 'teacher@example.com' },
+        { label: '联系电话', value: '13800000000' },
+      ],
+    }).includes('联系电话'),
+    '公开联系方式摘要应展示当前允许公开的联系渠道',
+  )
+  assert(
+    buildPublicContactSummary({ contact_visibility: 'internal_only', public_contact_channels: [] }).includes('仅内部管理使用'),
+    '联系方式仅内部可见时应明确提示边界',
   )
 
   const htmlError = {
@@ -326,11 +368,25 @@ const verifyAuthPresentation = () => {
 }
 
 const verifyAssistantHelpers = () => {
-  assert(assistantQuestionOptions.length >= 5, '问答页面应提供多类受控模板')
+  assert(assistantQuestionOptions.length >= 9, '问答页面应提供更完整的受控模板集合')
+  assert(
+    assistantQuestionOptions.some(item => item.value === 'portrait_data_governance'),
+    '问答页面应提供画像数据治理模板',
+  )
+  assert(
+    assistantQuestionOptions.some(item => item.value === 'achievement_recommendation_link'),
+    '问答页面应提供成果与推荐联动模板',
+  )
+  assert(
+    assistantQuestionOptions.some(item => item.value === 'graph_status'),
+    '问答页面应提供图谱链路状态模板',
+  )
 
   const fallback = buildAssistantFallbackAnswer('portrait_summary', '接口暂不可用')
   assert(fallback.status === 'fallback', '问答异常时应生成结构化回退结果')
   assert(fallback.source_details[0].value.includes('接口暂不可用'), '问答回退结果应带出失败原因说明')
+  assert(fallback.source_details[0].module_label === '问答模块', '问答回退结果应保留来源模块标签')
+  assert(fallback.source_governance.answer_mode === '前端安全回退', '问答回退结果应保留来源治理说明')
 }
 
 const run = () => {

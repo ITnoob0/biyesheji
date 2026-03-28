@@ -7,7 +7,13 @@ from rest_framework import serializers
 
 from .access import is_admin_user
 from .services import (
+    build_teacher_management_summary,
+    build_public_contact_channels,
     get_teacher_profile,
+    get_user_account_status_label,
+    get_user_contact_visibility_label,
+    get_user_next_action_hint,
+    get_user_password_status_label,
     get_user_permission_scope,
     get_user_role_code,
     get_user_role_label,
@@ -30,6 +36,11 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
     research_interests = serializers.SerializerMethodField()
     h_index = serializers.SerializerMethodField()
     security_notice = serializers.SerializerMethodField()
+    contact_visibility_label = serializers.SerializerMethodField()
+    public_contact_channels = serializers.SerializerMethodField()
+    account_status_label = serializers.SerializerMethodField()
+    password_status_label = serializers.SerializerMethodField()
+    next_action_hint = serializers.SerializerMethodField()
 
     class Meta:
         model = get_user_model()
@@ -43,6 +54,9 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
             "email",
             "contact_phone",
             "avatar_url",
+            "contact_visibility",
+            "contact_visibility_label",
+            "public_contact_channels",
             "research_direction",
             "bio",
             "discipline",
@@ -56,6 +70,9 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
             "password_reset_required",
             "password_updated_at",
             "security_notice",
+            "account_status_label",
+            "password_status_label",
+            "next_action_hint",
         )
 
     def get_is_admin(self, obj):
@@ -85,6 +102,21 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
     def get_security_notice(self, obj):
         return get_user_security_notice(obj)
 
+    def get_contact_visibility_label(self, obj):
+        return get_user_contact_visibility_label(obj)
+
+    def get_public_contact_channels(self, obj):
+        return build_public_contact_channels(obj)
+
+    def get_account_status_label(self, obj):
+        return get_user_account_status_label(obj)
+
+    def get_password_status_label(self, obj):
+        return get_user_password_status_label(obj)
+
+    def get_next_action_hint(self, obj):
+        return get_user_next_action_hint(obj)
+
 
 class CurrentUserSerializer(TeacherAccountSerializer):
     class Meta(TeacherAccountSerializer.Meta):
@@ -98,6 +130,10 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     avatar_url = serializers.URLField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    contact_visibility = serializers.ChoiceField(
+        required=False,
+        choices=("email_only", "phone_only", "both", "internal_only"),
+    )
 
     class Meta:
         model = get_user_model()
@@ -108,6 +144,7 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
             "email",
             "contact_phone",
             "avatar_url",
+            "contact_visibility",
             "research_direction",
             "bio",
             "discipline",
@@ -144,6 +181,10 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     avatar_url = serializers.URLField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    contact_visibility = serializers.ChoiceField(
+        required=False,
+        choices=("email_only", "phone_only", "both", "internal_only"),
+    )
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=False, style={"input_type": "password"}
     )
@@ -166,6 +207,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             "email",
             "contact_phone",
             "avatar_url",
+            "contact_visibility",
             "research_direction",
             "bio",
             "discipline",
@@ -353,3 +395,57 @@ class ForgotPasswordResetSerializer(serializers.Serializer):
         user = self.validated_data["user"]
         set_user_password(user, self.validated_data["new_password"], require_password_change=False)
         return user
+
+
+class TeacherBulkActionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=("activate", "deactivate", "reset_password"))
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+    )
+
+    default_error_messages = {
+        "duplicate_ids": "批量操作中的教师 ID 不能重复。",
+    }
+
+    def validate_user_ids(self, value):
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError(self.error_messages["duplicate_ids"])
+        return value
+
+
+class TeacherManagementSummarySerializer(serializers.Serializer):
+    total_count = serializers.IntegerField()
+    active_count = serializers.IntegerField()
+    inactive_count = serializers.IntegerField()
+    password_reset_required_count = serializers.IntegerField()
+    stable_password_count = serializers.IntegerField()
+    recovery_guidance = serializers.CharField()
+    future_extension_hint = serializers.CharField()
+
+    @classmethod
+    def from_queryset(cls, queryset):
+        return cls(build_teacher_management_summary(queryset))
+
+
+class CurrentUserAvatarUploadSerializer(serializers.Serializer):
+    avatar = serializers.FileField()
+
+    default_error_messages = {
+        "invalid_type": "头像上传仅支持 JPG、PNG、WEBP 或 GIF 图片。",
+        "file_too_large": "头像文件不能超过 2MB。",
+    }
+
+    def validate_avatar(self, value):
+        content_type = (getattr(value, "content_type", "") or "").lower()
+        file_name = (getattr(value, "name", "") or "").lower()
+        allowed_content_types = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+        allowed_extensions = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+        if content_type not in allowed_content_types and not file_name.endswith(allowed_extensions):
+            raise serializers.ValidationError(self.error_messages["invalid_type"])
+
+        if value.size > 2 * 1024 * 1024:
+            raise serializers.ValidationError(self.error_messages["file_too_large"])
+
+        return value
