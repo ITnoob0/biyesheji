@@ -1,4 +1,5 @@
 import type { EChartsOption } from 'echarts'
+import { buildBaseChartOption, getChartThemeTokens } from '../../utils/chartTheme'
 
 export type StatisticItem = {
   title: string
@@ -45,6 +46,19 @@ export type RecentAchievementRecord = {
   date_acquired: string
   detail: string
   highlight: string
+}
+
+export type AllAchievementRecord = RecentAchievementRecord & {
+  is_representative: boolean
+  author_rank_category: 'lead' | 'participating' | 'unspecified'
+  author_rank_label: string
+}
+
+export type AllAchievementResponse = {
+  teacher_id: number
+  teacher_name: string
+  achievement_total: number
+  records: AllAchievementRecord[]
 }
 
 export type AchievementOverview = {
@@ -343,23 +357,28 @@ const DIMENSION_SERIES = [
 
 export const buildDimensionTrendOption = (trend: DimensionTrendPoint[], echarts: any): EChartsOption => {
   const years = trend.map(item => item.year)
+  const tokens = getChartThemeTokens()
 
   return {
-    tooltip: { trigger: 'axis' },
+    ...buildBaseChartOption(),
+    tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis' },
     legend: {
       top: 0,
       data: DIMENSION_SERIES.map(item => item.label),
+      textStyle: { color: tokens.textSecondary },
     },
     grid: { left: 28, right: 24, bottom: 24, top: 54, containLabel: true },
     xAxis: {
       type: 'category',
       data: years,
-      axisLine: { lineStyle: { color: '#94a3b8' } },
+      axisLine: { lineStyle: { color: tokens.borderStrong } },
+      axisLabel: { color: tokens.textTertiary },
     },
     yAxis: {
       type: 'value',
       max: 100,
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
+      axisLabel: { color: tokens.textTertiary },
+      splitLine: { lineStyle: { color: tokens.border } },
     },
     series: DIMENSION_SERIES.map(item => ({
       name: item.label,
@@ -381,6 +400,7 @@ export const buildDimensionTrendOption = (trend: DimensionTrendPoint[], echarts:
 
 export const buildAchievementStructureOption = (records: RecentStructurePoint[], echarts: any): EChartsOption => {
   const years = records.map(item => item.year)
+  const tokens = getChartThemeTokens()
   const seriesConfig = [
     { key: 'papers', label: '论文', color: '#2563eb' },
     { key: 'projects', label: '项目', color: '#10b981' },
@@ -390,18 +410,21 @@ export const buildAchievementStructureOption = (records: RecentStructurePoint[],
   ] as const
 
   return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { top: 0 },
+    ...buildBaseChartOption(),
+    tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { top: 0, textStyle: { color: tokens.textSecondary } },
     grid: { left: 28, right: 24, bottom: 24, top: 54, containLabel: true },
     xAxis: {
       type: 'category',
       data: years,
-      axisLine: { lineStyle: { color: '#94a3b8' } },
+      axisLine: { lineStyle: { color: tokens.borderStrong } },
+      axisLabel: { color: tokens.textTertiary },
     },
     yAxis: {
       type: 'value',
       minInterval: 1,
-      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.24)' } },
+      axisLabel: { color: tokens.textTertiary },
+      splitLine: { lineStyle: { color: tokens.border } },
     },
     series: seriesConfig.map(item => ({
       name: item.label,
@@ -428,32 +451,41 @@ export const buildTrendOption = (papers: PaperRecord[], echarts: any): EChartsOp
   })
 
   const years = [...yearMap.keys()].sort((a, b) => a - b)
+  const tokens = getChartThemeTokens()
+  const publicationBarWidth = years.length <= 1 ? 72 : years.length <= 2 ? 60 : years.length <= 4 ? 42 : 28
 
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['发文量', '引用次数'], top: 0 },
+    ...buildBaseChartOption(),
+    tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis' },
+    legend: { data: ['发文量', '引用次数'], top: 0, textStyle: { color: tokens.textSecondary } },
     grid: { left: 36, right: 36, bottom: 24, top: 48, containLabel: true },
     xAxis: {
       type: 'category',
       data: years,
-      axisLine: { lineStyle: { color: '#94a3b8' } },
+      axisLine: { lineStyle: { color: tokens.borderStrong } },
+      axisLabel: { color: tokens.textTertiary },
     },
     yAxis: [
       {
         type: 'value',
         name: '发文量',
         minInterval: 1,
+        nameTextStyle: { color: tokens.textTertiary },
+        axisLabel: { color: tokens.textTertiary },
+        splitLine: { lineStyle: { color: tokens.border } },
       },
       {
         type: 'value',
         name: '引用次数',
+        nameTextStyle: { color: tokens.textTertiary },
+        axisLabel: { color: tokens.textTertiary },
       },
     ],
     series: [
       {
         name: '发文量',
         type: 'bar',
-        barWidth: 28,
+        barWidth: publicationBarWidth,
         data: years.map(year => yearMap.get(year)?.publications || 0),
         itemStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [

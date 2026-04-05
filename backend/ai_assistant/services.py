@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
@@ -11,6 +13,8 @@ from project_guides.models import ProjectGuide
 from project_guides.services import ProjectGuideRecommendationService
 from users.access import ACADEMY_SCOPE_MESSAGE, ASSISTANT_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
 from users.services import get_teacher_profile
+
+from .utils import AcademicAI
 
 
 class PortraitAssistantService:
@@ -1294,3 +1298,231 @@ class PortraitAssistantService:
                 ),
             )
         return payload
+
+
+class AssistantChatService:
+    @staticmethod
+    def resolve_chat_teacher(request):
+        # 当前聊天助手统一按“当前登录账号”回答；管理员不再指定其他教师。
+        return request.user
+
+    @staticmethod
+    def _tokenize(text: str) -> list[str]:
+        if not text:
+            return []
+        chinese_tokens = re.findall(r'[\u4e00-\u9fff]{2,}', text)
+        english_tokens = re.findall(r'[A-Za-z][A-Za-z\-]{1,}', text.lower())
+        return [token.strip().lower() for token in chinese_tokens + english_tokens if token.strip()]
+
+    @classmethod
+    def _build_knowledge_chunks(cls, request, teacher) -> list[dict]:
+        profile = get_teacher_profile(teacher)
+        metrics = TeacherScoringEngine.collect_metrics(teacher)
+        recent_records = PortraitAssistantService._collect_recent_records(teacher, limit=5)
+        recommendation_result = ProjectGuideRecommendationService.build_recommendations(
+            teacher,
+            requested_by=request.user,
+        )
+        top_recommendations = (recommendation_result.get('recommendations') or [])[:3]
+
+        chunks: list[dict] = [
+            {
+                'id': 'S1',
+                'title': '教师画像基础信息',
+                'module': 'portrait',
+                'content': (
+                    f"教师：{teacher.real_name or teacher.username}；院系：{teacher.department or '未填写'}；"
+                    f"职称：{teacher.title or '未填写'}；学科：{profile.discipline if profile else '未填写'}；"
+                    f"研究兴趣：{profile.research_interests if profile and profile.research_interests else '未填写'}。"
+                ),
+                'link': {
+                    'label': '查看画像主页',
+                    'page': 'portrait',
+                    'section': 'portrait-explanation',
+                    'note': '当前回答来源于系统内教师画像与资料快照。',
+                },
+            },
+            {
+                'id': 'S2',
+                'title': '成果聚合统计',
+                'module': 'achievement',
+                'content': (
+                    f"成果总数 {metrics.get('total_achievements', 0)}；论文 {metrics.get('paper_count', 0)}；"
+                    f"项目 {metrics.get('project_count', 0)}；知识产权 {metrics.get('ip_count', 0)}；"
+                    f"教学成果 {metrics.get('teaching_count', 0)}；学术服务 {metrics.get('service_count', 0)}。"
+                ),
+                'link': {
+                    'label': '查看成果证据',
+                    'page': 'achievement-entry',
+                    'section': 'achievement-records',
+                    'note': '可回跳到成果列表核验当前统计口径。',
+                },
+            },
+            {
+                'id': 'S3',
+                'title': '推荐结果概览',
+                'module': 'recommendation',
+                'content': (
+                    f"当前可用推荐 {len(recommendation_result.get('recommendations') or [])} 项；"
+                    f"收藏 {len((recommendation_result.get('favorites') or {}).get('guide_ids') or [])} 项；"
+                    f"推荐策略：{(recommendation_result.get('data_meta') or {}).get('current_strategy', '规则增强推荐')}。"
+                ),
+                'link': {
+                    'label': '查看推荐结果',
+                    'page': 'recommendations',
+                    'section': 'recommendation-evidence',
+                    'note': '可回到推荐页查看项目级证据。',
+                },
+            },
+            {
+                'id': 'S4',
+                'title': '系统边界说明',
+                'module': 'assistant',
+                'content': (
+                    '当前助手为系统内知识增强回答，不调用外部公开网络知识；'
+                    '当证据不足时会明确提示信息边界，不虚构教师成果或推荐命中。'
+                ),
+                'link': {
+                    'label': '查看助手页面',
+                    'page': 'assistant',
+                    'section': 'assistant-answer',
+                    'note': '可在助手页面继续追问并查看来源卡片。',
+                },
+            },
+        ]
+
+        for index, item in enumerate(top_recommendations, start=1):
+            chunks.append(
+                {
+                    'id': f'R{index}',
+                    'title': f"推荐项目：{item.get('title', '未命名指南')}",
+                    'module': 'recommendation',
+                    'content': (
+                        f"推荐分 {item.get('recommendation_score', 0)}；优先级 {item.get('priority_label', '未标注')}；"
+                        f"摘要：{item.get('recommendation_summary', '') or item.get('summary', '') or '暂无摘要'}"
+                    ),
+                    'link': {
+                        'label': '回到推荐详情',
+                        'page': 'recommendations',
+                        'section': 'recommendation-evidence',
+                        'guide_id': item.get('id'),
+                        'note': '可回到推荐模块核验该项目详情。',
+                    },
+                }
+            )
+
+        if recent_records:
+            recent_titles = '；'.join(record['title'] for record in recent_records[:3])
+            chunks.append(
+                {
+                    'id': 'A1',
+                    'title': '近期成果线索',
+                    'module': 'achievement',
+                    'content': f"近期成果包括：{recent_titles}。",
+                    'link': {
+                        'label': '查看成果列表',
+                        'page': 'achievement-entry',
+                        'section': 'achievement-records',
+                        'note': '可回到成果模块查看原始记录。',
+                    },
+                }
+            )
+
+        return chunks
+
+    @classmethod
+    def _retrieve_chunks(cls, question: str, chunks: list[dict], limit: int = 4) -> list[dict]:
+        question_tokens = set(cls._tokenize(question))
+        ranked: list[dict] = []
+
+        for chunk in chunks:
+            chunk_tokens = set(cls._tokenize(f"{chunk.get('title', '')} {chunk.get('content', '')}"))
+            overlap = len(question_tokens & chunk_tokens)
+            contains_bonus = 1 if question and question in f"{chunk.get('title', '')}{chunk.get('content', '')}" else 0
+            score = overlap + contains_bonus
+            ranked.append({**chunk, 'score': score})
+
+        ranked.sort(key=lambda item: item['score'], reverse=True)
+        positive = [item for item in ranked if item['score'] > 0]
+        selected = positive[:limit] if positive else ranked[:limit]
+        return selected
+
+    @staticmethod
+    def _invoke_optional_llm(question: str, context_chunks: list[dict]) -> tuple[str | None, str]:
+        model_name = getattr(settings, 'ASSISTANT_CHAT_MODEL', 'qwen2.5-fast')
+        ai = AcademicAI(model_name=model_name)
+        if ai.llm is None:
+            return None, 'rules-fallback'
+
+        context_lines = []
+        for item in context_chunks:
+            context_lines.append(f"[{item['id']}] {item['title']}：{item['content']}")
+        context_block = '\n'.join(context_lines)
+
+        prompt = (
+            "你是高校教师科研画像系统的AI助手。"
+            "请仅基于给定证据回答，不要引入外部知识，不要编造。"
+            "回答使用中文，结构清晰，必要时标注证据编号如[S1]。\n\n"
+            f"用户问题：{question}\n\n"
+            f"可用证据：\n{context_block}\n"
+        )
+        try:
+            response = ai.llm.invoke(prompt)
+            normalized = str(response).strip()
+            return (normalized or None), model_name
+        except Exception:
+            return None, 'rules-fallback'
+
+    @staticmethod
+    def _build_fallback_answer(question: str, context_chunks: list[dict]) -> str:
+        if not context_chunks:
+            return '当前没有检索到可验证的系统内证据，建议补充教师资料或成果后再提问。'
+        lines = [
+            f"已基于系统内证据检索到 {len(context_chunks)} 条相关信息，先给出可核验摘要：",
+        ]
+        for item in context_chunks[:3]:
+            lines.append(f"- [{item['id']}] {item['title']}：{item['content']}")
+        lines.append(f"你的问题是“{question}”，如需更细内容可继续追问并指定关注点（如成果、推荐或画像）。")
+        return '\n'.join(lines)
+
+    @classmethod
+    def build_chat_answer(cls, request, *, message: str, context_hint: str = '', limit: int = 4) -> dict:
+        teacher = cls.resolve_chat_teacher(request)
+        chunks = cls._build_knowledge_chunks(request, teacher)
+        retrieved = cls._retrieve_chunks(message, chunks, limit=limit)
+
+        llm_answer, model_name = cls._invoke_optional_llm(message, retrieved)
+        status = 'ok' if llm_answer else 'fallback'
+        answer_text = llm_answer or cls._build_fallback_answer(message, retrieved)
+        base_meta = PortraitAssistantService._base_meta()
+
+        return {
+            'status': status,
+            'title': 'AI 助手回答',
+            'answer': answer_text,
+            'assistant_mode': 'rag-chat',
+            'model': model_name,
+            'question': message,
+            'context_hint': context_hint,
+            'scope_note': base_meta['scope_note'],
+            'non_coverage_note': base_meta['non_coverage_note'],
+            'acceptance_scope': base_meta['acceptance_scope'],
+            'boundary_notes': base_meta['boundary_notes'],
+            'teacher_snapshot': {
+                'user_id': teacher.id,
+                'teacher_name': teacher.real_name or teacher.username,
+                'department': teacher.department or '',
+                'title': teacher.title or '',
+            },
+            'sources': [
+                {
+                    'id': item['id'],
+                    'title': item['title'],
+                    'module': item['module'],
+                    'snippet': item['content'],
+                    'score': item['score'],
+                    'link': item.get('link'),
+                }
+                for item in retrieved
+            ],
+        }

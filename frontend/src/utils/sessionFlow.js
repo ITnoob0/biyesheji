@@ -7,5 +7,5 @@ export const resolvePostLoginRedirect = (routeRedirect, storedRedirect) => {
     return routeRedirect
   }
 
-  return '/dashboard'
+  return ''
 }

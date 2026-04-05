@@ -14,6 +14,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import { observeElementsResize } from '../utils/resizeObserver'
 
 const props = defineProps<{
   radarData: { name: string; value: number }[]
@@ -22,6 +23,18 @@ const props = defineProps<{
 
 const radarRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
+
+const handleResize = () => {
+  chart?.resize()
+}
+
+const ensureResizeObserver = () => {
+  if (resizeObserver || !radarRef.value) {
+    return
+  }
+  resizeObserver = observeElementsResize([radarRef.value], handleResize)
+}
 
 const renderRadar = async () => {
   if (!props.radarData || props.radarData.length === 0) {
@@ -35,6 +48,7 @@ const renderRadar = async () => {
   if (!chart) {
     chart = echarts.init(radarRef.value)
   }
+  ensureResizeObserver()
 
   chart.setOption({
     tooltip: {
@@ -95,10 +109,6 @@ const renderRadar = async () => {
   })
 }
 
-const handleResize = () => {
-  chart?.resize()
-}
-
 watch(
   () => props.radarData,
   () => {
@@ -109,11 +119,11 @@ watch(
 
 onMounted(() => {
   void renderRadar()
-  window.addEventListener('resize', handleResize)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   if (chart) {
     chart.dispose()
     chart = null

@@ -12,6 +12,7 @@ import {
 import type {
   AchievementListResponseMap,
   AchievementMutationPayloadMap,
+  AchievementOperationHistoryResponse,
   AchievementQueryState,
   AchievementRecordMap,
   BibtexPreviewEntry,
@@ -37,6 +38,19 @@ const buildQueryParams = <T extends TabName>(tab: T, rawState?: Partial<Achievem
       return
     }
 
+    params.append(key, normalized)
+  })
+
+  return Object.fromEntries(params.entries())
+}
+
+const buildLooseQueryParams = (rawState?: Record<string, string | number | boolean | undefined | null>) => {
+  const params = new URLSearchParams()
+
+  Object.entries(rawState || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    const normalized = String(value).trim()
+    if (!normalized) return
     params.append(key, normalized)
   })
 
@@ -72,6 +86,16 @@ export const updateAchievement = async <T extends TabName>(
 
 export const deleteAchievement = async (tab: TabName, id: number): Promise<void> => {
   await axios.delete(`${achievementEndpointMap[tab]}${id}/`)
+}
+
+export const fetchAchievementOperations = async (
+  tab: TabName,
+  queryState?: Record<string, string | number | boolean | undefined | null>,
+): Promise<AchievementOperationHistoryResponse> => {
+  const response = await axios.get<AchievementOperationHistoryResponse>(`${achievementEndpointMap[tab]}operations/`, {
+    params: buildLooseQueryParams(queryState),
+  })
+  return response.data
 }
 
 export const fetchPaperSummary = async (

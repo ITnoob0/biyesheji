@@ -7,8 +7,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.access import TEACHER_ONLY_MESSAGE, ensure_self_user
-
 from .models import ProjectGuide
 from .serializers import (
     ProjectGuideFavoriteToggleSerializer,
@@ -80,9 +78,6 @@ class ProjectGuideViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='favorite')
     def favorite(self, request, pk=None):
         guide = self.get_object()
-        if request.user.is_staff or request.user.is_superuser:
-            raise PermissionDenied(TEACHER_ONLY_MESSAGE)
-
         serializer = ProjectGuideFavoriteToggleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = ProjectGuideRecommendationService.toggle_favorite(
@@ -95,10 +90,6 @@ class ProjectGuideViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='feedback')
     def feedback(self, request, pk=None):
         guide = self.get_object()
-        if request.user.is_staff or request.user.is_superuser:
-            raise PermissionDenied(TEACHER_ONLY_MESSAGE)
-
-        ensure_self_user(request.user, request.user, TEACHER_ONLY_MESSAGE)
         serializer = ProjectGuideFeedbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = ProjectGuideRecommendationService.capture_feedback(

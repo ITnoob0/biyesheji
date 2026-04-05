@@ -84,6 +84,7 @@ export interface AcademyFilterOptions {
 
 export interface AcademyActiveFilters {
   department: string
+  compare_department?: string
   teacher_id: number | null
   teacher_title: string
   year: number | null
@@ -136,6 +137,7 @@ export interface AcademyOverviewResponse {
   trend_summary: AcademyTrendSummary
   comparison_summary: AcademyComparisonSummary
   department_distribution: DepartmentDistributionRecord[]
+  comparison_department_distribution?: DepartmentDistributionRecord[]
   department_breakdown: DepartmentBreakdownRecord[]
   top_active_teachers: TopActiveTeacherRecord[]
   collaboration_overview: CollaborationOverview

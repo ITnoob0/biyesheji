@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
@@ -17,12 +17,6 @@ import {
 import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
 import type { TeacherAccountResponse } from '../types/users'
 import type { AchievementOverview, DashboardStatsResponse, RecentAchievementRecord } from './dashboard/portrait'
-import {
-  internalManagementFieldLabels,
-  internalManagementBoundaryNote,
-  publicDisplayBoundaryNote,
-  publicDisplayFieldLabels,
-} from './personal-center/boundaries'
 
 interface ProfileFormState {
   real_name: string
@@ -44,6 +38,17 @@ interface AvatarUploadResponse {
   avatar_url: string
   user: TeacherAccountResponse
 }
+
+type PersonalCenterSection = 'public-profile' | 'security' | 'quick-links'
+
+const props = withDefaults(
+  defineProps<{
+    sectionMode?: PersonalCenterSection
+  }>(),
+  {
+    sectionMode: 'public-profile',
+  },
+)
 
 const router = useRouter()
 const currentUser = ref<SessionUser | null>(null)
@@ -84,15 +89,15 @@ const rules: FormRules<ProfileFormState> = {
 }
 
 const contactVisibilityOptions = [
-  { value: 'email_only', label: '仅公开邮箱', helper: '推荐用于工作联系场景，页面资料卡只展示邮箱。' },
-  { value: 'phone_only', label: '仅公开电话', helper: '适合希望快速电话联系的场景。' },
-  { value: 'both', label: '公开邮箱和电话', helper: '资料卡同时展示邮箱和电话，方便多渠道联系。' },
-  { value: 'internal_only', label: '仅内部可见', helper: '联系方式不进入公开资料摘要，仅本人和管理员可见。' },
+  { value: 'email_only', label: '仅公开邮箱' },
+  { value: 'phone_only', label: '仅公开电话' },
+  { value: 'both', label: '公开邮箱和电话' },
+  { value: 'internal_only', label: '仅内部可见' },
 ] as const
 
 const parseTagInput = (source: string) =>
   source
-    .split(/[，,、\n]/)
+    .split(/[，、\n]/)
     .map(item => item.trim())
     .filter(Boolean)
 
@@ -107,12 +112,10 @@ const profileHighlights = computed(() =>
 
 const roleLabel = computed(() => resolveRoleLabel(currentUser.value))
 const securityNotice = computed(() => buildPasswordSecurityNotice(currentUser.value))
-const contactSummary = computed(() => [profileForm.email, profileForm.contact_phone].filter(Boolean).join(' · '))
+const contactSummary = computed(() => [profileForm.email, profileForm.contact_phone].filter(Boolean).join(' / '))
 const displayName = computed(() => currentUser.value?.real_name || currentUser.value?.username || '教师')
 const avatarText = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'T')
 const permissionScope = computed(() => currentUser.value?.permission_scope ?? null)
-const publicDisplayFields = publicDisplayFieldLabels
-const internalDisplayFields = internalManagementFieldLabels
 const contactVisibilityLabel = computed(() => resolveContactVisibilityLabel(profileForm.contact_visibility))
 const publicContactChannels = computed(() => {
   const channels = []
@@ -144,37 +147,11 @@ const profileCompleteness = computed(() => {
   const completed = checkpoints.filter(item => String(item || '').trim()).length
   return Math.round((completed / checkpoints.length) * 100)
 })
-const latestAchievementLabel = computed(() => {
-  const latest = recentAchievements.value[0]
-  if (!latest?.date_acquired) return '暂无成果更新'
-  return `${latest.date_acquired.slice(0, 10)} 最近更新`
-})
-const statusCards = computed(() => [
-  {
-    key: 'completeness',
-    label: '公开资料完整度',
-    value: `${profileCompleteness.value}%`,
-    helper: profileCompleteness.value >= 80 ? '资料已较完整，可直接支撑画像与推荐摘要。' : '建议继续完善头像、简介、研究方向和联系方式。',
-  },
-  {
-    key: 'contact',
-    label: '联系方式展示策略',
-    value: contactVisibilityLabel.value,
-    helper: publicContactSummary.value,
-  },
-  {
-    key: 'security',
-    label: '账户安全状态',
-    value: currentUser.value?.password_reset_required ? '待修改密码' : '状态正常',
-    helper: securityNotice.value,
-  },
-  {
-    key: 'achievements',
-    label: '近期成果状态',
-    value: `${achievementOverview.value.total_achievements} 项成果`,
-    helper: latestAchievementLabel.value,
-  },
-])
+
+const activeSection = computed(() => props.sectionMode)
+const isPublicProfileSection = computed(() => activeSection.value === 'public-profile')
+const isSecuritySection = computed(() => activeSection.value === 'security')
+const isQuickLinksSection = computed(() => activeSection.value === 'quick-links')
 
 const hydrateProfileForm = (user: SessionUser) => {
   Object.assign(profileForm, {
@@ -299,402 +276,224 @@ onMounted(async () => {
 
 <template>
   <div class="personal-center-page workspace-page">
-    <section class="hero-panel workspace-hero workspace-hero--brand">
-      <div class="hero-profile">
-        <div class="hero-avatar">
-          <img v-if="profileForm.avatar_url" :src="profileForm.avatar_url" alt="教师头像" />
-          <span v-else>{{ avatarText }}</span>
-        </div>
-        <div class="hero-copy">
-          <p class="eyebrow workspace-hero__eyebrow">Teacher Personal Center</p>
-          <h1 class="workspace-hero__title">{{ displayName }}</h1>
-          <p class="hero-subtitle workspace-hero__text">
-            {{ profileForm.department || '待补充院系' }} · {{ profileForm.title || '待补充职称' }} · {{ roleLabel }}
-          </p>
-          <p class="hero-description">
-            当前页面整合了个人资料、成果速览、画像入口、推荐入口和问答入口，是教师视角下的统一个人中心。
-          </p>
-          <div class="hero-tags">
-            <el-tag type="primary" effect="dark">工号 {{ currentUser?.id || '-' }}</el-tag>
-            <el-tag effect="plain">{{ profileForm.discipline || '待补充研究领域' }}</el-tag>
-            <el-tag effect="plain">H-index {{ profileForm.h_index }}</el-tag>
-            <el-tag effect="plain">{{ achievementOverview.total_achievements }} 项成果</el-tag>
+    <section v-if="isPublicProfileSection" class="single-layout">
+      <el-card class="profile-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="card-header workspace-section-head">
+            <div class="card-title-block">
+              <span>公开资料</span>
+              <p>{{ profileCompleteness }}% 完整度 / {{ publicContactSummary }}</p>
+            </div>
+            <el-button plain :loading="summaryLoading" @click="loadSummary">刷新资料</el-button>
           </div>
-        </div>
-      </div>
+        </template>
 
-      <div class="hero-actions workspace-page-actions">
-        <el-button type="primary" @click="router.push('/entry')">进入成果管理</el-button>
-        <el-button plain @click="router.push('/dashboard')">查看画像主页</el-button>
-        <el-button plain @click="loadSummary" :loading="summaryLoading">刷新中心摘要</el-button>
-      </div>
-    </section>
-
-    <section class="status-grid">
-      <article v-for="item in statusCards" :key="item.key" class="status-card workspace-surface-card">
-        <span class="status-card__label">{{ item.label }}</span>
-        <strong class="status-card__value">{{ item.value }}</strong>
-        <p class="status-card__helper">{{ item.helper }}</p>
-      </article>
-    </section>
-
-    <section class="center-layout">
-      <div class="main-column">
-        <el-card class="profile-card workspace-surface-card" shadow="never">
-          <template #header>
-            <div class="card-header workspace-section-head">
-              <span>公开展示资料</span>
-              <el-tag type="success" effect="plain">资料 + 展示一体化</el-tag>
-            </div>
-          </template>
-
-          <el-alert :title="publicDisplayBoundaryNote" type="info" :closable="false" show-icon />
-
-          <div class="field-tag-list">
-            <el-tag v-for="item in publicDisplayFields" :key="item" effect="plain">{{ item }}</el-tag>
+        <div class="profile-preview">
+          <div class="preview-avatar">
+            <img v-if="profileForm.avatar_url" :src="profileForm.avatar_url" alt="教师头像预览" />
+            <span v-else>{{ avatarText }}</span>
           </div>
-
-          <div class="profile-preview">
-            <div class="preview-avatar">
-              <img v-if="profileForm.avatar_url" :src="profileForm.avatar_url" alt="教师头像预览" />
-              <span v-else>{{ avatarText }}</span>
+          <div class="preview-copy">
+            <strong>{{ profileForm.real_name || displayName }}</strong>
+            <p>{{ profileForm.bio || '暂未维护个人简介。' }}</p>
+            <div class="preview-meta">
+              <span>{{ profileForm.department || '待补充院系' }}</span>
+              <span>{{ profileForm.title || '待补充职称' }}</span>
+              <span>{{ roleLabel }}</span>
             </div>
-            <div class="preview-copy">
-              <strong>{{ profileForm.real_name || displayName }}</strong>
-              <p>{{ profileForm.bio || '你可以在这里维护个人简介，让画像、推荐和问答输入更完整。' }}</p>
-              <div class="preview-meta">
-                <span>{{ publicContactSummary }}</span>
-                <span>{{ profileForm.department || '待补充院系' }}</span>
-                <span>{{ profileForm.title || '待补充职称' }}</span>
-              </div>
-            </div>
-          </div>
-
-          <el-form ref="profileFormRef" :model="profileForm" :rules="rules" label-position="top" class="profile-form">
-            <div class="grid two-cols">
-              <el-form-item label="姓名" prop="real_name">
-                <el-input v-model="profileForm.real_name" />
-              </el-form-item>
-              <el-form-item label="头像上传">
-                <div class="avatar-upload-panel">
-                  <el-upload
-                    :show-file-list="false"
-                    :http-request="uploadAvatar"
-                    :before-upload="beforeAvatarUpload"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                  >
-                    <el-button type="primary" plain :loading="avatarUploading">上传本地头像</el-button>
-                  </el-upload>
-                  <span class="field-helper">支持 JPG / PNG / WEBP / GIF，单文件不超过 2MB。</span>
-                </div>
-              </el-form-item>
-            </div>
-
-            <el-form-item label="头像地址备用方式">
-              <el-input v-model="profileForm.avatar_url" placeholder="也可直接填写头像图片 URL" />
-            </el-form-item>
-
-            <div class="grid two-cols">
-              <el-form-item label="所属院系" prop="department">
-                <el-input v-model="profileForm.department" />
-              </el-form-item>
-              <el-form-item label="职称" prop="title">
-                <el-input v-model="profileForm.title" />
-              </el-form-item>
-            </div>
-
-            <div class="grid two-cols">
-              <el-form-item label="联系邮箱">
-                <el-input v-model="profileForm.email" placeholder="建议填写常用工作邮箱" />
-              </el-form-item>
-              <el-form-item label="联系电话">
-                <el-input v-model="profileForm.contact_phone" placeholder="如 13800000000" />
-              </el-form-item>
-            </div>
-
-            <el-form-item label="联系方式公开策略">
-              <el-radio-group v-model="profileForm.contact_visibility" class="contact-visibility-group">
-                <el-radio-button
-                  v-for="item in contactVisibilityOptions"
-                  :key="item.value"
-                  :label="item.value"
-                >
-                  {{ item.label }}
-                </el-radio-button>
-              </el-radio-group>
-              <div class="visibility-note-list">
-                <p
-                  v-for="item in contactVisibilityOptions"
-                  :key="`note-${item.value}`"
-                  :class="{ 'visibility-note--active': item.value === profileForm.contact_visibility }"
-                  class="visibility-note"
-                >
-                  {{ item.helper }}
-                </p>
-              </div>
-            </el-form-item>
-
-            <div class="grid two-cols">
-              <el-form-item label="研究领域">
-                <el-input v-model="profileForm.discipline" placeholder="例如：人工智能、数据科学" />
-              </el-form-item>
-              <el-form-item label="H-index">
-                <el-input-number v-model="profileForm.h_index" :min="0" style="width: 100%" />
-              </el-form-item>
-            </div>
-
-            <el-form-item label="研究方向">
-              <el-input
-                v-model="profileForm.research_direction_input"
-                placeholder="多个研究方向可用中文逗号分隔"
-              />
-            </el-form-item>
-
-            <el-form-item label="研究兴趣">
-              <el-input
-                v-model="profileForm.research_interests"
-                placeholder="多个研究兴趣可用中文逗号分隔"
-              />
-            </el-form-item>
-
             <div class="field-tag-list compact">
+              <el-tag v-if="profileForm.discipline" effect="plain">{{ profileForm.discipline }}</el-tag>
+              <el-tag v-if="profileForm.h_index > 0" effect="plain">H-index {{ profileForm.h_index }}</el-tag>
+              <el-tag v-for="item in publicContactChannels" :key="item.key" type="primary" effect="plain">
+                {{ item.label }}：{{ item.value }}
+              </el-tag>
               <el-tag v-for="tag in profileHighlights" :key="tag" type="success" effect="plain">{{ tag }}</el-tag>
-              <span v-if="!profileHighlights.length" class="muted">暂未维护研究方向和研究兴趣标签</span>
             </div>
+          </div>
+        </div>
 
-            <div class="field-visibility-panel">
-              <div class="field-visibility-card">
-                <span>当前公开联系方式</span>
-                <div class="field-tag-list compact">
-                  <el-tag
-                    v-for="item in publicContactChannels"
-                    :key="item.key"
-                    type="primary"
-                    effect="plain"
-                  >
-                    {{ item.label }}：{{ item.value }}
-                  </el-tag>
-                  <span v-if="!publicContactChannels.length" class="muted">当前联系方式仅内部可见或尚未补充。</span>
-                </div>
-              </div>
-              <div class="field-visibility-card">
-                <span>公开 / 内部边界说明</span>
-                <p>公开字段会用于系统内个人资料卡、画像摘要和推荐输入摘要；工号、登录账号、账户状态和密码状态仍仅供本人及管理员查看。</p>
-              </div>
-            </div>
-
-            <el-form-item label="个人简介">
-              <el-input v-model="profileForm.bio" type="textarea" :rows="5" />
+        <el-form ref="profileFormRef" :model="profileForm" :rules="rules" label-position="top" class="profile-form">
+          <div class="grid two-cols">
+            <el-form-item label="姓名" prop="real_name">
+              <el-input v-model="profileForm.real_name" />
             </el-form-item>
-
-            <div class="actions">
-              <el-button @click="ensureUser">重置内容</el-button>
-              <el-button type="primary" :loading="loading" @click="saveProfile">保存公开资料</el-button>
-            </div>
-          </el-form>
-        </el-card>
-
-        <RepresentativeAchievementsPanel
-          :loading="summaryLoading"
-          :achievement-overview="achievementOverview"
-          :recent-achievements="recentAchievements"
-        />
-      </div>
-
-      <div class="side-column">
-        <el-card class="internal-card workspace-surface-card" shadow="never">
-          <template #header>
-            <div class="card-header workspace-section-head">
-              <span>内部管理信息</span>
-              <el-tag type="warning" effect="plain">仅本人 / 管理员可见</el-tag>
-            </div>
-          </template>
-
-          <el-alert :title="internalManagementBoundaryNote" type="warning" :closable="false" show-icon />
-
-          <div class="field-tag-list">
-            <el-tag v-for="item in internalDisplayFields" :key="item" type="warning" effect="plain">{{ item }}</el-tag>
-          </div>
-
-          <div class="internal-grid">
-            <div class="internal-item">
-              <span>工号</span>
-              <strong>{{ currentUser?.id || '-' }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>登录账号</span>
-              <strong>{{ currentUser?.username || '-' }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>角色身份</span>
-              <strong>{{ roleLabel }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>账户状态</span>
-              <strong>{{ currentUser?.is_active ? '账户可用' : '账户停用' }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>密码状态</span>
-              <strong>{{ currentUser?.password_reset_required ? '待修改密码' : '状态正常' }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>安全提示</span>
-              <strong>{{ securityNotice }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>联系方式展示策略</span>
-              <strong>{{ contactVisibilityLabel }}</strong>
-            </div>
-            <div class="internal-item">
-              <span>内部联系方式总览</span>
-              <strong>{{ contactSummary || '待补充联系方式' }}</strong>
-            </div>
-          </div>
-
-          <div v-if="permissionScope" class="permission-scope-panel">
-            <div class="permission-scope-copy">
-              <span>当前权限边界</span>
-              <strong>{{ permissionScope.scope_summary }}</strong>
-            </div>
-
-            <div class="permission-scope-copy">
-              <span>当前可执行操作</span>
-              <div class="field-tag-list compact">
-                <el-tag
-                  v-for="item in permissionScope.allowed_actions"
-                  :key="`allow-${item}`"
-                  type="success"
-                  effect="plain"
+            <el-form-item label="头像上传">
+              <div class="avatar-upload-panel">
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="uploadAvatar"
+                  :before-upload="beforeAvatarUpload"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
                 >
-                  {{ item }}
-                </el-tag>
+                  <el-button type="primary" plain :loading="avatarUploading">上传本地头像</el-button>
+                </el-upload>
+                <span class="field-helper">支持 JPG / PNG / WEBP / GIF，单文件不超过 2MB。</span>
               </div>
-            </div>
-
-            <div class="permission-scope-copy">
-              <span>当前受限边界</span>
-              <div class="field-tag-list compact">
-                <el-tag
-                  v-for="item in permissionScope.restricted_actions"
-                  :key="`restricted-${item}`"
-                  type="warning"
-                  effect="plain"
-                >
-                  {{ item }}
-                </el-tag>
-              </div>
-            </div>
-
-            <div class="permission-scope-copy">
-              <span>后续多角色扩展预留</span>
-              <p>{{ permissionScope.future_extension_hint }}</p>
-            </div>
+            </el-form-item>
           </div>
-        </el-card>
 
-        <PersonalCenterQuickLinks
-          :achievement-total="achievementOverview.total_achievements"
-          :representative-count="recentAchievements.length"
-        />
-      </div>
+          <el-form-item label="头像地址备用方式">
+            <el-input v-model="profileForm.avatar_url" placeholder="也可直接填写头像图片 URL" />
+          </el-form-item>
+
+          <div class="grid two-cols">
+            <el-form-item label="所属院系" prop="department">
+              <el-input v-model="profileForm.department" />
+            </el-form-item>
+            <el-form-item label="职称" prop="title">
+              <el-input v-model="profileForm.title" />
+            </el-form-item>
+          </div>
+
+          <div class="grid two-cols">
+            <el-form-item label="联系邮箱">
+              <el-input v-model="profileForm.email" placeholder="建议填写常用工作邮箱" />
+            </el-form-item>
+            <el-form-item label="联系电话">
+              <el-input v-model="profileForm.contact_phone" placeholder="如 13800000000" />
+            </el-form-item>
+          </div>
+
+          <el-form-item label="联系方式公开策略">
+            <el-radio-group v-model="profileForm.contact_visibility" class="contact-visibility-group">
+              <el-radio-button v-for="item in contactVisibilityOptions" :key="item.value" :label="item.value">
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+
+          <div class="grid two-cols">
+            <el-form-item label="研究领域">
+              <el-input v-model="profileForm.discipline" placeholder="例如：人工智能、数据科学" />
+            </el-form-item>
+            <el-form-item label="H-index">
+              <el-input-number v-model="profileForm.h_index" :min="0" style="width: 100%" />
+            </el-form-item>
+          </div>
+
+          <el-form-item label="研究方向">
+            <el-input
+              v-model="profileForm.research_direction_input"
+              placeholder="多个研究方向可用中文逗号分隔"
+            />
+          </el-form-item>
+
+          <el-form-item label="研究兴趣">
+            <el-input
+              v-model="profileForm.research_interests"
+              placeholder="多个研究兴趣可用中文逗号分隔"
+            />
+          </el-form-item>
+
+          <div class="field-tag-list compact">
+            <el-tag v-for="tag in profileHighlights" :key="tag" type="success" effect="plain">{{ tag }}</el-tag>
+            <span v-if="!profileHighlights.length" class="muted">暂未维护研究方向和研究兴趣标签</span>
+          </div>
+
+          <el-form-item label="个人简介">
+            <el-input v-model="profileForm.bio" type="textarea" :rows="5" />
+          </el-form-item>
+
+          <div class="actions">
+            <el-button @click="ensureUser">重置内容</el-button>
+            <el-button type="primary" :loading="loading" @click="saveProfile">保存公开资料</el-button>
+          </div>
+        </el-form>
+      </el-card>
     </section>
 
-    <PasswordSecurityPanel :current-user="currentUser" @changed="handlePasswordChanged" />
+    <section v-else-if="isSecuritySection" class="split-layout">
+      <el-card class="internal-card workspace-surface-card" shadow="never">
+        <template #header>
+          <div class="card-header workspace-section-head">
+            <span>内部管理信息</span>
+            <el-tag type="warning" effect="plain">仅本人 / 管理员可见</el-tag>
+          </div>
+        </template>
+
+        <div class="internal-grid">
+          <div class="internal-item">
+            <span>工号</span>
+            <strong>{{ currentUser?.id || '-' }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>登录账号</span>
+            <strong>{{ currentUser?.username || '-' }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>角色身份</span>
+            <strong>{{ roleLabel }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>账户状态</span>
+            <strong>{{ currentUser?.is_active ? '账户可用' : '账户停用' }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>密码状态</span>
+            <strong>{{ currentUser?.password_reset_required ? '待修改密码' : '状态正常' }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>安全提示</span>
+            <strong>{{ securityNotice }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>联系方式展示策略</span>
+            <strong>{{ contactVisibilityLabel }}</strong>
+          </div>
+          <div class="internal-item">
+            <span>内部联系方式总览</span>
+            <strong>{{ contactSummary || '待补充联系方式' }}</strong>
+          </div>
+        </div>
+
+      </el-card>
+
+      <PasswordSecurityPanel :current-user="currentUser" @changed="handlePasswordChanged" />
+    </section>
+
+    <section v-else-if="isQuickLinksSection" class="split-layout">
+      <RepresentativeAchievementsPanel
+        :loading="summaryLoading"
+        :achievement-overview="achievementOverview"
+        :recent-achievements="recentAchievements"
+      />
+
+      <PersonalCenterQuickLinks
+        :achievement-total="achievementOverview.total_achievements"
+        :representative-count="recentAchievements.length"
+      />
+    </section>
   </div>
 </template>
 
 <style scoped>
 .personal-center-page {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 28px;
-  background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 20%),
-    linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  background: var(--page-bg);
+  color: var(--text-secondary);
 }
 
-.hero-panel {
+.single-layout,
+.split-layout {
   max-width: 1180px;
-  margin: 0 auto 22px;
-  padding: 28px 32px;
-  border-radius: 26px;
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: flex-start;
-  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 65%, #0f766e 100%);
-  color: #fff;
-  box-shadow: 0 26px 56px rgba(15, 23, 42, 0.14);
+  margin: 0 auto 20px;
 }
 
-.hero-profile {
-  display: flex;
-  align-items: center;
+.split-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
-.hero-avatar,
-.preview-avatar {
-  width: 92px;
-  height: 92px;
-  border-radius: 28px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 34px;
-  font-weight: 700;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.preview-avatar {
-  width: 78px;
-  height: 78px;
+.profile-card,
+.internal-card {
+  border: 1px solid var(--border-color-soft);
   border-radius: 24px;
-  background: linear-gradient(145deg, rgba(124, 168, 240, 0.98), rgba(73, 112, 192, 0.96));
+  background: var(--card-bg);
+  box-shadow: var(--workspace-shadow);
 }
 
-.hero-avatar img,
-.preview-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.hero-copy {
-  display: grid;
-  gap: 10px;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-h1 {
-  margin: 0;
-}
-
-.hero-subtitle,
-.hero-description {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.86);
-  line-height: 1.7;
-}
-
-.hero-tags,
-.field-tag-list,
-.preview-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.hero-actions,
 .card-header,
 .actions {
   display: flex;
@@ -702,79 +501,60 @@ h1 {
   align-items: center;
 }
 
-.status-grid {
-  max-width: 1180px;
-  margin: 0 auto 20px;
+.card-title-block {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 4px;
 }
 
-.status-card {
-  border: none;
-  border-radius: 22px;
-  padding: 22px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
-}
-
-.status-card__label {
-  display: block;
-  margin-bottom: 12px;
-  color: #64748b;
+.card-title-block p {
+  margin: 0;
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
-.status-card__value {
-  display: block;
-  color: #0f172a;
-  font-size: 28px;
-}
-
-.status-card__helper {
-  margin: 12px 0 0;
-  color: #64748b;
-  line-height: 1.7;
-}
-
-.center-layout {
-  max-width: 1180px;
-  margin: 0 auto 20px;
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 20px;
-}
-
-.main-column,
-.side-column {
-  display: grid;
-  gap: 20px;
-}
-
-.profile-card,
-.internal-card {
-  border: none;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+.field-tag-list,
+.preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .field-tag-list {
-  margin: 16px 0 18px;
+  margin: 14px 0 0;
 }
 
 .field-tag-list.compact {
-  margin-top: -4px;
+  margin-top: 0;
 }
 
 .profile-preview {
   display: flex;
   gap: 18px;
   align-items: center;
-  margin-bottom: 20px;
   padding: 18px 20px;
   border-radius: 20px;
-  background: #f8fbff;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color-soft);
+}
+
+.preview-avatar {
+  width: 78px;
+  height: 78px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(124, 168, 240, 0.98), rgba(73, 112, 192, 0.96));
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.preview-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .preview-copy {
@@ -783,7 +563,7 @@ h1 {
 }
 
 .preview-copy strong {
-  color: #0f172a;
+  color: var(--text-primary);
   font-size: 18px;
 }
 
@@ -791,12 +571,12 @@ h1 {
 .preview-meta,
 .muted {
   margin: 0;
-  color: #64748b;
+  color: var(--text-tertiary);
   line-height: 1.7;
 }
 
 .profile-form {
-  margin-top: 4px;
+  margin-top: 24px;
 }
 
 .avatar-upload-panel {
@@ -805,7 +585,7 @@ h1 {
 }
 
 .field-helper {
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -830,98 +610,61 @@ h1 {
   gap: 8px;
 }
 
-.visibility-note-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.visibility-note {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: #f8fbff;
-  color: #64748b;
-  line-height: 1.6;
-}
-
-.visibility-note--active {
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
-}
-
-.field-visibility-panel {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-
-.field-visibility-card {
-  padding: 16px 18px;
-  border-radius: 18px;
-  background: #f8fbff;
-}
-
-.field-visibility-card span {
-  display: block;
-  margin-bottom: 8px;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.field-visibility-card p {
-  margin: 0;
-  color: #64748b;
-  line-height: 1.7;
-}
-
 .internal-grid {
   display: grid;
   gap: 14px;
-  margin-top: 18px;
 }
 
 .permission-scope-panel {
   display: grid;
-  gap: 14px;
-  margin-top: 18px;
+  gap: 18px;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--divider-color);
+}
+
+.permission-scope-section {
+  display: grid;
+  gap: 8px;
+}
+
+.permission-scope-title {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.permission-scope-text {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.8;
 }
 
 .internal-item {
   padding: 16px 18px;
   border-radius: 18px;
-  background: #f8fbff;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color-soft);
 }
 
-.internal-item span,
-.permission-scope-copy span {
+.internal-item span {
   display: block;
   margin-bottom: 8px;
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
-.internal-item strong,
-.permission-scope-copy strong {
-  color: #0f172a;
-  line-height: 1.7;
-}
-
-.permission-scope-copy {
-  padding: 16px 18px;
-  border-radius: 18px;
-  background: #f8fbff;
-}
-
-.permission-scope-copy p {
-  margin: 0;
-  color: #64748b;
-  line-height: 1.7;
+.internal-item strong {
+  color: var(--text-primary);
+  line-height: 1.8;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 @media (max-width: 1180px) {
-  .status-grid,
-  .center-layout {
+  .split-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -931,10 +674,6 @@ h1 {
     padding: 16px;
   }
 
-  .hero-panel,
-  .hero-profile,
-  .hero-actions,
-  .status-grid,
   .profile-preview,
   .two-cols,
   .card-header,
@@ -942,6 +681,11 @@ h1 {
     flex-direction: column;
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .permission-scope-text,
+  .internal-item strong {
+    font-size: 16px;
   }
 }
 </style>

@@ -4,6 +4,7 @@ from rest_framework import serializers
 from .governance import build_paper_metadata_alert_details, build_paper_metadata_alerts
 from .models import (
     AcademicService,
+    AchievementOperationLog,
     CoAuthor,
     IntellectualProperty,
     Paper,
@@ -280,6 +281,31 @@ class PaperOperationLogSerializer(serializers.ModelSerializer):
             'metadata_flags',
             'paper_title_snapshot',
             'paper_doi_snapshot',
+            'created_at',
+        )
+
+
+class AchievementOperationLogSerializer(serializers.ModelSerializer):
+    action_label = serializers.CharField(source='get_action_display', read_only=True)
+    source_label = serializers.CharField(source='get_source_display', read_only=True)
+    achievement_type_label = serializers.CharField(source='get_achievement_type_display', read_only=True)
+
+    class Meta:
+        model = AchievementOperationLog
+        fields = (
+            'id',
+            'achievement_type',
+            'achievement_type_label',
+            'achievement_id',
+            'action',
+            'action_label',
+            'source',
+            'source_label',
+            'summary',
+            'changed_fields',
+            'title_snapshot',
+            'detail_snapshot',
+            'snapshot_payload',
             'created_at',
         )
 

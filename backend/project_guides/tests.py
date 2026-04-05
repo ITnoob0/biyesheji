@@ -404,6 +404,48 @@ class ProjectGuideApiTests(APITestCase):
         self.assertIn('distribution', history_response.data['feedback_summary'])
         self.assertTrue(history_response.data['feedback_summary']['recent_feedback_items'])
 
+    def test_admin_self_recommendation_can_toggle_favorite_and_feedback(self):
+        guide = ProjectGuide.objects.create(
+            title='管理员自用收藏指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='OPEN',
+            rule_profile='BALANCED',
+            summary='用于验证管理员在给自己推荐场景下可进行收藏与反馈。',
+            target_keywords=['科研画像'],
+            target_disciplines=['教育数据智能'],
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(self.admin)
+        recommendation_response = self.client.get('/api/project-guides/recommendations/')
+        favorite_response = self.client.post(
+            f'/api/project-guides/{guide.id}/favorite/',
+            {'is_favorited': True},
+            format='json',
+        )
+        feedback_response = self.client.post(
+            f'/api/project-guides/{guide.id}/feedback/',
+            {'feedback_signal': 'INTERESTED', 'feedback_note': '管理员自用视角测试反馈。'},
+            format='json',
+        )
+        refreshed_recommendation_response = self.client.get('/api/project-guides/recommendations/')
+
+        self.assertEqual(recommendation_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(recommendation_response.data['data_meta']['interaction_enabled'])
+
+        self.assertEqual(favorite_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(ProjectGuideFavorite.objects.filter(teacher=self.admin, guide=guide).exists())
+        self.assertIn(guide.id, favorite_response.data['favorite_ids'])
+
+        self.assertEqual(feedback_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(feedback_response.data['feedback_signal'], 'INTERESTED')
+        self.assertEqual(feedback_response.data['feedback_note'], '管理员自用视角测试反馈。')
+
+        self.assertEqual(refreshed_recommendation_response.status_code, status.HTTP_200_OK)
+        self.assertIn(guide.id, refreshed_recommendation_response.data['favorites']['guide_ids'])
+        self.assertIn('feedback_summary', refreshed_recommendation_response.data)
+
     def test_admin_analysis_includes_feedback_response_summary(self):
         guide = ProjectGuide.objects.create(
             title='管理员反馈摘要指南',

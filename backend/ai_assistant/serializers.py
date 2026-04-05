@@ -40,3 +40,20 @@ class PortraitAssistantRequestSerializer(serializers.Serializer):
         if attrs.get('year') is not None and attrs['year'] < 1900:
             raise serializers.ValidationError({'year': '年份参数无效。'})
         return attrs
+
+
+class AssistantChatRequestSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(required=False)
+    message = serializers.CharField(max_length=1200)
+    context_hint = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    limit = serializers.IntegerField(required=False, min_value=1, max_value=8, default=4)
+
+    def validate_user_id(self, value):
+        raise serializers.ValidationError('当前聊天助手仅支持当前登录账号问答，不支持指定教师。')
+
+
+class DifyAssistantChatRequestSerializer(serializers.Serializer):
+    message = serializers.CharField(max_length=2000)
+    conversation_id = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    context_hint = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    route_path = serializers.CharField(required=False, allow_blank=True, max_length=260)

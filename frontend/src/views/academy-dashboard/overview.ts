@@ -1,5 +1,6 @@
 import type { EChartsOption } from 'echarts'
 import type { DepartmentDistributionRecord, ScopeComparisonTrendRecord, YearlyTrendRecord } from '../../types/academy'
+import { buildBaseChartOption, getChartThemeTokens } from '../../utils/chartTheme'
 
 export type {
   AcademyActiveFilters,
@@ -14,18 +15,25 @@ export type {
   YearlyTrendRecord,
 } from '../../types/academy'
 
-export const buildAcademyTrendOption = (records: YearlyTrendRecord[], echarts: any): EChartsOption => ({
-  tooltip: { trigger: 'axis' },
-  legend: { data: ['总成果', '论文', '项目'], top: 0 },
+export const buildAcademyTrendOption = (records: YearlyTrendRecord[], echarts: any): EChartsOption => {
+  const tokens = getChartThemeTokens()
+
+  return {
+  ...buildBaseChartOption(),
+  tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis' },
+  legend: { data: ['总成果', '论文', '项目'], top: 0, textStyle: { color: tokens.textSecondary } },
   grid: { left: 36, right: 24, bottom: 24, top: 48, containLabel: true },
   xAxis: {
     type: 'category',
     data: records.map(item => `${item.year}`),
-    axisLine: { lineStyle: { color: '#94a3b8' } },
+    axisLine: { lineStyle: { color: tokens.borderStrong } },
+    axisLabel: { color: tokens.textTertiary },
   },
   yAxis: {
     type: 'value',
     minInterval: 1,
+    axisLabel: { color: tokens.textTertiary },
+    splitLine: { lineStyle: { color: tokens.border } },
   },
   series: [
     {
@@ -60,13 +68,17 @@ export const buildAcademyTrendOption = (records: YearlyTrendRecord[], echarts: a
       itemStyle: { color: '#f59e0b' },
     },
   ],
-})
+}}
 
 export const buildDepartmentDistributionOption = (
   records: DepartmentDistributionRecord[],
-): EChartsOption => ({
-  tooltip: { trigger: 'item' },
-  legend: { orient: 'vertical', right: 0, top: 'center' },
+): EChartsOption => {
+  const tokens = getChartThemeTokens()
+
+  return {
+  ...buildBaseChartOption(),
+  tooltip: { ...buildBaseChartOption().tooltip, trigger: 'item' },
+  legend: { orient: 'vertical', right: 0, top: 'center', textStyle: { color: tokens.textSecondary } },
   series: [
     {
       type: 'pie',
@@ -75,24 +87,32 @@ export const buildDepartmentDistributionOption = (
       avoidLabelOverlap: true,
       label: {
         formatter: '{b}\n{c} 人',
+        color: tokens.textSecondary,
       },
       data: records,
     },
   ],
-})
+}}
 
-export const buildScopeComparisonOption = (records: ScopeComparisonTrendRecord[], echarts: any): EChartsOption => ({
-  tooltip: { trigger: 'axis' },
-  legend: { data: ['当前范围总成果', '全校总成果'], top: 0 },
+export const buildScopeComparisonOption = (records: ScopeComparisonTrendRecord[], echarts: any): EChartsOption => {
+  const tokens = getChartThemeTokens()
+
+  return {
+  ...buildBaseChartOption(),
+  tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis' },
+  legend: { data: ['当前范围总成果', '全校总成果'], top: 0, textStyle: { color: tokens.textSecondary } },
   grid: { left: 36, right: 24, bottom: 24, top: 48, containLabel: true },
   xAxis: {
     type: 'category',
     data: records.map(item => `${item.year}`),
-    axisLine: { lineStyle: { color: '#94a3b8' } },
+    axisLine: { lineStyle: { color: tokens.borderStrong } },
+    axisLabel: { color: tokens.textTertiary },
   },
   yAxis: {
     type: 'value',
     minInterval: 1,
+    axisLabel: { color: tokens.textTertiary },
+    splitLine: { lineStyle: { color: tokens.border } },
   },
   series: [
     {
@@ -120,4 +140,4 @@ export const buildScopeComparisonOption = (records: ScopeComparisonTrendRecord[]
       itemStyle: { color: '#2563eb' },
     },
   ],
-})
+}}

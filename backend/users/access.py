@@ -21,8 +21,16 @@ def is_authenticated_user(user) -> bool:
     return bool(user and not isinstance(user, AnonymousUser) and user.is_authenticated)
 
 
+def is_system_admin_user(user) -> bool:
+    return bool(is_authenticated_user(user) and user.is_superuser)
+
+
+def is_college_admin_user(user) -> bool:
+    return bool(is_authenticated_user(user) and user.is_staff and not user.is_superuser)
+
+
 def is_admin_user(user) -> bool:
-    return bool(is_authenticated_user(user) and (user.is_staff or user.is_superuser))
+    return bool(is_system_admin_user(user) or is_college_admin_user(user))
 
 
 def is_teacher_user(user) -> bool:

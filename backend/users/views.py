@@ -7,7 +7,13 @@ from rest_framework.views import APIView
 
 from core.api_errors import api_error_response
 
-from .access import ensure_admin_user, ensure_manageable_teacher, ensure_self_or_admin_user
+from .access import (
+    ensure_admin_user,
+    ensure_manageable_teacher,
+    ensure_self_or_admin_user,
+    is_college_admin_user,
+    is_system_admin_user,
+)
 from .serializers import (
     DEFAULT_TEACHER_PASSWORD,
     CurrentUserSerializer,
@@ -95,8 +101,14 @@ class TeacherListCreateView(APIView):
         user_model = get_user_model()
         queryset = user_model.objects.all().order_by("id")
 
-        if request.user.is_staff or request.user.is_superuser:
-            queryset = queryset.filter(is_staff=False, is_superuser=False)
+        if is_system_admin_user(request.user):
+            queryset = queryset.filter(is_superuser=False)
+        elif is_college_admin_user(request.user):
+            queryset = queryset.filter(
+                is_staff=False,
+                is_superuser=False,
+                department=request.user.department,
+            )
         else:
             queryset = queryset.filter(id=request.user.id)
 
@@ -119,7 +131,14 @@ class TeacherManagementSummaryView(APIView):
         ensure_admin_user(request.user)
 
         user_model = get_user_model()
-        queryset = user_model.objects.filter(is_staff=False, is_superuser=False).order_by("id")
+        if is_system_admin_user(request.user):
+            queryset = user_model.objects.filter(is_superuser=False).order_by("id")
+        else:
+            queryset = user_model.objects.filter(
+                is_staff=False,
+                is_superuser=False,
+                department=request.user.department,
+            ).order_by("id")
         serializer = TeacherManagementSummarySerializer(build_teacher_management_summary(queryset))
         return Response(serializer.data)
 
@@ -161,7 +180,14 @@ class TeacherDetailView(APIView):
             return None
 
         ensure_self_or_admin_user(request.user, teacher, "当前账号只能查看自己的账户信息。")
-        if request.user.is_staff or request.user.is_superuser:
+        if is_system_admin_user(request.user):
+            if teacher.is_superuser:
+                ensure_manageable_teacher(teacher, "教师管理入口不支持系统管理员账户。")
+        elif is_college_admin_user(request.user):
+            ensure_manageable_teacher(teacher, "学院管理员当前仅可管理本学院教师账户。")
+            if teacher.department != request.user.department:
+                return None
+        elif request.user.is_staff or request.user.is_superuser:
             ensure_manageable_teacher(teacher, "教师管理入口仅支持教师账户，不包含管理员账户。")
         return teacher
 
@@ -227,7 +253,25 @@ class TeacherResetPasswordView(APIView):
                 next_step="请确认教师账号是否存在，或刷新教师列表后再试。",
             )
 
-        ensure_manageable_teacher(teacher, "管理员账户不支持通过教师管理入口重置密码。")
+        if is_system_admin_user(request.user):
+            if teacher.is_superuser:
+                return api_error_response(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="系统管理员账户不支持通过教师管理入口重置密码。",
+                    code="teacher_scope_forbidden",
+                    request=request,
+                    next_step="请返回教师管理列表并选择教师或学院管理员账户。",
+                )
+        else:
+            ensure_manageable_teacher(teacher, "管理员账户不支持通过教师管理入口重置密码。")
+            if teacher.department != request.user.department:
+                return api_error_response(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="学院管理员当前仅可重置本学院教师账户密码。",
+                    code="teacher_scope_forbidden",
+                    request=request,
+                    next_step="请返回教师管理列表并选择本学院教师账户。",
+                )
         set_user_password(teacher, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
         log_account_lifecycle_event(
             actor=request.user,
@@ -262,9 +306,19 @@ class TeacherBulkActionView(APIView):
         requested_ids = serializer.validated_data["user_ids"]
         user_model = get_user_model()
 
+        if is_system_admin_user(request.user):
+            base_queryset = user_model.objects.filter(id__in=requested_ids, is_superuser=False)
+        else:
+            base_queryset = user_model.objects.filter(
+                id__in=requested_ids,
+                is_staff=False,
+                is_superuser=False,
+                department=request.user.department,
+            )
+
         teachers_by_id = {
             teacher.id: teacher
-            for teacher in user_model.objects.filter(id__in=requested_ids, is_staff=False, is_superuser=False).order_by("id")
+            for teacher in base_queryset.order_by("id")
         }
 
         processed_items = []
@@ -332,7 +386,15 @@ class TeacherBulkActionView(APIView):
                 "skipped_items": skipped_items,
                 "temporary_password": DEFAULT_TEACHER_PASSWORD if action == "reset_password" else "",
                 "management_summary": build_teacher_management_summary(
-                    user_model.objects.filter(is_staff=False, is_superuser=False)
+                    (
+                        user_model.objects.filter(is_superuser=False)
+                        if is_system_admin_user(request.user)
+                        else user_model.objects.filter(
+                            is_staff=False,
+                            is_superuser=False,
+                            department=request.user.department,
+                        )
+                    )
                 ),
                 "recovery_notice": "账户停用后将无法继续登录；恢复启用后可继续使用原密码登录。若执行了密码重置，教师需登录后尽快修改临时密码。",
             },

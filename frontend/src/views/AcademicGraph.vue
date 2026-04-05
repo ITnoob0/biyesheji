@@ -1,6 +1,35 @@
 <template>
   <div class="graph-shell">
-    <div class="graph-board">
+    <section class="graph-top workspace-surface-card">
+      <div class="graph-top__head">
+        <div class="graph-top__title-block">
+          <p class="graph-top__eyebrow">Academic Topology</p>
+          <h2 class="graph-top__title">学术拓扑</h2>
+          <p class="graph-top__summary">{{ graphHeadline }}</p>
+        </div>
+        <div class="graph-top__stats">
+          <div class="graph-stat-pill">
+            <span>节点</span>
+            <strong>{{ graphMeta?.node_count ?? 0 }}</strong>
+          </div>
+          <div class="graph-stat-pill">
+            <span>关系</span>
+            <strong>{{ graphMeta?.link_count ?? 0 }}</strong>
+          </div>
+          <div class="graph-stat-pill">
+            <span>当前模式</span>
+            <strong>{{ focusPresetLabel }}</strong>
+          </div>
+        </div>
+      </div>
+      <div class="graph-top__subline">
+        <span class="workspace-muted graph-top__notice">
+          
+        </span>
+      </div>
+    </section>
+
+    <section class="graph-toolbar-panel workspace-surface-card">
       <div class="graph-toolbar">
         <el-input
           v-model="searchQuery"
@@ -17,14 +46,19 @@
         <el-button size="small" @click="resetGraphFilters">重置筛选</el-button>
         <el-button size="small" @click="loadGraph">刷新图谱</el-button>
       </div>
-
-      <el-alert v-if="!loading && graphMeta?.fallback_used" type="warning" show-icon :closable="false" class="fallback-alert">
-        <template #title>{{ sourceSummary.title }} · {{ sourceSummary.badge }}</template>
-        <template #default>
-          <p>{{ sourceSummary.notice }}</p>
-          <p>{{ sourceSummary.fallbackTip }}</p>
-        </template>
-      </el-alert>
+      <div v-if="!loading && !hasError && !isEmpty" class="graph-toolbar graph-toolbar--filters">
+        <span class="toolbar-label">节点筛选</span>
+        <el-button
+          v-for="item in filterItems"
+          :key="item.type"
+          size="small"
+          :type="isTypeVisible(item.type as GraphNodeType) ? 'primary' : 'default'"
+          :plain="!isTypeVisible(item.type as GraphNodeType)"
+          @click="toggleNodeType(item.type as GraphNodeType)"
+        >
+          {{ item.shortLabel }}
+        </el-button>
+      </div>
 
       <el-alert
         v-if="!loading && errorNotice"
@@ -39,7 +73,9 @@
           <p v-if="errorNotice.requestHint">{{ errorNotice.requestHint }}</p>
         </template>
       </el-alert>
+    </section>
 
+    <section class="graph-board">
       <div class="chart-area">
         <div v-loading="loading" ref="chartRef" class="graph-canvas"></div>
         <div v-if="!loading && hasError" class="state-layer">
@@ -57,104 +93,21 @@
           <el-empty description="当前教师暂无可展示的学术图谱数据，可先录入论文、项目、知识产权、教学成果或学术服务。" />
         </div>
       </div>
+    </section>
 
-      <div v-if="!loading && !hasError && !isEmpty" class="graph-footer">
-        <div class="footer-section">
-          <p class="footer-title">隐藏/显示节点</p>
-          <div class="filter-row">
-            <el-button
-              v-for="item in filterItems"
-              :key="item.type"
-              size="small"
-              :type="isTypeVisible(item.type as GraphNodeType) ? 'primary' : 'default'"
-              :plain="!isTypeVisible(item.type as GraphNodeType)"
-              @click="toggleNodeType(item.type as GraphNodeType)"
-            >
-              {{ item.shortLabel }}
-            </el-button>
-          </div>
-        </div>
-
-        <div class="footer-section">
-          <p class="footer-title">图谱图例</p>
-          <ul class="legend-list">
-            <li v-for="item in legendItems" :key="item.type">
-              <span class="dot" :style="{ background: item.color }"></span>
-              <span>{{ item.label }}</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-
-    <aside class="graph-side">
-      <div class="side-section">
-        <p class="side-title">数据来源</p>
-        <div class="focus-card">
-          <strong>{{ sourceSummary.title }}</strong>
-          <span class="focus-type">{{ sourceSummary.source }}</span>
-          <p class="focus-desc">{{ sourceSummary.notice }}</p>
-          <p class="focus-desc">{{ sourceSummary.sourceScopeNote }}</p>
-          <p class="focus-desc">{{ sourceSummary.degradationNote }}</p>
-          <p class="focus-desc">{{ sourceSummary.interactionNote }}</p>
-          <p class="focus-desc">节点 {{ graphMeta?.node_count ?? 0 }} 个 · 关系 {{ graphMeta?.link_count ?? 0 }} 条</p>
-        </div>
+    <section v-if="!loading && !hasError && !isEmpty" class="graph-bottom">
+      <div class="footer-section">
+        <p class="footer-title">图例</p>
+        <ul class="legend-list">
+          <li v-for="item in legendItems" :key="item.type">
+            <span class="dot" :style="{ background: item.color }"></span>
+            <span>{{ item.label }}</span>
+          </li>
+        </ul>
       </div>
 
       <div class="side-section">
-        <p class="side-title">图分析亮点</p>
-        <div class="mini-grid">
-          <div v-for="item in graphAnalysis?.highlight_cards || []" :key="item.title" class="mini-card">
-            <span class="mini-label">{{ item.title }}</span>
-            <strong>{{ item.value }}</strong>
-            <p class="focus-desc">{{ item.detail }}</p>
-          </div>
-        </div>
-        <p class="focus-desc">{{ graphAnalysis?.scope_note || '当前以轻量图分析展示为主。' }}</p>
-        <p class="focus-desc">{{ graphAnalysis?.analysis_method_note || '当前图分析基于轻量统计口径生成。' }}</p>
-      </div>
-
-      <div class="side-section">
-        <p class="side-title">合作圈层概览</p>
-        <div class="focus-card">
-          <strong>轻量圈层划分</strong>
-          <p class="focus-desc">{{ graphAnalysis?.collaboration_circle_overview?.description || '当前暂无可用的合作圈层概览。' }}</p>
-          <p class="focus-desc">{{ graphAnalysis?.collaboration_circle_overview?.threshold_note || '当前仍以轻量阈值说明为主。' }}</p>
-        </div>
-        <div class="mini-grid">
-          <div class="mini-card">
-            <span class="mini-label">核心合作圈</span>
-            <strong>{{ graphAnalysis?.collaboration_circle_overview?.core_collaborator_count ?? 0 }}</strong>
-          </div>
-          <div class="mini-card">
-            <span class="mini-label">活跃合作圈</span>
-            <strong>{{ graphAnalysis?.collaboration_circle_overview?.active_collaborator_count ?? 0 }}</strong>
-          </div>
-          <div class="mini-card">
-            <span class="mini-label">扩展合作圈</span>
-            <strong>{{ graphAnalysis?.collaboration_circle_overview?.extended_collaborator_count ?? 0 }}</strong>
-          </div>
-          <div class="mini-card">
-            <span class="mini-label">当前边界</span>
-            <strong>轻量分析</strong>
-          </div>
-        </div>
-      </div>
-
-      <div class="side-section">
-        <p class="side-title">关系速览</p>
-        <div class="mini-grid">
-          <div class="mini-card"><span class="mini-label">论文</span><strong>{{ summary.paperCount }}</strong></div>
-          <div class="mini-card"><span class="mini-label">项目</span><strong>{{ summary.projectCount }}</strong></div>
-          <div class="mini-card"><span class="mini-label">知识产权</span><strong>{{ summary.ipCount }}</strong></div>
-          <div class="mini-card"><span class="mini-label">教学成果</span><strong>{{ summary.teachingCount }}</strong></div>
-          <div class="mini-card"><span class="mini-label">学术服务</span><strong>{{ summary.serviceCount }}</strong></div>
-          <div class="mini-card"><span class="mini-label">边关系</span><strong>{{ summary.linkCount }}</strong></div>
-        </div>
-      </div>
-
-      <div class="side-section">
-        <p class="side-title">当前焦点</p>
+        <p class="side-title">焦点解读 / 当前说明</p>
         <div v-if="selectedNode" class="focus-card">
           <strong>{{ selectedNode.name }}</strong>
           <span class="focus-type">{{ selectedNode.nodeTypeLabel || nodeTypeLabel(selectedNode.nodeType) }}</span>
@@ -170,10 +123,7 @@
           <p class="focus-desc">连接：{{ selectedLink.source }} → {{ selectedLink.target }}</p>
         </div>
         <div v-else class="focus-card muted-block">点击节点可查看详情，点击边可查看关系说明。</div>
-      </div>
 
-      <div class="side-section">
-        <p class="side-title">路径说明一期</p>
         <div v-if="selectedPathAnalysis" class="focus-card">
           <strong>{{ selectedPathAnalysis.title }}</strong>
           <p class="focus-desc">{{ selectedPathAnalysis.summary }}</p>
@@ -193,11 +143,21 @@
               {{ item }}
             </el-tag>
           </div>
-          <p class="focus-desc">{{ selectedPathAnalysis.boundaryNote }}</p>
         </div>
-        <div v-else class="focus-card muted-block">选中关键词、合作者或成果节点后，这里会给出当前已加载子图内的最短关系链说明。</div>
+        <div v-else class="focus-card muted-block">当前路径说明仅在已选中关键词、合作者或成果节点时展示。</div>
+
+        <div class="mini-grid mini-grid--summary">
+          <div class="mini-card"><span class="mini-label">论文</span><strong>{{ summary.paperCount }}</strong></div>
+          <div class="mini-card"><span class="mini-label">项目</span><strong>{{ summary.projectCount }}</strong></div>
+          <div class="mini-card"><span class="mini-label">知识产权</span><strong>{{ summary.ipCount }}</strong></div>
+          <div class="mini-card"><span class="mini-label">教学成果</span><strong>{{ summary.teachingCount }}</strong></div>
+          <div class="mini-card"><span class="mini-label">学术服务</span><strong>{{ summary.serviceCount }}</strong></div>
+          <div class="mini-card"><span class="mini-label">边关系</span><strong>{{ summary.linkCount }}</strong></div>
+        </div>
+
+        
       </div>
-    </aside>
+    </section>
   </div>
 </template>
 
@@ -210,12 +170,22 @@ import { useRouter } from 'vue-router'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
 import { buildCrossModuleQuery } from '../utils/crossModuleLinking'
 import type { GraphLink, GraphNode, GraphNodeType, GraphTopologyAnalysis, GraphTopologyMeta, GraphTopologyResponse } from '../types/graph'
+import { observeElementsResize } from '../utils/resizeObserver'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import { buildGraphSourceSummary } from './graph/sourceState.js'
+import { WORKSPACE_THEME_CHANGED_EVENT } from '../utils/workspaceTheme'
 
 type GraphFocusPreset = 'all' | 'collaboration' | 'themes' | 'achievements'
 
-const props = defineProps<{ userId: number | string }>()
+const props = withDefaults(
+  defineProps<{
+    userId: number | string
+    initialFocusPreset?: GraphFocusPreset
+  }>(),
+  {
+    initialFocusPreset: 'all',
+  },
+)
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const loading = ref(false)
@@ -233,11 +203,25 @@ const hiddenNodeTypes = ref<GraphNodeType[]>([])
 const errorNotice = ref<{ message: string; guidance: string; requestHint: string } | null>(null)
 const currentUser = ref<SessionUser | null>(null)
 const searchQuery = ref('')
-const focusPreset = ref<GraphFocusPreset>('all')
+const focusPreset = ref<GraphFocusPreset>(props.initialFocusPreset)
 
 let chartInstance: echarts.ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
+
+const getComputedThemeColor = (token: string, fallback: string) => {
+  if (typeof window === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+  return value || fallback
+}
 
 const sourceSummary = computed(() => buildGraphSourceSummary(graphMeta.value))
+const focusPresetLabelMap: Record<GraphFocusPreset, string> = {
+  all: '全部节点',
+  collaboration: '合作视角',
+  themes: '主题视角',
+  achievements: '成果视角',
+}
+const focusPresetLabel = computed(() => focusPresetLabelMap[focusPreset.value])
 const focusPresetOptions = [
   { label: '全部节点', value: 'all' },
   { label: '合作视角', value: 'collaboration' },
@@ -289,6 +273,16 @@ const summary = computed(() => ({
   serviceCount: graphNodes.value.filter(node => node.nodeType === 'AcademicService').length,
   linkCount: graphLinks.value.length,
 }))
+
+const graphHeadline = computed(() => {
+  if (selectedNode.value) {
+    return `当前焦点位于“${selectedNode.value.name}”，可继续围绕该节点查看关系链和支撑记录。`
+  }
+  if (selectedLink.value) {
+    return `当前正在查看“${selectedLink.value.relationLabel || selectedLink.value.name}”这条边关系。`
+  }
+  return `当前以${focusPresetLabel.value}浏览图谱，节点 ${graphMeta.value?.node_count ?? 0} 个，关系 ${graphMeta.value?.link_count ?? 0} 条。`
+})
 
 const selectedNodeCanOpenAchievement = computed(
   () => Boolean(selectedNode.value?.entityId && selectedNode.value?.recordType && currentUser.value && !currentUser.value.is_admin),
@@ -397,8 +391,12 @@ const renderGraph = async () => {
   if (!chartInstance) chartInstance = echarts.init(chartRef.value)
 
   chartInstance.setOption({
+    backgroundColor: 'transparent',
     tooltip: {
       show: true,
+      backgroundColor: getComputedThemeColor('--surface-2', '#ffffff'),
+      borderColor: getComputedThemeColor('--border-color', '#e2e8f0'),
+      textStyle: { color: getComputedThemeColor('--text-primary', '#0f172a') },
       formatter: (params: { dataType: string; data: GraphNode | GraphLink }) => {
         if (params.dataType === 'node') {
           const node = params.data as GraphNode
@@ -423,29 +421,32 @@ const renderGraph = async () => {
             symbolSize: node.nodeType === 'CenterTeacher' ? 58 : node.symbolSize,
             itemStyle: {
               color: meta.color,
-              borderColor: '#ffffff',
+              borderColor: getComputedThemeColor('--surface-1', '#ffffff'),
               borderWidth: node.nodeType === 'CenterTeacher' ? 3 : 1,
               shadowBlur: node.nodeType === 'CenterTeacher' ? 24 : 10,
-              shadowColor: node.nodeType === 'CenterTeacher' ? 'rgba(37,99,235,0.34)' : 'rgba(148,163,184,0.18)',
+              shadowColor:
+                node.nodeType === 'CenterTeacher'
+                  ? 'rgba(37,99,235,0.34)'
+                  : getComputedThemeColor('--shadow-color', 'rgba(148,163,184,0.18)'),
             },
-            label: { show: true, color: '#334155' },
+            label: { show: true, color: getComputedThemeColor('--text-secondary', '#334155') },
           }
         }),
         links: visibleLinks.value.map(link => ({
           ...link,
-          lineStyle: { color: 'rgba(148, 163, 184, 0.75)', width: 2, curveness: 0.12 },
+          lineStyle: { color: getComputedThemeColor('--border-color-soft', 'rgba(148, 163, 184, 0.75)'), width: 2, curveness: 0.12 },
           label: {
             show: true,
             formatter: link.relationLabel || link.name,
             fontSize: 11,
-            color: '#64748b',
-            backgroundColor: 'rgba(255,255,255,0.82)',
+            color: getComputedThemeColor('--text-tertiary', '#64748b'),
+            backgroundColor: getComputedThemeColor('--surface-1', 'rgba(255,255,255,0.82)'),
             padding: [2, 6],
             borderRadius: 8,
           },
         })),
         force: { repulsion: 560, edgeLength: [70, 160], gravity: 0.06 },
-        emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: '#334155' } },
+        emphasis: { focus: 'adjacency', lineStyle: { width: 3, color: getComputedThemeColor('--text-secondary', '#334155') } },
       },
     ],
   })
@@ -555,7 +556,18 @@ const loadGraph = async () => {
 
 const handleResize = () => chartInstance?.resize()
 
+const ensureResizeObserver = () => {
+  if (resizeObserver || !chartRef.value) return
+  resizeObserver = observeElementsResize([chartRef.value], handleResize)
+}
+
 watch(() => props.userId, () => void loadGraph())
+watch(
+  () => props.initialFocusPreset,
+  value => {
+    focusPreset.value = value || 'all'
+  },
+)
 
 watch([hiddenNodeTypes, focusPreset], async () => {
   if (!graphNodes.value.length || isEmpty.value || hasError.value) return
@@ -563,13 +575,24 @@ watch([hiddenNodeTypes, focusPreset], async () => {
   await renderGraph()
 })
 
+watch(
+  () => currentUser.value && document.documentElement.getAttribute('data-workspace-theme'),
+  async () => {
+    if (!graphNodes.value.length || isEmpty.value || hasError.value) return
+    await renderGraph()
+  },
+)
+
 onMounted(() => {
   void loadGraph()
-  window.addEventListener('resize', handleResize)
+  ensureResizeObserver()
+  window.addEventListener(WORKSPACE_THEME_CHANGED_EVENT, renderGraph)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
+  window.removeEventListener(WORKSPACE_THEME_CHANGED_EVENT, renderGraph)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
@@ -578,36 +601,278 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.graph-shell { display: grid; grid-template-columns: 1.15fr 0.65fr; gap: 18px; min-height: 620px; }
-.graph-board { position: relative; min-height: 620px; border-radius: 22px; background: radial-gradient(circle at top left, rgba(37,99,235,.08), transparent 22%), linear-gradient(180deg, #fff 0%, #f8fafc 100%); padding: 14px; }
-.graph-toolbar { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.toolbar-search { width: 240px; }
-.toolbar-select { width: 150px; }
-.fallback-alert { margin-bottom: 12px; border-radius: 16px; }
-.fallback-alert :deep(p) { margin: 0; line-height: 1.7; }
-.chart-area { position: relative; }
-.graph-canvas { width: 100%; height: 560px; }
-.state-layer { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 18px; background: rgba(255,255,255,.92); }
-.graph-footer, .graph-side { display: grid; gap: 14px; }
-.graph-footer { margin-top: 14px; }
-.footer-section, .side-section { padding: 18px; border-radius: 18px; background: #f8fafc; }
-.footer-title, .side-title { margin: 0 0 12px; color: #0f172a; font-weight: 600; }
-.filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, max-content)); gap: 10px 12px; }
-.legend-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
-.legend-list li { display: flex; align-items: center; gap: 10px; color: #334155; }
-.dot { width: 10px; height: 10px; border-radius: 999px; }
-.mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.mini-card, .focus-card { padding: 14px 16px; border-radius: 16px; background: #fff; }
-.focus-card { display: grid; gap: 8px; }
-.mini-label { display: block; margin-bottom: 8px; color: #64748b; font-size: 12px; }
-.mini-card strong { color: #0f172a; font-size: 18px; }
-.focus-type { display: inline-flex; width: fit-content; padding: 4px 10px; border-radius: 999px; background: #e2e8f0; color: #334155; font-size: 12px; }
-.focus-desc, .muted-block { margin: 0; color: #64748b; line-height: 1.7; }
-.tag-row { display: flex; flex-wrap: wrap; gap: 10px; }
-@media (max-width: 1180px) { .graph-shell { grid-template-columns: 1fr; } }
+.graph-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.graph-top,
+.graph-toolbar-panel,
+.graph-board,
+.footer-section,
+.side-section {
+  border-radius: 22px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color-soft);
+  box-shadow: var(--workspace-shadow);
+}
+
+.graph-top,
+.graph-toolbar-panel,
+.graph-board {
+  padding: 16px 18px;
+}
+
+.graph-top__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.graph-top__eyebrow {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.graph-top__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 30px;
+}
+
+.graph-top__summary {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.graph-top__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  min-width: min(420px, 100%);
+}
+
+.graph-stat-pill {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color-soft);
+}
+
+.graph-stat-pill span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.graph-stat-pill strong {
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.graph-top__subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.graph-top__notice {
+  line-height: 1.6;
+}
+
+.graph-toolbar-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.graph-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.graph-toolbar--filters {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.toolbar-label {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.toolbar-search {
+  width: 240px;
+}
+
+.toolbar-select {
+  width: 150px;
+}
+
+.graph-board {
+  position: relative;
+  min-height: 720px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand-primary) 5%, var(--surface-1)) 0%, var(--surface-2) 100%);
+}
+
+.chart-area {
+  position: relative;
+}
+
+.graph-canvas {
+  width: 100%;
+  height: 620px;
+}
+
+.state-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+}
+
+.graph-bottom {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 16px;
+}
+
+.footer-section,
+.side-section {
+  padding: 18px;
+  background: var(--panel-bg);
+}
+
+.footer-title,
+.side-title {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.legend-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mini-grid--summary {
+  margin-top: 6px;
+}
+
+.mini-card,
+.focus-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-color-soft);
+}
+
+.focus-card {
+  display: grid;
+  gap: 8px;
+}
+
+.mini-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.mini-card strong {
+  color: var(--text-primary);
+  font-size: 18px;
+}
+
+.focus-type {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.focus-desc,
+.muted-block {
+  margin: 0;
+  color: var(--text-tertiary);
+  line-height: 1.7;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 1180px) {
+  .graph-top__head,
+  .graph-bottom {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .graph-top__stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+}
+
 @media (max-width: 768px) {
-  .graph-board { padding: 12px; }
-  .graph-toolbar { flex-direction: column; align-items: stretch; }
-  .toolbar-search, .toolbar-select, .legend-list, .mini-grid { width: 100%; grid-template-columns: 1fr; }
+  .graph-top__stats,
+  .mini-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-board {
+    padding: 12px;
+  }
+
+  .graph-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-search,
+  .toolbar-select {
+    width: 100%;
+  }
 }
 </style>

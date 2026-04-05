@@ -207,7 +207,7 @@ export const resolveAssistantEvidenceRoute = (
     return { name: 'academy-dashboard', query }
   }
 
-  return { name: 'assistant-demo', query }
+  return { name: 'dashboard', query }
 }
 
 export const focusEvidenceSection = (sectionId?: string, highlightId?: string): void => {

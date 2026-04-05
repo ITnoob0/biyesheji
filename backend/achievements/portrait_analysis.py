@@ -36,7 +36,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"论文数量 {_format_signed(paper_delta)} 篇")
         if citation_delta:
             drivers.append(f"总被引 {_format_signed(citation_delta)} 次")
-        interpretation = '基础学术产出同时受论文数量与引用表现影响。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
     elif key == 'funding_support':
         project_delta = current_metrics['project_count'] - baseline_metrics['project_count']
         funding_delta = round(current_metrics['funding_total'] - baseline_metrics['funding_total'], 1)
@@ -45,7 +45,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"项目数量 {_format_signed(project_delta)} 项")
         if funding_delta:
             drivers.append(f"累计经费 {_format_signed(funding_delta)} 万元")
-        interpretation = '经费与项目攻关维度由项目数量和经费规模共同驱动。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
     elif key == 'ip_strength':
         ip_delta = current_metrics['ip_count'] - baseline_metrics['ip_count']
         transformed_delta = current_metrics['transformed_ip_count'] - baseline_metrics['transformed_ip_count']
@@ -54,7 +54,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"知识产权 {_format_signed(ip_delta)} 项")
         if transformed_delta:
             drivers.append(f"转化成果 {_format_signed(transformed_delta)} 项")
-        interpretation = '知识产权维度会同时参考产权数量与转化情况。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
     elif key == 'talent_training':
         teaching_delta = current_metrics['teaching_count'] - baseline_metrics['teaching_count']
         paper_delta = current_metrics['paper_count'] - baseline_metrics['paper_count']
@@ -63,7 +63,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"教学成果 {_format_signed(teaching_delta)} 项")
         if paper_delta:
             drivers.append(f"协同论文 {_format_signed(paper_delta)} 篇")
-        interpretation = '人才培养成效既受教学成果数量影响，也会参考论文协同支撑。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
     elif key == 'academic_reputation':
         service_delta = current_metrics['service_count'] - baseline_metrics['service_count']
         collaborator_delta = current_metrics['collaborator_count'] - baseline_metrics['collaborator_count']
@@ -79,7 +79,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"合作作者 {_format_signed(collaborator_delta)} 位")
         if citation_delta:
             drivers.append(f"引用表现 {_format_signed(citation_delta)} 次")
-        interpretation = '学术活跃与声誉维度会综合学术服务、合作网络和引用表现。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
     else:
         keyword_delta = current_metrics['keyword_count'] - baseline_metrics['keyword_count']
         project_delta = current_metrics['project_count'] - baseline_metrics['project_count']
@@ -88,7 +88,7 @@ def _build_dimension_change_explanation(
             drivers.append(f"论文关键词 {_format_signed(keyword_delta)} 个")
         if project_delta:
             drivers.append(f"参与项目 {_format_signed(project_delta)} 项")
-        interpretation = '跨学科融合度主要由关键词覆盖度和项目参与情况共同支撑。'
+        interpretation = TeacherScoringEngine.DIMENSION_FORMULAS[key]
 
     if not drivers:
         drivers.append('当前阶段关键输入基本持平，因此维度变化有限。')
@@ -98,7 +98,7 @@ def _build_dimension_change_explanation(
         'drivers': drivers[:3],
         'interpretation': interpretation,
         'metric_deltas': metric_deltas,
-        'boundary_note': '当前变化解释基于成果发生年份回溯估算，只用于辅助比较，不等同于正式冻结历史快照。',
+        'boundary_note': '',
     }
 
 
@@ -225,8 +225,6 @@ def build_stage_comparison(user, span: int = 4) -> dict:
                 ),
             }
         )
-
-    changed_dimensions.sort(key=lambda item: abs(item['delta']), reverse=True)
     current_total_score = TeacherScoringEngine.calculate_total_score(current_values)
     baseline_total_score = TeacherScoringEngine.calculate_total_score(baseline_values)
     score_delta = round(current_total_score - baseline_total_score, 1)
@@ -251,13 +249,13 @@ def build_stage_comparison(user, span: int = 4) -> dict:
         'current_total_achievements': current_metrics['total_achievements'],
         'baseline_total_achievements': baseline_metrics['total_achievements'],
         'achievement_delta': achievement_delta,
-        'changed_dimensions': changed_dimensions[:4],
+        'changed_dimensions': changed_dimensions,
         'summary': summary,
         'structured_summary': (
             f"当前运行时画像快照与 {previous_year} 年成果投影基线相比，"
             f"{'整体提升' if score_delta > 0 else '整体回落' if score_delta < 0 else '整体保持稳定'}。"
         ),
-        'largest_change_dimension': changed_dimensions[0] if changed_dimensions else None,
+        'largest_change_dimension': max(changed_dimensions, key=lambda item: abs(item['delta'])) if changed_dimensions else None,
         'coverage_note': '当前阶段对比基于成果发生年份回溯估算，用于分析变化趋势，不等同于已落库冻结快照。',
     }
 

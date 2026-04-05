@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="achievement-entry-page workspace-page">
     <section class="hero-panel workspace-hero workspace-hero--brand">
       <div>
@@ -30,7 +30,7 @@
       />
     </section>
 
-    <section class="overview-grid content-shell">
+    <section v-if="showOverviewGrid" class="overview-grid content-shell">
       <el-card
         id="achievement-records-section"
         shadow="never"
@@ -104,9 +104,26 @@
       </el-card>
     </section>
 
-    <el-tabs v-model="activeTab" class="entry-tabs content-shell">
+    <section v-if="showImportGuide" class="content-shell import-guide-shell">
+      <el-card shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="card-header workspace-section-head">
+            <span>BibTeX 导入说明</span>
+            <el-tag type="primary" effect="plain">模块内子视图</el-tag>
+          </div>
+        </template>
+        <p class="panel-note">当前导入子视图继续复用成果中心主页面，不额外新建独立导入页；推荐先切到论文标签核对字段，再执行 BibTeX 批量导入。</p>
+        <div class="hub-links">
+          <el-button type="primary" plain @click="activeTab = 'papers'">切到论文标签</el-button>
+          <el-button plain @click="bibtexDialogVisible = true">打开 BibTeX 导入</el-button>
+          <el-button plain @click="router.push('/entry/manage')">进入成果列表 / 录入</el-button>
+        </div>
+      </el-card>
+    </section>
+
+    <el-tabs v-if="showEntryTabs" v-model="activeTab" class="entry-tabs content-shell">
       <el-tab-pane label="论文成果" name="papers">
-        <div class="entry-grid">
+        <div class="entry-stack">
           <el-card shadow="never" class="workspace-surface-card">
             <template #header>
               <div class="card-header workspace-section-head">
@@ -125,12 +142,6 @@
                 <template #title>重复录入提醒</template>
                 <template #default>
                   <p v-for="warning in paperDuplicateWarnings" :key="warning">{{ warning }}</p>
-                </template>
-              </el-alert>
-              <el-alert v-if="paperMetadataHints.length" type="info" show-icon :closable="false" class="form-alert">
-                <template #title>元数据补充建议</template>
-                <template #default>
-                  <p v-for="hint in paperMetadataHints" :key="hint">{{ hint }}</p>
                 </template>
               </el-alert>
               <div class="double-grid">
@@ -155,7 +166,7 @@
                 <el-form-item label="引用次数">
                   <el-input-number v-model="paperForm.citation_count" :min="0" style="width: 100%" />
                 </el-form-item>
-                <el-form-item label="DOI">
+                <el-form-item label="DOI" prop="doi">
                   <el-input v-model="paperForm.doi" placeholder="如 10.1000/xyz123" />
                 </el-form-item>
               </div>
@@ -237,7 +248,6 @@
               <el-tag type="success">代表作 {{ paperSummary?.representative_count || 0 }} 篇</el-tag>
               <el-tag type="info">近三年 {{ paperSummary?.recent_count || 0 }} 篇</el-tag>
               <el-tag type="warning">缺 DOI {{ paperSummary?.missing_doi_count || 0 }} 篇</el-tag>
-              <el-tag type="danger">待补元数据 {{ paperSummary?.incomplete_metadata_count || 0 }} 篇</el-tag>
             </div>
             <div class="distribution-strip">
               <div class="distribution-group">
@@ -276,56 +286,49 @@
                     <div class="tag-list">
                       <el-tag v-if="row.is_representative" size="small" type="success" effect="plain">代表作</el-tag>
                       <el-tag size="small" effect="plain">{{ row.citation_count }} 引用</el-tag>
-                      <el-tag v-if="row.doi" size="small" type="info" effect="plain">DOI</el-tag>
                     </div>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="paper_type_display" label="类型" width="110" />
-              <el-table-column prop="journal_name" label="期刊/会议" min-width="170" />
-              <el-table-column prop="date_acquired" label="时间" width="120" />
-              <el-table-column label="元数据状态" min-width="180">
+              <el-table-column prop="paper_type_display" label="类型" width="88" />
+              <el-table-column prop="journal_name" label="期刊/会议" min-width="150" />
+              <el-table-column prop="date_acquired" label="时间" width="104" />
+              <el-table-column label="关键词" min-width="156">
                 <template #default="{ row }">
-                  <span v-if="row.metadata_alerts.length" class="warning-text">{{ row.metadata_alerts[0] }}</span>
-                  <span v-else class="success-text">信息完整度良好</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="关键词" min-width="180">
-                <template #default="{ row }">
-                  <div class="tag-list">
-                    <el-tag v-for="keyword in row.keywords" :key="keyword" size="small" effect="plain">{{ keyword }}</el-tag>
+                  <div class="paper-keyword-text">
+                    <span v-if="!row.keywords?.length">—</span>
+                    <span v-for="keyword in row.keywords || []" :key="keyword" class="paper-keyword-item">
+                      {{ keyword }}
+                    </span>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="联动入口" width="210">
+              <el-table-column label="操作" width="96">
                 <template #default="{ row }">
-                  <div class="table-action-group workspace-table-actions">
-                    <el-button link type="primary" @click="goToPortraitDimensionFromAchievement('paper', row.id)">画像/图谱</el-button>
-                    <el-button link type="success" @click="goToRecommendationFromAchievement('paper', row.id)">推荐</el-button>
-                    <el-button link type="warning" @click="goToAssistantFromAchievement('paper', row.id)">问答</el-button>
+                  <div
+                    v-if="canManageAchievements"
+                    class="table-action-group workspace-table-actions table-action-group--compact"
+                  >
+                    <el-button link type="primary" @click="startEditRecord('papers', row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeRecord('papers', row.id)">删除</el-button>
                   </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row }">
-                  <el-button link type="primary" @click="startEditRecord('papers', row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeRecord('papers', row.id)">删除</el-button>
+                  <span v-else class="table-readonly-hint">只读</span>
                 </template>
               </el-table-column>
             </el-table>
           </el-card>
         </div>
-        <PaperGovernancePanel
-          :papers="papers"
-          :query-state="queryMap.papers"
-          @refresh="handleGovernanceRefresh"
-          @edit-paper="handleGovernanceEditPaper"
-        />
-      </el-tab-pane>
+          <AchievementOperationHistoryPanel
+            :tab="'papers'"
+            :records="papers"
+            :scoped-teacher-id="scopedTeacherId"
+            :refresh-key="historyRefreshKey.papers"
+          />
+        </el-tab-pane>
 
       <el-tab-pane label="科研项目" name="projects">
-        <div class="entry-grid">
-          <el-card shadow="never" class="workspace-surface-card">
+          <div class="entry-grid">
+            <el-card shadow="never" class="workspace-surface-card">
             <template #header>{{ isEditing('projects') ? editingLabelMap.projects.edit : editingLabelMap.projects.create }}</template>
             <el-form ref="projectFormRef" :model="projectForm" :rules="projectRules" label-position="top">
               <el-form-item label="项目名称" prop="title">
@@ -391,18 +394,30 @@
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="startEditRecord('projects', row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeRecord('projects', row.id)">删除</el-button>
+                  <div
+                    v-if="canManageAchievements"
+                    class="table-action-group workspace-table-actions table-action-group--compact"
+                  >
+                    <el-button link type="primary" @click="startEditRecord('projects', row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeRecord('projects', row.id)">删除</el-button>
+                  </div>
+                  <span v-else class="table-readonly-hint">只读</span>
                 </template>
               </el-table-column>
-            </el-table>
-          </el-card>
-        </div>
-      </el-tab-pane>
+              </el-table>
+            </el-card>
+          </div>
+          <AchievementOperationHistoryPanel
+            :tab="'projects'"
+            :records="projects"
+            :scoped-teacher-id="scopedTeacherId"
+            :refresh-key="historyRefreshKey.projects"
+          />
+        </el-tab-pane>
 
       <el-tab-pane label="知识产权" name="intellectual-properties">
-        <div class="entry-grid">
-          <el-card shadow="never">
+          <div class="entry-grid">
+            <el-card shadow="never">
             <template #header>{{ isEditing('intellectual-properties') ? editingLabelMap['intellectual-properties'].edit : editingLabelMap['intellectual-properties'].create }}</template>
             <el-form ref="ipFormRef" :model="ipForm" :rules="ipRules" label-position="top">
               <el-form-item label="成果名称" prop="title">
@@ -468,18 +483,30 @@
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="startEditRecord('intellectual-properties', row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeRecord('intellectual-properties', row.id)">删除</el-button>
+                  <div
+                    v-if="canManageAchievements"
+                    class="table-action-group workspace-table-actions table-action-group--compact"
+                  >
+                    <el-button link type="primary" @click="startEditRecord('intellectual-properties', row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeRecord('intellectual-properties', row.id)">删除</el-button>
+                  </div>
+                  <span v-else class="table-readonly-hint">只读</span>
                 </template>
               </el-table-column>
-            </el-table>
-          </el-card>
-        </div>
-      </el-tab-pane>
+              </el-table>
+            </el-card>
+          </div>
+          <AchievementOperationHistoryPanel
+            :tab="'intellectual-properties'"
+            :records="intellectualProperties"
+            :scoped-teacher-id="scopedTeacherId"
+            :refresh-key="historyRefreshKey['intellectual-properties']"
+          />
+        </el-tab-pane>
 
       <el-tab-pane label="教学成果" name="teaching-achievements">
-        <div class="entry-grid">
-          <el-card shadow="never">
+          <div class="entry-grid">
+            <el-card shadow="never">
             <template #header>{{ isEditing('teaching-achievements') ? editingLabelMap['teaching-achievements'].edit : editingLabelMap['teaching-achievements'].create }}</template>
             <el-form ref="teachingFormRef" :model="teachingForm" :rules="teachingRules" label-position="top">
               <el-form-item label="成果名称" prop="title">
@@ -537,18 +564,30 @@
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="startEditRecord('teaching-achievements', row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeRecord('teaching-achievements', row.id)">删除</el-button>
+                  <div
+                    v-if="canManageAchievements"
+                    class="table-action-group workspace-table-actions table-action-group--compact"
+                  >
+                    <el-button link type="primary" @click="startEditRecord('teaching-achievements', row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeRecord('teaching-achievements', row.id)">删除</el-button>
+                  </div>
+                  <span v-else class="table-readonly-hint">只读</span>
                 </template>
               </el-table-column>
-            </el-table>
-          </el-card>
-        </div>
-      </el-tab-pane>
+              </el-table>
+            </el-card>
+          </div>
+          <AchievementOperationHistoryPanel
+            :tab="'teaching-achievements'"
+            :records="teachingAchievements"
+            :scoped-teacher-id="scopedTeacherId"
+            :refresh-key="historyRefreshKey['teaching-achievements']"
+          />
+        </el-tab-pane>
 
       <el-tab-pane label="学术服务" name="academic-services">
-        <div class="entry-grid">
-          <el-card shadow="never">
+          <div class="entry-grid">
+            <el-card shadow="never">
             <template #header>{{ isEditing('academic-services') ? editingLabelMap['academic-services'].edit : editingLabelMap['academic-services'].create }}</template>
             <el-form ref="serviceFormRef" :model="serviceForm" :rules="serviceRules" label-position="top">
               <el-form-item label="服务名称" prop="title">
@@ -606,14 +645,26 @@
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="startEditRecord('academic-services', row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeRecord('academic-services', row.id)">删除</el-button>
+                  <div
+                    v-if="canManageAchievements"
+                    class="table-action-group workspace-table-actions table-action-group--compact"
+                  >
+                    <el-button link type="primary" @click="startEditRecord('academic-services', row)">编辑</el-button>
+                    <el-button link type="danger" @click="removeRecord('academic-services', row.id)">删除</el-button>
+                  </div>
+                  <span v-else class="table-readonly-hint">只读</span>
                 </template>
               </el-table-column>
-            </el-table>
-          </el-card>
-        </div>
-      </el-tab-pane>
+              </el-table>
+            </el-card>
+          </div>
+          <AchievementOperationHistoryPanel
+            :tab="'academic-services'"
+            :records="academicServices"
+            :scoped-teacher-id="scopedTeacherId"
+            :refresh-key="historyRefreshKey['academic-services']"
+          />
+        </el-tab-pane>
     </el-tabs>
 
     <PaperBibtexImportDialog v-model="bibtexDialogVisible" @imported="handleBibtexImported" />
@@ -627,7 +678,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaperBibtexImportDialog from './achievement-entry/PaperBibtexImportDialog.vue'
-import PaperGovernancePanel from './achievement-entry/PaperGovernancePanel.vue'
+import AchievementOperationHistoryPanel from './achievement-entry/AchievementOperationHistoryPanel.vue'
 import { createAchievement, deleteAchievement, fetchAchievementList, fetchPaperSummary, updateAchievement } from './achievement-entry/api'
 import { removeAchievementRecord, upsertAchievementRecord } from './achievement-entry/recordState.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
@@ -638,6 +689,7 @@ import {
   mapAchievementTypeToPortraitDimension,
   parseCrossModuleLink,
 } from '../utils/crossModuleLinking'
+import { openFloatingAssistant } from '../utils/assistantLauncher'
 import type { DashboardStatsResponse, RecentAchievementRecord } from './dashboard/portrait'
 import {
   achievementEndpointMap,
@@ -653,7 +705,7 @@ import {
   serviceTypeOptions,
   teachingTypeOptions,
 } from './achievement-entry/constants'
-import { buildPaperDuplicateWarnings, buildPaperMetadataHints, buildPaperYearOptions } from './achievement-entry/paperLifecycle.js'
+import { buildPaperDuplicateWarnings, buildPaperYearOptions } from './achievement-entry/paperLifecycle.js'
 import type {
   AchievementMutationPayloadMap,
   AchievementQueryState,
@@ -672,12 +724,33 @@ import type {
   TeachingRecord,
 } from './achievement-entry/types'
 
+type AchievementEntrySection = 'overview' | 'manage' | 'import' | 'statistics' | 'representative'
+
+const props = withDefaults(
+  defineProps<{
+    sectionMode?: AchievementEntrySection
+  }>(),
+  {
+    sectionMode: 'overview',
+  },
+)
+
 const route = useRoute()
 const router = useRouter()
 const linkContext = computed(() => parseCrossModuleLink(route.query))
 const activeTab = ref<TabName>('papers')
 const pageLoading = ref(false)
 const sessionUser = ref<SessionUser | null>(null)
+const scopedTeacherId = computed<number | null>(() => {
+  const rawTeacherId = Array.isArray(route.query.teacher_id) ? route.query.teacher_id[0] : route.query.teacher_id
+  const normalized = Number(rawTeacherId)
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null
+})
+const canManageAchievements = computed(() => {
+  if (!sessionUser.value) return false
+  if (!scopedTeacherId.value) return true
+  return scopedTeacherId.value === sessionUser.value.id
+})
 const bibtexDialogVisible = ref(false)
 const dashboardStats = ref<DashboardStatsResponse | null>(null)
 const paperSummary = ref<PaperSummaryResponse | null>(null)
@@ -696,6 +769,13 @@ const academicServices = ref<ServiceRecord[]>([])
 
 const loadingMap = reactive<Record<TabName, boolean>>(createAchievementStatusMap())
 const submittingMap = reactive<Record<TabName, boolean>>(createAchievementStatusMap())
+const historyRefreshKey = reactive<Record<TabName, number>>({
+  papers: 0,
+  projects: 0,
+  'intellectual-properties': 0,
+  'teaching-achievements': 0,
+  'academic-services': 0,
+})
 const editingMap = reactive<Record<TabName, number | null>>({
   papers: null,
   projects: null,
@@ -763,6 +843,10 @@ const teacherLabel = computed(() => {
 })
 
 const recentAchievements = computed<RecentAchievementRecord[]>(() => dashboardStats.value?.recent_achievements || [])
+const activeSection = computed(() => props.sectionMode)
+const showOverviewGrid = computed(() => ['overview', 'statistics', 'representative'].includes(activeSection.value))
+const showEntryTabs = computed(() => ['manage', 'import'].includes(activeSection.value))
+const showImportGuide = computed(() => activeSection.value === 'import')
 const linkContextTitle = computed(() => {
   if (linkContext.value?.source === 'recommendation') {
     return '当前从推荐模块回跳，已定位到成果证据区。'
@@ -784,8 +868,6 @@ const paperYearOptions = computed(() => buildPaperYearOptions(paperSummary.value
 const paperDuplicateWarnings = computed(() =>
   buildPaperDuplicateWarnings(paperForm, papers.value, editingMap.papers),
 )
-
-const paperMetadataHints = computed(() => buildPaperMetadataHints(paperForm))
 
 const achievementOverviewCards = computed(() => [
   {
@@ -858,6 +940,7 @@ const paperRules: FormRules = {
   date_acquired: requiredRule('请选择获得时间'),
   paper_type: requiredRule('请选择论文类型'),
   journal_name: requiredRule('请输入期刊或会议名称'),
+  doi: requiredRule('请输入 DOI'),
 }
 
 const projectRules: FormRules = {
@@ -893,7 +976,8 @@ const serviceRules: FormRules = {
 const fetchRecords = async (tab: TabName): Promise<void> => {
   loadingMap[tab] = true
   try {
-    const items = await fetchAchievementList(tab, queryMap[tab])
+    const scopedQuery = scopedTeacherId.value ? { ...queryMap[tab], teacher_id: scopedTeacherId.value } : queryMap[tab]
+    const items = await fetchAchievementList(tab, scopedQuery as never)
 
     if (tab === 'papers') papers.value = items as PaperRecord[]
     if (tab === 'projects') projects.value = items as ProjectRecord[]
@@ -906,12 +990,15 @@ const fetchRecords = async (tab: TabName): Promise<void> => {
 }
 
 const fetchDashboardStats = async (): Promise<void> => {
-  const response = await axios.get<DashboardStatsResponse>('/api/achievements/dashboard-stats/')
+  const response = await axios.get<DashboardStatsResponse>('/api/achievements/dashboard-stats/', {
+    params: scopedTeacherId.value ? { teacher_id: scopedTeacherId.value } : undefined,
+  })
   dashboardStats.value = response.data
 }
 
 const fetchPaperInsights = async (): Promise<void> => {
-  paperSummary.value = await fetchPaperSummary(queryMap.papers)
+  const scopedQuery = scopedTeacherId.value ? { ...queryMap.papers, teacher_id: scopedTeacherId.value } : queryMap.papers
+  paperSummary.value = await fetchPaperSummary(scopedQuery as never)
 }
 
 const refreshAllRecords = async (): Promise<void> => {
@@ -1078,15 +1165,16 @@ const submitAchievement = async <T extends TabName>(
       ElMessage.success(`${editingLabelMap[tab].create}已提交`)
     }
 
-    if (tab === 'papers') papers.value = upsertAchievementRecord(papers.value, savedRecord as PaperRecord)
-    if (tab === 'projects') projects.value = upsertAchievementRecord(projects.value, savedRecord as ProjectRecord)
-    if (tab === 'intellectual-properties') intellectualProperties.value = upsertAchievementRecord(intellectualProperties.value, savedRecord as IpRecord)
-    if (tab === 'teaching-achievements') teachingAchievements.value = upsertAchievementRecord(teachingAchievements.value, savedRecord as TeachingRecord)
-    if (tab === 'academic-services') academicServices.value = upsertAchievementRecord(academicServices.value, savedRecord as ServiceRecord)
+      if (tab === 'papers') papers.value = upsertAchievementRecord(papers.value, savedRecord as PaperRecord)
+      if (tab === 'projects') projects.value = upsertAchievementRecord(projects.value, savedRecord as ProjectRecord)
+      if (tab === 'intellectual-properties') intellectualProperties.value = upsertAchievementRecord(intellectualProperties.value, savedRecord as IpRecord)
+      if (tab === 'teaching-achievements') teachingAchievements.value = upsertAchievementRecord(teachingAchievements.value, savedRecord as TeachingRecord)
+      if (tab === 'academic-services') academicServices.value = upsertAchievementRecord(academicServices.value, savedRecord as ServiceRecord)
+      bumpHistoryRefresh(tab)
 
-    await fetchDashboardStats()
-    if (tab === 'papers') {
-      await fetchPaperInsights()
+      await fetchDashboardStats()
+      if (tab === 'papers') {
+        await fetchPaperInsights()
     }
 
     onReset()
@@ -1163,32 +1251,51 @@ const submitService = async (): Promise<void> => {
 }
 
 const removeRecord = async (tab: TabName, id: number): Promise<void> => {
-  await ElMessageBox.confirm('删除后将同步影响画像统计与图谱展示，确认继续吗？', '删除确认', {
-    type: 'warning',
-  })
+  try {
+    await ElMessageBox.confirm('删除后将同步影响画像统计与图谱展示，确认继续吗？', '删除确认', {
+      type: 'warning',
+    })
 
-  await deleteAchievement(tab, id)
-  ElMessage.success('记录已删除')
-  if (editingMap[tab] === id) {
-    if (tab === 'papers') resetPaperForm()
-    if (tab === 'projects') resetProjectForm()
-    if (tab === 'intellectual-properties') resetIpForm()
-    if (tab === 'teaching-achievements') resetTeachingForm()
-    if (tab === 'academic-services') resetServiceForm()
+    await deleteAchievement(tab, id)
+    ElMessage.success('记录已删除')
+    if (editingMap[tab] === id) {
+      if (tab === 'papers') resetPaperForm()
+      if (tab === 'projects') resetProjectForm()
+      if (tab === 'intellectual-properties') resetIpForm()
+      if (tab === 'teaching-achievements') resetTeachingForm()
+      if (tab === 'academic-services') resetServiceForm()
+    }
+    if (tab === 'papers') papers.value = removeAchievementRecord(papers.value, id)
+    if (tab === 'projects') projects.value = removeAchievementRecord(projects.value, id)
+    if (tab === 'intellectual-properties') intellectualProperties.value = removeAchievementRecord(intellectualProperties.value, id)
+    if (tab === 'teaching-achievements') teachingAchievements.value = removeAchievementRecord(teachingAchievements.value, id)
+    if (tab === 'academic-services') academicServices.value = removeAchievementRecord(academicServices.value, id)
+    bumpHistoryRefresh(tab)
+    await fetchDashboardStats()
+    if (tab === 'papers') {
+      await fetchPaperInsights()
+    }
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') {
+      return
+    }
+
+    if (sessionUser.value?.is_admin) {
+      ElMessage.warning('当前账号仅可查看成果记录，不能在此界面直接删除。')
+      return
+    }
+
+    ElMessage.error('删除失败，请稍后重试。')
   }
-  if (tab === 'papers') papers.value = removeAchievementRecord(papers.value, id)
-  if (tab === 'projects') projects.value = removeAchievementRecord(projects.value, id)
-  if (tab === 'intellectual-properties') intellectualProperties.value = removeAchievementRecord(intellectualProperties.value, id)
-  if (tab === 'teaching-achievements') teachingAchievements.value = removeAchievementRecord(teachingAchievements.value, id)
-  if (tab === 'academic-services') academicServices.value = removeAchievementRecord(academicServices.value, id)
-  await fetchDashboardStats()
-  if (tab === 'papers') {
-    await fetchPaperInsights()
-  }
+}
+
+const bumpHistoryRefresh = (tab: TabName): void => {
+  historyRefreshKey[tab] += 1
 }
 
 const handleBibtexImported = async (payload: BibtexImportResponse): Promise<void> => {
   await Promise.all([fetchRecords('papers'), fetchDashboardStats(), fetchPaperInsights()])
+  bumpHistoryRefresh('papers')
   if (payload.imported_records.length === 1) {
     const target = papers.value.find(item => item.id === payload.imported_records[0]?.id)
     if (target) {
@@ -1218,7 +1325,10 @@ const goToRecommendation = (): void => {
 }
 
 const goToAssistant = (): void => {
-  void router.push('/assistant-demo')
+  openFloatingAssistant({
+    contextHint: 'achievement',
+    draft: '请结合我当前成果结构，给出可执行的提升建议。',
+  })
 }
 
 const goToPortraitDimensionFromAchievement = (type: string, id: number): void => {
@@ -1250,16 +1360,9 @@ const goToRecommendationFromAchievement = (type: string, id: number): void => {
 }
 
 const goToAssistantFromAchievement = (type: string, id: number): void => {
-  void router.push({
-    name: 'assistant-demo',
-    query: buildCrossModuleQuery({
-      source: 'achievement',
-      page: 'assistant',
-      section: 'assistant-answer',
-      question_type: 'achievement_summary',
-      record_type: type,
-      record_id: String(id),
-    }),
+  openFloatingAssistant({
+    contextHint: 'achievement',
+    draft: `请解释我的${type}成果（ID: ${id}）在画像与项目申报中的作用。`,
   })
 }
 
@@ -1274,16 +1377,24 @@ onMounted(() => {
 watch(linkContext, () => {
   focusAchievementEvidence()
 })
+
+watch(
+  activeSection,
+  value => {
+    if (value === 'import') {
+      activeTab.value = 'papers'
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
 .achievement-entry-page {
   padding: 28px;
-  background:
-    radial-gradient(circle at top left, rgba(14, 116, 144, 0.12), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.1), transparent 24%),
-    linear-gradient(180deg, #f8fafc 0%, #eef6ff 100%);
-  min-height: 100vh;
+  background: var(--page-bg);
+  min-height: 100%;
+  color: var(--text-secondary);
 }
 
 .hero-panel {
@@ -1295,16 +1406,16 @@ watch(linkContext, () => {
   align-items: flex-start;
   padding: 28px 32px;
   border-radius: 26px;
-  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 62%, #0f766e 100%);
-  color: #fff;
-  box-shadow: 0 26px 56px rgba(15, 23, 42, 0.14);
+  background: var(--hero-bg);
+  color: var(--text-on-brand);
+  box-shadow: var(--workspace-shadow-strong);
 }
 
 .entry-tabs :deep(.el-card) {
-  border: none;
+  border: 1px solid var(--border-color-soft);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  background: var(--card-bg);
+  box-shadow: var(--workspace-shadow);
 }
 
 .overview-grid {
@@ -1318,11 +1429,15 @@ watch(linkContext, () => {
   margin-bottom: 20px;
 }
 
+.import-guide-shell {
+  margin-bottom: 20px;
+}
+
 .overview-card {
-  border: none;
+  border: 1px solid var(--border-color-soft);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  background: var(--card-bg);
+  box-shadow: var(--workspace-shadow);
 }
 
 .metric-grid {
@@ -1334,19 +1449,20 @@ watch(linkContext, () => {
 .metric-item {
   padding: 14px;
   border-radius: 18px;
-  background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
+  background: linear-gradient(135deg, var(--surface-2) 0%, color-mix(in srgb, var(--brand-primary) 10%, var(--surface-1)) 100%);
+  border: 1px solid var(--border-color-soft);
   display: grid;
   gap: 6px;
 }
 
 .metric-item strong {
   font-size: 26px;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .metric-item span {
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text-secondary);
 }
 
 .metric-item p,
@@ -1357,7 +1473,7 @@ watch(linkContext, () => {
 .success-text,
 .form-alert p {
   margin: 0;
-  color: #5b6b7c;
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 
@@ -1384,12 +1500,12 @@ watch(linkContext, () => {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 0;
-  border-bottom: 1px solid #e7eef6;
+  border-bottom: 1px solid var(--divider-color);
 }
 
 .recent-item--active,
 .evidence-section-highlight {
-  background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand-primary) 12%, var(--surface-2)) 0%, var(--surface-1) 100%);
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14);
   border-radius: 18px;
   padding: 14px 16px;
@@ -1424,6 +1540,7 @@ watch(linkContext, () => {
 
 .card-header-wrap {
   align-items: flex-start;
+  flex-wrap: nowrap;
 }
 
 .header-tools {
@@ -1431,18 +1548,20 @@ watch(linkContext, () => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .filter-input {
-  width: min(280px, 100%);
+  width: min(240px, 100%);
 }
 
 .filter-select {
-  width: 150px;
+  width: 132px;
 }
 
 .filter-select-wide {
-  width: 190px;
+  width: 168px;
 }
 
 .eyebrow {
@@ -1488,7 +1607,12 @@ h1 {
 
 .entry-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.entry-stack {
+  display: grid;
   gap: 20px;
 }
 
@@ -1523,9 +1647,68 @@ h1 {
   margin-bottom: 12px;
 }
 
+.card-header-wrap > span:first-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.header-tools :deep(.el-tag),
+.paper-summary-strip :deep(.el-tag),
+.distribution-strip :deep(.el-tag),
+.paper-title-cell :deep(.el-tag) {
+  padding: 0;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1.7;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.header-tools :deep(.el-tag .el-tag__content),
+.paper-summary-strip :deep(.el-tag .el-tag__content),
+.distribution-strip :deep(.el-tag .el-tag__content),
+.paper-title-cell :deep(.el-tag .el-tag__content) {
+  color: inherit !important;
+}
+
+.header-tools :deep(.el-tag) {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.paper-summary-strip :deep(.el-tag--success),
+.paper-title-cell :deep(.el-tag--success) {
+  color: var(--text-secondary);
+}
+
+.paper-summary-strip :deep(.el-tag--info),
+.paper-title-cell :deep(.el-tag--info) {
+  color: var(--text-secondary);
+}
+
+.paper-summary-strip :deep(.el-tag--warning) {
+  color: var(--text-secondary);
+}
+
+.paper-summary-strip :deep(.el-tag--danger) {
+  color: var(--text-secondary);
+}
+
 .distribution-strip {
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.distribution-strip :deep(.el-tag) {
+  color: var(--text-secondary);
+}
+
+.distribution-strip :deep(.el-tag--success) {
+  color: var(--text-secondary);
 }
 
 .distribution-group {
@@ -1538,17 +1721,109 @@ h1 {
   gap: 8px;
 }
 
+.paper-title-cell :deep(.el-tag) {
+  font-size: 13px;
+}
+
+.distribution-strip + :deep(.el-table) {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.distribution-strip + :deep(.el-table th),
+.distribution-strip + :deep(.el-table td) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.distribution-strip + :deep(.el-table .cell) {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(1)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(1)) {
+  width: 38% !important;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(2)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(2)) {
+  width: 9% !important;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(3)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(3)) {
+  width: 19% !important;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(4)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(4)) {
+  width: 11% !important;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(5)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(5)) {
+  width: 14% !important;
+}
+
+.distribution-strip + :deep(.el-table .el-table__header-wrapper colgroup col:nth-child(6)),
+.distribution-strip + :deep(.el-table .el-table__body-wrapper colgroup col:nth-child(6)) {
+  width: 9% !important;
+}
+
+.distribution-strip + :deep(.el-table .table-action-group--compact),
+.distribution-strip + :deep(.el-table .workspace-table-actions) {
+  gap: 2px;
+}
+
+.distribution-strip + :deep(.el-table .table-action-group--compact .el-button),
+.distribution-strip + :deep(.el-table .workspace-table-actions .el-button) {
+  margin-left: 0;
+  padding: 0 1px;
+  font-size: 13px;
+}
+
+.table-readonly-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.paper-keyword-text {
+  display: grid;
+  gap: 2px;
+  color: var(--text-secondary);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.paper-keyword-item {
+  display: block;
+}
+
+.distribution-strip + :deep(.el-table .el-table__row td),
+.distribution-strip + :deep(.el-table .el-table__header-wrapper th) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.paper-title-cell {
+  gap: 4px;
+}
+
 .warning-text {
-  color: #b45309;
+  color: var(--accent-warning);
 }
 
 .success-text {
-  color: #047857;
+  color: var(--accent-success);
 }
 
 @media (max-width: 1080px) {
   .overview-grid,
   .entry-grid,
+  .entry-stack,
   .double-grid,
   .triple-grid {
     grid-template-columns: 1fr;

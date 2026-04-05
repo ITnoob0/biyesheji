@@ -337,6 +337,23 @@ export interface PaperOperationLogRecord {
   created_at: string
 }
 
+export interface AchievementOperationLogRecord {
+  id: number
+  achievement_type: TabName
+  achievement_type_label: string
+  achievement_id: number | null
+  action: string
+  action_label: string
+  source: string
+  source_label: string
+  summary: string
+  changed_fields: string[]
+  title_snapshot: string
+  detail_snapshot: string
+  snapshot_payload: Record<string, string>
+  created_at: string
+}
+
 export interface CleanupSuggestion {
   key: string
   label: string
@@ -408,6 +425,10 @@ export interface PaperComparisonResponse {
 export interface PaperHistoryResponse {
   paper_id: number
   history: PaperOperationLogRecord[]
+}
+
+export interface AchievementOperationHistoryResponse {
+  history: AchievementOperationLogRecord[]
 }
 
 export interface PaperRepresentativeBatchResponse {

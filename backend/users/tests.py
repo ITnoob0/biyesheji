@@ -54,10 +54,11 @@ class TeacherUserApiTests(APITestCase):
         )
         return teacher
 
-    def test_admin_can_create_teacher_with_personal_center_fields(self):
+    def test_admin_can_create_college_admin_with_personal_center_fields(self):
         self.client.force_authenticate(user=self.admin)
         payload = {
             "employee_id": "100101",
+            "role_code": "college_admin",
             "real_name": "张晨阳",
             "department": "计算机学院",
             "title": "副教授",
@@ -82,8 +83,10 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.data["contact_phone"], "13812345678")
         self.assertEqual(response.data["avatar_url"], "https://example.com/teacher101.png")
         self.assertEqual(response.data["initial_password"], "SecurePass789!Q")
-        self.assertEqual(response.data["role_label"], "教师账户")
+        self.assertEqual(response.data["role_label"], "学院管理员")
         self.assertTrue(response.data["password_reset_required"])
+        self.assertEqual(response.data["role_code"], "college_admin")
+        self.assertTrue(get_user_model().objects.get(id=100101).is_staff)
         self.assertTrue(TeacherProfile.objects.filter(user_id=100101, discipline="人工智能").exists())
 
     def test_teacher_registration_sets_personal_center_fields(self):
@@ -231,7 +234,7 @@ class TeacherUserApiTests(APITestCase):
         response = self.client.get(reverse("teacher_detail", kwargs={"user_id": self.admin.id}))
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.data["detail"], "教师管理入口仅支持教师账户，不包含管理员账户。")
+        self.assertEqual(response.data["detail"], "教师管理入口不支持系统管理员账户。")
 
     def test_teacher_can_change_own_password_and_clear_force_change_flag(self):
         teacher = self.create_teacher(user_id=100105, real_name="周老师")

@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
@@ -280,3 +281,51 @@ class PortraitAssistantApiTests(APITestCase):
         self.assertIn('failure_notice', response.data)
         self.assertIn('temporary failure', response.data['source_details'][0]['value'])
         self.assertIn('受控的轻量智能辅助链路', response.data['scope_note'])
+
+    def test_teacher_can_use_chat_assistant(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/chat/',
+            {
+                'message': '结合我的成果和推荐，下一步申报建议是什么？',
+                'context_hint': 'recommendation',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(response.data['status'], ['ok', 'fallback'])
+        self.assertEqual(response.data['assistant_mode'], 'rag-chat')
+        self.assertTrue(response.data['answer'])
+        self.assertTrue(response.data['sources'])
+        self.assertEqual(response.data['teacher_snapshot']['user_id'], self.teacher.id)
+
+    def test_chat_assistant_rejects_target_user_id(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            '/api/ai-assistant/chat/',
+            {
+                'message': '请总结当前教师画像。',
+                'user_id': self.teacher.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('user_id', response.data)
+
+    @override_settings(DIFY_BASE_URL='', DIFY_API_KEY='')
+    def test_dify_chat_returns_fallback_when_unconfigured(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            '/api/ai-assistant/dify-chat/',
+            {
+                'message': '请给我一个本周科研任务建议。',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['assistant_mode'], 'dify-proxy')
+        self.assertEqual(response.data['status'], 'fallback')
+        self.assertIn('暂未完成配置', response.data['answer'])

@@ -17,11 +17,11 @@ from core.api_errors import api_error_response
 from graph_engine.services import AcademicGraphSyncService
 from users.access import (
     PROFILE_SCOPE_MESSAGE,
-    TEACHER_SELF_SERVICE_ONLY_MESSAGE,
     ensure_self_or_admin_user,
     ensure_self_user,
-    ensure_teacher_user,
 )
+
+ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE = '当前成果仅支持账号本人维护，查看他人成果时为只读。'
 
 from .bibtex_import import build_bibtex_preview_entries, decode_bibtex_bytes, revalidate_bibtex_entries
 from .governance import (
@@ -42,6 +42,7 @@ from .import_serializers import (
 )
 from .models import (
     AcademicService,
+    AchievementOperationLog,
     IntellectualProperty,
     Paper,
     PaperKeyword,
@@ -61,6 +62,7 @@ from .portrait_analysis import (
 from .scoring_engine import TeacherScoringEngine
 from .serializers import (
     AcademicServiceSerializer,
+    AchievementOperationLogSerializer,
     IntellectualPropertySerializer,
     PaperCleanupApplySerializer,
     PaperOperationLogSerializer,
@@ -78,6 +80,113 @@ def parse_bool_query_param(value: str) -> bool | None:
     if normalized in {'0', 'false', 'no'}:
         return False
     return None
+
+
+def normalize_operation_value(value):
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return '是' if value else '否'
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+def build_achievement_operation_snapshot(achievement_type: str, instance) -> tuple[dict, str]:
+    if achievement_type == 'papers':
+        payload = {
+            '题目': instance.title,
+            '类型': instance.get_paper_type_display(),
+            '期刊/会议': instance.journal_name,
+            '时间': normalize_operation_value(instance.date_acquired),
+            'DOI': instance.doi,
+            '引用次数': normalize_operation_value(instance.citation_count),
+        }
+        return payload, instance.journal_name
+
+    if achievement_type == 'projects':
+        payload = {
+            '项目名称': instance.title,
+            '项目级别': instance.get_level_display(),
+            '角色': instance.get_role_display(),
+            '经费金额': normalize_operation_value(instance.funding_amount),
+            '项目状态': instance.status,
+            '时间': normalize_operation_value(instance.date_acquired),
+        }
+        return payload, f"{instance.get_level_display()} / {instance.get_role_display()}"
+
+    if achievement_type == 'intellectual-properties':
+        payload = {
+            '成果名称': instance.title,
+            '知识产权类型': instance.get_ip_type_display(),
+            '登记号': instance.registration_number,
+            '是否转化': normalize_operation_value(instance.is_transformed),
+            '时间': normalize_operation_value(instance.date_acquired),
+        }
+        return payload, instance.registration_number
+
+    if achievement_type == 'teaching-achievements':
+        payload = {
+            '成果名称': instance.title,
+            '教学成果类型': instance.get_achievement_type_display(),
+            '级别': instance.level,
+            '时间': normalize_operation_value(instance.date_acquired),
+        }
+        return payload, f"{instance.get_achievement_type_display()} / {instance.level}"
+
+    if achievement_type == 'academic-services':
+        payload = {
+            '服务名称': instance.title,
+            '服务类型': instance.get_service_type_display(),
+            '服务机构': instance.organization,
+            '时间': normalize_operation_value(instance.date_acquired),
+        }
+        return payload, instance.organization
+
+    return {'标题': getattr(instance, 'title', '')}, ''
+
+
+def diff_operation_snapshot(before: dict, after: dict) -> list[str]:
+    field_names = []
+    for key in set(before.keys()) | set(after.keys()):
+        if normalize_operation_value(before.get(key)) != normalize_operation_value(after.get(key)):
+            field_names.append(key)
+    return field_names
+
+
+def log_achievement_operation(
+    *,
+    teacher,
+    achievement_type: str,
+    action: str,
+    source: str,
+    summary: str,
+    instance=None,
+    changed_fields: list[str] | None = None,
+    title_snapshot: str = '',
+    detail_snapshot: str = '',
+    snapshot_payload: dict | None = None,
+    achievement_id: int | None = None,
+):
+    payload = snapshot_payload or {}
+    if instance is not None and not payload:
+        payload, detail = build_achievement_operation_snapshot(achievement_type, instance)
+        detail_snapshot = detail_snapshot or detail
+        achievement_id = achievement_id or instance.id
+        title_snapshot = title_snapshot or instance.title
+
+    return AchievementOperationLog.objects.create(
+        teacher=teacher,
+        achievement_type=achievement_type,
+        achievement_id=achievement_id,
+        action=action,
+        source=source,
+        summary=summary,
+        changed_fields=changed_fields or [],
+        title_snapshot=title_snapshot,
+        detail_snapshot=detail_snapshot,
+        snapshot_payload=payload,
+    )
 
 
 def get_requested_teacher(request, user_id: int | None = None):
@@ -185,6 +294,101 @@ def build_recent_achievements(user, limit: int = 6):
     return sorted(recent_records, key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
 
 
+def build_all_achievements(user):
+    achievement_records = []
+
+    for paper in Paper.objects.filter(teacher=user).order_by('-date_acquired', '-created_at'):
+        is_representative = bool(paper.is_representative)
+        achievement_records.append(
+            {
+                'id': paper.id,
+                'type': 'paper',
+                'type_label': '论文成果',
+                'title': paper.title,
+                'date_acquired': paper.date_acquired.isoformat(),
+                'detail': f'{paper.get_paper_type_display()} / {paper.journal_name}',
+                'highlight': '代表作' if is_representative else f'引用 {paper.citation_count} 次',
+                'is_representative': is_representative,
+                'author_rank_category': 'lead' if paper.is_first_author else 'participating',
+                'author_rank_label': '第一作者/通讯作者' if paper.is_first_author else '合作作者',
+            }
+        )
+
+    for project in Project.objects.filter(teacher=user).order_by('-date_acquired', '-created_at'):
+        achievement_records.append(
+            {
+                'id': project.id,
+                'type': 'project',
+                'type_label': '科研项目',
+                'title': project.title,
+                'date_acquired': project.date_acquired.isoformat(),
+                'detail': f'{project.get_level_display()} / {project.get_role_display()}',
+                'highlight': f'经费 {project.funding_amount} 万元',
+                'is_representative': False,
+                'author_rank_category': 'lead' if project.role == 'PI' else 'participating',
+                'author_rank_label': project.get_role_display(),
+            }
+        )
+
+    for item in IntellectualProperty.objects.filter(teacher=user).order_by('-date_acquired', '-created_at'):
+        achievement_records.append(
+            {
+                'id': item.id,
+                'type': 'intellectual_property',
+                'type_label': '知识产权',
+                'title': item.title,
+                'date_acquired': item.date_acquired.isoformat(),
+                'detail': f'{item.get_ip_type_display()} / 登记号 {item.registration_number}',
+                'highlight': '已转化' if item.is_transformed else '未转化',
+                'is_representative': False,
+                'author_rank_category': 'unspecified',
+                'author_rank_label': '未区分排名',
+            }
+        )
+
+    for item in TeachingAchievement.objects.filter(teacher=user).order_by('-date_acquired', '-created_at'):
+        achievement_records.append(
+            {
+                'id': item.id,
+                'type': 'teaching_achievement',
+                'type_label': '教学成果',
+                'title': item.title,
+                'date_acquired': item.date_acquired.isoformat(),
+                'detail': f'{item.get_achievement_type_display()} / {item.level}',
+                'highlight': '育人成果',
+                'is_representative': False,
+                'author_rank_category': 'unspecified',
+                'author_rank_label': '未区分排名',
+            }
+        )
+
+    for item in AcademicService.objects.filter(teacher=user).order_by('-date_acquired', '-created_at'):
+        achievement_records.append(
+            {
+                'id': item.id,
+                'type': 'academic_service',
+                'type_label': '学术服务',
+                'title': item.title,
+                'date_acquired': item.date_acquired.isoformat(),
+                'detail': f'{item.get_service_type_display()} / {item.organization}',
+                'highlight': '学术共同体贡献',
+                'is_representative': False,
+                'author_rank_category': 'unspecified',
+                'author_rank_label': '未区分排名',
+            }
+        )
+
+    return sorted(
+        achievement_records,
+        key=lambda item: (1 if item['is_representative'] else 0, item['date_acquired'], item['id']),
+        reverse=True,
+    )
+
+
+def build_recent_achievements(user, limit: int = 6):
+    return sorted(build_all_achievements(user), key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
+
+
 def classify_import_errors(errors: dict) -> dict:
     flattened = {key: ' '.join(str(item) for item in value) if isinstance(value, list) else str(value) for key, value in errors.items()}
     if 'doi' in flattened and '相同 DOI' in flattened['doi']:
@@ -239,6 +443,7 @@ class TeacherRadarView(APIView):
 class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     search_fields: tuple[str, ...] = ()
+    operation_log_type: str = ''
 
     def get_queryset(self):
         queryset = self.queryset
@@ -248,6 +453,8 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(teacher=self.request.user)
         elif teacher_id:
             queryset = queryset.filter(teacher_id=teacher_id)
+        else:
+            queryset = queryset.filter(teacher=self.request.user)
 
         search = self.request.query_params.get('search', '').strip()
         if search and self.search_fields:
@@ -259,22 +466,94 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         instance = serializer.save(teacher=self.request.user)
+        self.log_operation(
+            instance=instance,
+            action='CREATE',
+            source='manual',
+            summary=f'新增{instance.title}',
+            changed_fields=list(build_achievement_operation_snapshot(self.operation_log_type, instance)[0].keys()),
+        )
         self.sync_graph(instance)
 
     def perform_update(self, serializer):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
-        ensure_self_user(self.request.user, serializer.instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        before_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, serializer.instance)
+        ensure_self_user(self.request.user, serializer.instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
         instance = serializer.save()
+        after_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, instance)
+        self.log_operation(
+            instance=instance,
+            action='UPDATE',
+            source='manual',
+            summary=f'更新{instance.title}',
+            changed_fields=diff_operation_snapshot(before_snapshot, after_snapshot),
+            snapshot_payload=after_snapshot,
+        )
         self.sync_graph(instance)
 
     def perform_destroy(self, instance):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
-        ensure_self_user(self.request.user, instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
         identifier = instance.id
+        snapshot_payload, detail_snapshot = build_achievement_operation_snapshot(self.operation_log_type, instance)
+        self.log_operation(
+            action='DELETE',
+            source='manual',
+            summary=f'删除{instance.title}',
+            teacher=self.request.user,
+            achievement_type=self.operation_log_type,
+            title_snapshot=instance.title,
+            detail_snapshot=detail_snapshot,
+            snapshot_payload=snapshot_payload,
+            achievement_id=instance.id,
+        )
         instance.delete()
         self.delete_graph_snapshot(identifier)
+
+    def log_operation(
+        self,
+        *,
+        instance=None,
+        action: str,
+        source: str,
+        summary: str,
+        changed_fields: list[str] | None = None,
+        title_snapshot: str = '',
+        detail_snapshot: str = '',
+        snapshot_payload: dict | None = None,
+        achievement_id: int | None = None,
+    ):
+        if not self.operation_log_type:
+            return None
+        return log_achievement_operation(
+            teacher=self.request.user,
+            achievement_type=self.operation_log_type,
+            instance=instance,
+            action=action,
+            source=source,
+            summary=summary,
+            changed_fields=changed_fields,
+            title_snapshot=title_snapshot,
+            detail_snapshot=detail_snapshot,
+            snapshot_payload=snapshot_payload,
+            achievement_id=achievement_id,
+        )
+
+    @action(detail=False, methods=['get'], url_path='operations')
+    def operations(self, request):
+        target_teacher_id = request.user.id
+        scoped_teacher_id = request.query_params.get('teacher_id', '').strip()
+        if request.user.is_staff or request.user.is_superuser:
+            if scoped_teacher_id.isdigit():
+                target_teacher_id = int(scoped_teacher_id)
+        queryset = AchievementOperationLog.objects.filter(
+            teacher_id=target_teacher_id,
+            achievement_type=self.operation_log_type,
+        )
+        achievement_id = request.query_params.get('achievement_id', '').strip()
+        if achievement_id.isdigit():
+            queryset = queryset.filter(achievement_id=int(achievement_id))
+        serializer = AchievementOperationLogSerializer(queryset[:30], many=True)
+        return Response({'history': serializer.data})
 
     def teacher_payload(self, instance):
         return {
@@ -290,6 +569,7 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
 
 
 class PaperViewSet(TeacherOwnedAchievementViewSet):
+    operation_log_type = 'papers'
     queryset = (
         Paper.objects.select_related('teacher')
         .prefetch_related('coauthors', 'paperkeyword_set__keyword', 'operation_logs')
@@ -358,7 +638,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         paper = serializer.save(teacher=self.request.user)
         log_paper_operation(
             paper=paper,
@@ -385,12 +664,19 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             ],
             metadata_flags=build_metadata_flag_codes(paper),
         )
+        self.log_operation(
+            instance=paper,
+            action='CREATE',
+            source='manual',
+            summary=f'新增{paper.title}',
+            changed_fields=list(build_achievement_operation_snapshot(self.operation_log_type, paper)[0].keys()),
+        )
         self.sync_graph(paper)
 
     def perform_update(self, serializer):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
-        ensure_self_user(self.request.user, serializer.instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, serializer.instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
         before = snapshot_paper_fields(serializer.instance)
+        generic_before_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, serializer.instance)
         paper = serializer.save()
         changed_fields = diff_paper_fields(before, paper)
         log_paper_operation(
@@ -402,11 +688,19 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             changed_fields=changed_fields,
             metadata_flags=build_metadata_flag_codes(paper),
         )
+        generic_after_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, paper)
+        self.log_operation(
+            instance=paper,
+            action='UPDATE',
+            source='manual',
+            summary=f'更新{paper.title}',
+            changed_fields=diff_operation_snapshot(generic_before_snapshot, generic_after_snapshot),
+            snapshot_payload=generic_after_snapshot,
+        )
         self.sync_graph(paper)
 
     def perform_destroy(self, instance):
-        ensure_teacher_user(self.request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
-        ensure_self_user(self.request.user, instance.teacher, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
+        ensure_self_user(self.request.user, instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
         identifier = instance.id
         log_paper_operation(
             paper=instance,
@@ -418,6 +712,16 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             metadata_flags=build_metadata_flag_codes(instance),
             title_snapshot=instance.title,
             doi_snapshot=instance.doi,
+        )
+        snapshot_payload, detail_snapshot = build_achievement_operation_snapshot(self.operation_log_type, instance)
+        self.log_operation(
+            action='DELETE',
+            source='manual',
+            summary=f'删除{instance.title}',
+            title_snapshot=instance.title,
+            detail_snapshot=detail_snapshot,
+            snapshot_payload=snapshot_payload,
+            achievement_id=instance.id,
         )
         instance.delete()
         self.delete_graph_snapshot(identifier)
@@ -552,6 +856,15 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                         ],
                         metadata_flags=build_metadata_flag_codes(paper),
                     )
+                    log_achievement_operation(
+                        teacher=request.user,
+                        achievement_type='papers',
+                        instance=paper,
+                        action='IMPORT',
+                        source='bibtex',
+                        summary=f'通过 BibTeX 导入{paper.title}',
+                        changed_fields=list(build_achievement_operation_snapshot('papers', paper)[0].keys()),
+                    )
                     self.sync_graph(paper)
             except Exception as exc:
                 classification = {
@@ -631,7 +944,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     @action(detail=False, methods=['post'], url_path='representative/batch-update')
     def batch_update_representative(self, request):
-        ensure_teacher_user(request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         serializer = PaperRepresentativeBatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -652,6 +964,15 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 changed_fields=['is_representative'],
                 metadata_flags=build_metadata_flag_codes(paper),
             )
+            log_achievement_operation(
+                teacher=request.user,
+                achievement_type='papers',
+                instance=paper,
+                action='UPDATE',
+                source='manual',
+                summary=f'调整代表作标记：{paper.title}',
+                changed_fields=['代表作'],
+            )
         return Response(
             {
                 'updated_count': len(updated_ids),
@@ -662,7 +983,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     @action(detail=False, methods=['post'], url_path='cleanup-apply')
     def cleanup_apply(self, request):
-        ensure_teacher_user(request.user, TEACHER_SELF_SERVICE_ONLY_MESSAGE)
         serializer = PaperCleanupApplySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -680,6 +1000,15 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 summary='执行批量文本标准化清洗',
                 changed_fields=['doi', 'source_url', 'pages', 'journal_level', 'published_volume', 'published_issue'],
                 metadata_flags=build_metadata_flag_codes(paper),
+            )
+            log_achievement_operation(
+                teacher=request.user,
+                achievement_type='papers',
+                instance=paper,
+                action='UPDATE',
+                source='system',
+                summary=f'执行文本标准化：{paper.title}',
+                changed_fields=['DOI', '来源链接', '页码', '期刊等级', '卷号', '期号'],
             )
         return Response(
             {
@@ -722,6 +1051,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
 
 class ProjectViewSet(TeacherOwnedAchievementViewSet):
+    operation_log_type = 'projects'
     queryset = Project.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
     serializer_class = ProjectSerializer
     search_fields = ('title', 'status')
@@ -741,6 +1071,7 @@ class ProjectViewSet(TeacherOwnedAchievementViewSet):
 
 
 class IntellectualPropertyViewSet(TeacherOwnedAchievementViewSet):
+    operation_log_type = 'intellectual-properties'
     queryset = IntellectualProperty.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
     serializer_class = IntellectualPropertySerializer
     search_fields = ('title', 'registration_number')
@@ -759,6 +1090,7 @@ class IntellectualPropertyViewSet(TeacherOwnedAchievementViewSet):
 
 
 class TeachingAchievementViewSet(TeacherOwnedAchievementViewSet):
+    operation_log_type = 'teaching-achievements'
     queryset = TeachingAchievement.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
     serializer_class = TeachingAchievementSerializer
     search_fields = ('title', 'level')
@@ -777,6 +1109,7 @@ class TeachingAchievementViewSet(TeacherOwnedAchievementViewSet):
 
 
 class AcademicServiceViewSet(TeacherOwnedAchievementViewSet):
+    operation_log_type = 'academic-services'
     queryset = AcademicService.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
     serializer_class = AcademicServiceSerializer
     search_fields = ('title', 'organization')
@@ -882,6 +1215,31 @@ class TeacherDashboardStatsView(APIView):
                 'snapshot_boundary': build_snapshot_boundary(user),
                 'portrait_explanation': build_portrait_explanation(),
                 'data_meta': get_portrait_data_meta(user),
+            }
+        )
+
+
+class TeacherAllAchievementsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id: int) -> Response:
+        user = get_requested_teacher(request, user_id=user_id)
+        if user is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='教师账户不存在。',
+                code='teacher_not_found',
+                request=request,
+                next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
+            )
+
+        records = build_all_achievements(user)
+        return Response(
+            {
+                'teacher_id': user.id,
+                'teacher_name': getattr(user, 'real_name', '') or user.username,
+                'achievement_total': len(records),
+                'records': records,
             }
         )
 

@@ -643,6 +643,51 @@ class AchievementEntryApiTests(APITestCase):
         self.assertIn('source_note', response.data['data_meta'])
         self.assertEqual(response.data['data_meta']['acceptance_scope'], '本能力纳入当前阶段验收。')
 
+    def test_all_achievements_endpoint_returns_representative_first_and_then_by_date(self):
+        Paper.objects.create(
+            teacher=self.user,
+            title='代表作论文',
+            abstract='用于验证全部成果接口的代表作排序。',
+            date_acquired='2024-03-01',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=12,
+            is_first_author=True,
+            is_representative=True,
+        )
+        Paper.objects.create(
+            teacher=self.user,
+            title='普通论文',
+            abstract='用于验证非代表作排序。',
+            date_acquired='2025-01-15',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=3,
+            is_first_author=False,
+            is_representative=False,
+        )
+        Project.objects.create(
+            teacher=self.user,
+            title='科研项目A',
+            date_acquired='2024-12-20',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='18.00',
+            status='ONGOING',
+        )
+
+        response = self.client.get(f'/api/achievements/all-achievements/{self.user.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['teacher_id'], self.user.id)
+        self.assertEqual(response.data['achievement_total'], 3)
+        self.assertEqual(response.data['records'][0]['title'], '代表作论文')
+        self.assertEqual(response.data['records'][0]['is_representative'], True)
+        self.assertEqual(response.data['records'][1]['title'], '普通论文')
+        self.assertEqual(response.data['records'][1]['author_rank_category'], 'participating')
+        self.assertEqual(response.data['records'][2]['title'], '科研项目A')
+        self.assertEqual(response.data['records'][2]['type_label'], '科研项目')
+
     def test_radar_endpoint_returns_dimension_sources(self):
         Paper.objects.create(
             teacher=self.user,

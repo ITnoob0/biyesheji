@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
 
-from .access import is_admin_user
+from .access import is_admin_user, is_college_admin_user, is_system_admin_user
 from .services import (
     build_teacher_management_summary,
     build_public_contact_channels,
@@ -174,6 +174,7 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
 
 
 class TeacherCreateSerializer(serializers.ModelSerializer):
+    role_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     employee_id = serializers.CharField(write_only=True)
     discipline = serializers.CharField(required=False, allow_blank=True, max_length=200)
     research_interests = serializers.CharField(required=False, allow_blank=True)
@@ -200,6 +201,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         model = get_user_model()
         fields = (
             "employee_id",
+            "role_code",
             "username",
             "real_name",
             "department",
@@ -240,9 +242,24 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         employee_id = attrs.get("employee_id", "")
         request = self.context.get("request")
-        is_admin_creation = bool(request and is_admin_user(getattr(request, "user", None)))
+        request_user = getattr(request, "user", None)
+        is_admin_creation = bool(request and is_admin_user(request_user))
         password = attrs.get("password")
         confirm_password = attrs.get("confirm_password")
+        requested_role_code = (attrs.get("role_code") or "").strip() or "teacher"
+
+        if is_system_admin_user(request_user):
+            if requested_role_code != "college_admin":
+                raise serializers.ValidationError({"role_code": "系统管理员当前仅可创建学院管理员账号。"})
+        elif is_college_admin_user(request_user):
+            if requested_role_code != "teacher":
+                raise serializers.ValidationError({"role_code": "学院管理员当前仅可创建本学院教师账号。"})
+            attrs["department"] = request_user.department or ""
+        else:
+            attrs["role_code"] = "teacher"
+
+        if is_college_admin_user(request_user):
+            attrs["department"] = request_user.department or ""
 
         if not is_admin_creation and not password:
             raise serializers.ValidationError({"password": "教师自助注册时必须设置登录密码。"})
@@ -261,6 +278,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        role_code = (validated_data.pop("role_code", "") or "teacher").strip() or "teacher"
         employee_id = int(validated_data.pop("employee_id"))
         discipline = validated_data.pop("discipline", "")
         research_interests = validated_data.pop("research_interests", "")
@@ -269,14 +287,17 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         validated_data.pop("confirm_password", None)
 
         request = self.context.get("request")
-        is_admin_creation = bool(request and is_admin_user(getattr(request, "user", None)))
+        request_user = getattr(request, "user", None)
+        is_admin_creation = bool(request and is_admin_user(request_user))
         login_account = str(employee_id)
+        if is_college_admin_user(request_user):
+            validated_data["department"] = request_user.department or ""
         user_model = get_user_model()
         user = user_model(
             id=employee_id,
             username=login_account,
             is_active=True,
-            is_staff=False,
+            is_staff=role_code == "college_admin",
             is_superuser=False,
             password_reset_required=is_admin_creation,
             password_updated_at=timezone.now(),

@@ -4,6 +4,7 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules, TableInstance } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import TeacherRadarPreviewDialog from '../components/teacher/TeacherRadarPreviewDialog.vue'
 import {
   buildAccountLifecycleHint,
   buildAdminRouteNotice,
@@ -21,6 +22,8 @@ import type {
   TeacherPasswordResetResponse,
 } from '../types/users'
 
+type TeacherManagementSection = 'overview' | 'create-college-admin' | 'create-teacher'
+
 interface TeacherRecord extends TeacherAccountResponse {
   initial_password?: string
 }
@@ -37,6 +40,8 @@ interface CreateTeacherFormState {
   password: string
   confirm_password: string
 }
+
+type TeacherMoreAction = 'profile' | 'toggle-status' | 'reset-password'
 
 const router = useRouter()
 const route = useRoute()
@@ -57,6 +62,9 @@ const lastCreatedAccount = ref<Pick<TeacherCreateResponse, 'employee_id' | 'user
 )
 const lastBulkResult = ref<TeacherBulkActionResponse | null>(null)
 const editDialogVisible = ref(false)
+const radarPreviewVisible = ref(false)
+const previewTeacherId = ref<number | null>(null)
+const previewTeacherName = ref('')
 const createFormRef = ref<FormInstance>()
 const editFormRef = ref<FormInstance>()
 const managementSummary = ref<TeacherManagementSummaryResponse>({
@@ -134,7 +142,41 @@ const editRules: FormRules = {
   title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
 }
 
+const props = withDefaults(
+  defineProps<{
+    sectionMode?: TeacherManagementSection
+  }>(),
+  {
+    sectionMode: 'overview',
+  },
+)
+
 const checkedAdmin = computed(() => Boolean(currentUser.value?.is_admin))
+const isSystemAdmin = computed(() => currentUser.value?.role_code === 'admin')
+const isCollegeAdmin = computed(() => currentUser.value?.role_code === 'college_admin')
+const activeSection = computed(() => props.sectionMode)
+const showSummaryGrid = computed(() => activeSection.value === 'overview')
+const showCreateCard = computed(() => activeSection.value !== 'overview')
+const showListCard = computed(() => activeSection.value === 'overview')
+const showManagementShell = computed(() => showCreateCard.value || showListCard.value)
+const createTargetRoleCode = computed(() => (activeSection.value === 'create-college-admin' ? 'college_admin' : 'teacher'))
+const createCardTitle = computed(() =>
+  activeSection.value === 'create-college-admin' ? '创建学院管理员' : '创建教师账号',
+)
+const createButtonText = computed(() =>
+  activeSection.value === 'create-college-admin' ? '创建学院管理员' : '创建教师账号',
+)
+const createRuleNotice = computed(() => {
+  if (activeSection.value === 'create-college-admin') {
+    return '规则：工号必须是 6 位数字，工号会直接作为学院管理员登录账号；系统管理员创建后的密码会被视为临时密码。'
+  }
+  return '规则：工号必须是 6 位数字，工号会直接作为教师登录账号；学院管理员仅可创建本学院教师，创建后的密码会被视为临时密码。'
+})
+const createDepartmentLabel = computed(() => (activeSection.value === 'create-college-admin' ? '所属学院' : '所属学院（固定为本学院）'))
+const createResultTitle = computed(() => (activeSection.value === 'create-college-admin' ? '最新创建的学院管理员账号' : '最新创建的教师账号'))
+const createResultSubtitle = computed(() =>
+  activeSection.value === 'create-college-admin' ? '以下登录信息可通过安全渠道交付给对应学院管理员。' : '以下登录信息可通过安全渠道交付给对应教师。',
+)
 const focusTeacherId = computed(() => Number(route.query.focus || 0))
 const hasSelection = computed(() => selectedTeacherIds.value.length > 0)
 const filteredTeachers = computed(() =>
@@ -185,6 +227,9 @@ const resetCreateForm = () => {
     confirm_password: '',
   })
   createFormRef.value?.clearValidate()
+  if (isCollegeAdmin.value) {
+    createTeacherForm.department = currentUser.value?.department || ''
+  }
 }
 
 const ensureAdminUser = async (): Promise<SessionUser | null> => {
@@ -201,6 +246,9 @@ const ensureAdminUser = async (): Promise<SessionUser | null> => {
   }
 
   currentUser.value = sessionUser
+  if (sessionUser.role_code === 'college_admin' && activeSection.value === 'create-teacher') {
+    createTeacherForm.department = sessionUser.department || ''
+  }
   return sessionUser
 }
 
@@ -236,6 +284,7 @@ const createTeacher = async () => {
   try {
     const response = await axios.post<TeacherCreateResponse>('/api/users/teachers/', {
       ...createTeacherForm,
+      role_code: createTargetRoleCode.value,
       research_direction: toResearchDirection(createTeacherForm.research_interests),
     })
 
@@ -245,11 +294,13 @@ const createTeacher = async () => {
       initial_password: response.data.initial_password,
     }
 
-    ElMessage.success('教师账号创建成功')
+    ElMessage.success(activeSection.value === 'create-college-admin' ? '学院管理员账号创建成功' : '教师账号创建成功')
     resetCreateForm()
     await Promise.all([loadTeachers(), loadManagementSummary()])
   } catch (error: any) {
-    ElMessage.error(resolveApiErrorMessage(error, '教师账号创建失败'))
+    ElMessage.error(
+      resolveApiErrorMessage(error, activeSection.value === 'create-college-admin' ? '学院管理员账号创建失败' : '教师账号创建失败'),
+    )
   } finally {
     createLoading.value = false
   }
@@ -400,6 +451,28 @@ const resetPassword = async (teacher: TeacherRecord) => {
   }
 }
 
+const handleMoreAction = async (teacher: TeacherRecord, action: TeacherMoreAction) => {
+  if (action === 'profile') {
+    previewTeacherId.value = teacher.id
+    previewTeacherName.value = teacher.real_name || teacher.username
+    radarPreviewVisible.value = true
+    return
+  }
+
+  if (action === 'toggle-status') {
+    await toggleTeacherStatus(teacher, !teacher.is_active)
+    return
+  }
+
+  await resetPassword(teacher)
+}
+
+const handleMoreCommand = async (teacher: TeacherRecord, command: string | number | object) => {
+  if (command === 'profile' || command === 'toggle-status' || command === 'reset-password') {
+    await handleMoreAction(teacher, command)
+  }
+}
+
 const rowClassName = ({ row }: { row: TeacherRecord }) => {
   if (focusTeacherId.value && row.id === focusTeacherId.value) {
     return 'focus-row'
@@ -444,16 +517,6 @@ onMounted(async () => {
           <p class="hero-copy workspace-hero__text">
             面向管理员统一维护教师账号、角色身份、启停状态、密码生命周期和批量账户操作，保持账户生命周期清晰可控。
           </p>
-          <div class="hero-tags">
-            <span class="hero-tag">管理员入口</span>
-            <span class="hero-tag">工号登录不变</span>
-            <span class="hero-tag">统一权限边界</span>
-            <span class="hero-tag">批量账户操作</span>
-          </div>
-        </div>
-        <div class="hero-actions workspace-page-actions">
-          <el-button type="primary" @click="router.push('/dashboard')">返回画像首页</el-button>
-          <el-button plain @click="loadTeachers">刷新教师数据</el-button>
         </div>
       </div>
     </section>
@@ -470,7 +533,7 @@ onMounted(async () => {
     </div>
 
     <template v-else>
-      <section class="summary-grid">
+      <section v-if="showSummaryGrid" class="summary-grid">
         <el-card class="summary-card workspace-surface-card" shadow="never">
           <span class="summary-label">教师账户总量</span>
           <strong class="summary-value">{{ managementSummary.total_count }}</strong>
@@ -489,17 +552,21 @@ onMounted(async () => {
         </el-card>
       </section>
 
-      <section class="management-shell">
-        <el-card class="create-card workspace-surface-card" shadow="never">
+      <section
+        v-if="showManagementShell"
+        class="management-shell"
+        :class="{ 'management-shell--single': !showCreateCard || !showListCard }"
+      >
+        <el-card v-if="showCreateCard" class="create-card workspace-surface-card" shadow="never">
           <template #header>
             <div class="card-header workspace-section-head">
-              <span>创建教师账号</span>
-              <el-tag type="warning" effect="plain">管理员入口</el-tag>
+              <span>{{ createCardTitle }}</span>
+              <el-tag type="warning" effect="plain">{{ isSystemAdmin ? '系统管理员入口' : '学院管理员入口' }}</el-tag>
             </div>
           </template>
 
           <el-alert
-            title="规则：工号必须是 6 位数字，工号会直接作为教师登录账号；管理员创建后的密码会被视为临时密码。"
+            :title="createRuleNotice"
             type="info"
             :closable="false"
             show-icon
@@ -516,8 +583,8 @@ onMounted(async () => {
             </div>
 
             <div class="grid two-cols">
-              <el-form-item label="所属学院" prop="department">
-                <el-input v-model="createTeacherForm.department" />
+              <el-form-item :label="createDepartmentLabel" prop="department">
+                <el-input v-model="createTeacherForm.department" :disabled="isCollegeAdmin" />
               </el-form-item>
               <el-form-item label="职称" prop="title">
                 <el-input v-model="createTeacherForm.title" />
@@ -557,15 +624,15 @@ onMounted(async () => {
 
             <div class="actions">
               <el-button @click="resetCreateForm">重置</el-button>
-              <el-button type="primary" :loading="createLoading" @click="createTeacher">创建账号</el-button>
+              <el-button type="primary" :loading="createLoading" @click="createTeacher">{{ createButtonText }}</el-button>
             </div>
           </el-form>
 
           <el-result
             v-if="lastCreatedAccount"
             icon="success"
-            title="最新创建结果"
-            sub-title="以下登录信息可通过安全渠道交付给对应教师。"
+            :title="createResultTitle"
+            :sub-title="createResultSubtitle"
           >
             <template #extra>
               <div class="result-box">
@@ -577,7 +644,7 @@ onMounted(async () => {
           </el-result>
         </el-card>
 
-        <el-card class="list-card workspace-surface-card" shadow="never">
+        <el-card v-if="showListCard" class="list-card workspace-surface-card" shadow="never">
           <template #header>
             <div class="card-header workspace-section-head">
               <span>教师账户总览</span>
@@ -632,65 +699,65 @@ onMounted(async () => {
               </div>
             </template>
           </el-result>
-
           <el-table
             ref="teacherTableRef"
             v-loading="listLoading"
             :data="filteredTeachers"
+            class="teacher-overview-table"
             stripe
             highlight-current-row
             :row-class-name="rowClassName"
             empty-text="暂无教师记录"
             @selection-change="handleSelectionChange"
           >
-            <el-table-column type="selection" width="48" />
-            <el-table-column prop="employee_id" label="工号(ID)" width="120" />
-            <el-table-column prop="username" label="登录账号" width="140" />
-            <el-table-column prop="real_name" label="姓名" width="120" />
-            <el-table-column label="身份" width="120">
+            <el-table-column type="selection" width="36" />
+            <el-table-column label="工号/登录账号" width="152">
+              <template #default="{ row }">
+                <div class="account-identity">
+                  <div class="account-primary">{{ row.employee_id }}</div>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="real_name" label="姓名" width="88" />
+            <el-table-column label="身份" width="88">
               <template #default="{ row }">
                 <el-tag effect="plain" type="primary">{{ resolveRoleLabel(row) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="department" label="所属学院" min-width="160" />
-            <el-table-column prop="title" label="职称" width="120" />
-            <el-table-column prop="discipline" label="学科方向" min-width="160" />
-            <el-table-column label="账号状态" width="120">
+            <el-table-column prop="department" label="所属学院" width="118" />
+            <el-table-column prop="title" label="职称" width="80" />
+            <el-table-column prop="discipline" label="学科方向" width="136" />
+            <el-table-column label="账号状态" width="96">
               <template #default="{ row }">
                 <el-tag :type="row.is_active ? 'success' : 'danger'" effect="plain">
                   {{ row.account_status_label || (row.is_active ? '启用' : '停用') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="密码状态" width="140">
+            <el-table-column label="密码状态" width="108">
               <template #default="{ row }">
                 <el-tag :type="row.password_reset_required ? 'warning' : 'success'" effect="plain">
                   {{ row.password_status_label || (row.password_reset_required ? '待修改密码' : '状态正常') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="安全提示" min-width="220">
+            <el-table-column label="操作" width="132">
               <template #default="{ row }">
-                <div class="security-copy">
-                  <div>{{ buildPasswordSecurityNotice(row) }}</div>
-                  <div class="security-secondary">{{ buildAccountLifecycleHint(row) }}</div>
+                <div class="table-actions">
+                  <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+                  <el-dropdown trigger="click" @command="handleMoreCommand(row, $event)">
+                    <el-button link type="primary" :loading="resetLoadingId === row.id">更多</el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="profile">查看画像</el-dropdown-item>
+                        <el-dropdown-item command="toggle-status">
+                          {{ row.is_active ? '停用账户' : '恢复启用' }}
+                        </el-dropdown-item>
+                        <el-dropdown-item command="reset-password">重置密码</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="360" fixed="right">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
-                <el-button link type="success" @click="router.push(`/profile/${row.id}`)">查看画像</el-button>
-                <el-button
-                  link
-                  :type="row.is_active ? 'danger' : 'primary'"
-                  @click="toggleTeacherStatus(row, !row.is_active)"
-                >
-                  {{ row.is_active ? '停用账户' : '恢复启用' }}
-                </el-button>
-                <el-button link type="warning" :loading="resetLoadingId === row.id" @click="resetPassword(row)">
-                  重置密码
-                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -766,6 +833,12 @@ onMounted(async () => {
         </div>
       </template>
     </el-dialog>
+
+    <TeacherRadarPreviewDialog
+      v-model="radarPreviewVisible"
+      :teacher-id="previewTeacherId"
+      :teacher-name="previewTeacherName"
+    />
   </div>
 </template>
 
@@ -820,24 +893,6 @@ h1 {
   line-height: 1.8;
 }
 
-.hero-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.hero-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 13px;
-}
-
-.hero-actions,
 .card-header,
 .actions,
 .dialog-actions,
@@ -879,7 +934,12 @@ h1 {
   max-width: 1180px;
   margin: 0 auto;
   display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
   gap: 20px;
+}
+
+.management-shell--single {
+  grid-template-columns: 1fr;
 }
 
 .create-card,
@@ -945,6 +1005,105 @@ h1 {
 .security-copy {
   margin: 8px 0;
   line-height: 1.6;
+}
+
+.account-identity {
+  display: grid;
+  gap: 2px;
+  line-height: 1.5;
+  justify-items: center;
+  text-align: center;
+}
+
+.account-primary {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.account-secondary {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  white-space: nowrap;
+}
+
+.teacher-overview-table :deep(th.el-table__cell),
+.teacher-overview-table :deep(td.el-table__cell) {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.teacher-overview-table :deep(th.el-table__cell > .cell),
+.teacher-overview-table :deep(td.el-table__cell > .cell) {
+  padding-left: 1px;
+  padding-right: 1px;
+  text-align: center;
+}
+
+.teacher-overview-table :deep(.el-table__fixed-right th.el-table__cell > .cell),
+.teacher-overview-table :deep(.el-table__fixed-right td.el-table__cell > .cell) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.teacher-overview-table :deep(.el-table__fixed-right .el-button + .el-button) {
+  margin-left: 0;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(1)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(1)) {
+  width: 28px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(2)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(2)) {
+  width: 152px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(3)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(3)) {
+  width: 88px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(4)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(4)) {
+  width: 88px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(5)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(5)) {
+  width: 118px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(6)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(6)) {
+  width: 80px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(7)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(7)) {
+  width: 136px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(8)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(8)) {
+  width: 96px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(9)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(9)) {
+  width: 108px !important;
+}
+
+.teacher-overview-table :deep(.el-table__header colgroup col:nth-child(10)),
+.teacher-overview-table :deep(.el-table__body colgroup col:nth-child(10)) {
+  width: 132px !important;
 }
 
 .security-secondary {

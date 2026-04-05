@@ -24,6 +24,42 @@
       />
     </section>
 
+    <section v-if="showFaqGuide || showSourceGuide" class="assistant-guide-grid">
+      <el-card v-if="showFaqGuide" shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>常见问题入口</span>
+            <el-tag type="success" effect="plain">摘要优先</el-tag>
+          </div>
+        </template>
+        <div class="reason-list">
+          <strong>推荐先从这些模板开始</strong>
+          <ul>
+            <li v-for="item in faqPrompts" :key="item.title">
+              <button type="button" class="assistant-link-button" @click="applyPresetQuestion(item.type)">
+                {{ item.title }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </el-card>
+
+      <el-card v-if="showSourceGuide" shadow="never" class="workspace-surface-card">
+        <template #header>
+          <div class="section-head workspace-section-head">
+            <span>来源说明与证据入口</span>
+            <el-tag type="warning" effect="plain">真实系统数据</el-tag>
+          </div>
+        </template>
+        <div class="meta-list">
+          <div v-for="item in sourceGuideItems" :key="item.title" class="meta-item">
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.description }}</p>
+          </div>
+        </div>
+      </el-card>
+    </section>
+
     <section class="assistant-grid">
       <el-card id="assistant-answer-section" shadow="never" class="workspace-surface-card">
         <template #header>
@@ -250,6 +286,17 @@ import { focusEvidenceSection, parseCrossModuleLink, resolveAssistantEvidenceRou
 import { assistantQuestionOptions, buildAssistantFallbackAnswer, supportedQuestionTypes } from './assistant/helpers.js'
 import type { AcademyOverviewResponse } from './academy-dashboard/overview'
 
+type AssistantSection = 'overview' | 'faq' | 'sources'
+
+const props = withDefaults(
+  defineProps<{
+    sectionMode?: AssistantSection
+  }>(),
+  {
+    sectionMode: 'overview',
+  },
+)
+
 const route = useRoute()
 const router = useRouter()
 const currentUser = ref<SessionUser | null>(null)
@@ -259,6 +306,9 @@ const questionType = ref<AssistantQuestionType>('portrait_summary')
 const selectedGuideId = ref<number | undefined>(undefined)
 const selectedDepartment = ref('')
 const selectedYear = ref<number | undefined>(undefined)
+const activeSection = computed(() => props.sectionMode)
+const showFaqGuide = computed(() => activeSection.value === 'faq')
+const showSourceGuide = computed(() => activeSection.value === 'sources')
 const guideOptions = ref<RecommendationItem[]>([])
 const academyDepartments = ref<string[]>([])
 const academyYears = ref<number[]>([])
@@ -315,6 +365,18 @@ const currentTeacherLabel = computed(() => {
   }
   return currentUser.value?.real_name || currentUser.value?.username || '当前教师'
 })
+
+const faqPrompts = [
+  { title: '我的画像主要优势来自哪里？', type: 'portrait_summary' as AssistantQuestionType },
+  { title: '哪些成果最能支撑当前画像？', type: 'achievement_portrait_link' as AssistantQuestionType },
+  { title: '为什么会推荐这些项目？', type: 'guide_reason' as AssistantQuestionType },
+]
+
+const sourceGuideItems = [
+  { title: '来源范围', description: '当前问答只使用系统内真实资料、成果、画像、推荐和学院统计，不接入外部知识库。' },
+  { title: '失败回退', description: '无数据、权限不足、推荐降级、图谱降级或画像快照缺失时，会给出结构化边界说明，而不是伪装成确定答案。' },
+  { title: '证据回跳', description: '当来源卡片提供证据链接时，可以直接回到画像维度区、成果证据区、推荐证据区或学院看板区核验。' },
+]
 
 const resolveSourceModuleLabel = (item: NonNullable<AssistantAnswerResponse>['source_details'][number]) =>
   item.module_label || (item.module ? sourceModuleLabels[item.module] || item.module : '')
@@ -422,6 +484,10 @@ const openEvidenceLink = (link: NonNullable<AssistantAnswerResponse['source_deta
   router.push(resolveAssistantEvidenceRoute(link, currentUser.value, answerData.value?.teacher_snapshot?.user_id || currentTeacherId.value))
 }
 
+const applyPresetQuestion = (type: AssistantQuestionType) => {
+  questionType.value = type
+}
+
 const applyRouteQueryContext = async (shouldAutoSubmit = false) => {
   if (route.query.question_type && supportedQuestionTypes.includes(route.query.question_type as AssistantQuestionType)) {
     questionType.value = route.query.question_type as AssistantQuestionType
@@ -458,6 +524,21 @@ watch(questionType, async nextType => {
   }
 })
 
+watch(
+  activeSection,
+  value => {
+    if (value === 'faq' && !answerData.value) {
+      questionType.value = 'portrait_summary'
+      return
+    }
+
+    if (value === 'sources' && !answerData.value) {
+      questionType.value = 'portrait_data_governance'
+    }
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   currentUser.value = await ensureSessionUserContext()
   if (!currentUser.value) {
@@ -481,12 +562,10 @@ watch(
 
 <style scoped>
 .assistant-page {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.12), transparent 20%),
-    linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
+  background: var(--page-bg);
+  color: var(--text-secondary);
 }
 
 .hero-shell {
@@ -498,9 +577,30 @@ watch(
   margin: 0 auto 20px;
   padding: 28px 32px;
   border-radius: 26px;
-  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 62%, #0f766e 100%);
-  color: #fff;
-  box-shadow: 0 26px 56px rgba(15, 23, 42, 0.14);
+  background: var(--hero-bg);
+  color: var(--text-on-brand);
+  box-shadow: var(--workspace-shadow-strong);
+}
+
+.assistant-guide-grid {
+  max-width: 1180px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.assistant-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.assistant-link-button:hover {
+  text-decoration: underline;
 }
 
 .hero-actions,
@@ -527,10 +627,10 @@ watch(
 }
 
 .assistant-grid :deep(.el-card) {
-  border: none;
+  border: 1px solid var(--border-color-soft);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  background: var(--card-bg);
+  box-shadow: var(--workspace-shadow);
 }
 
 .eyebrow {
@@ -553,7 +653,7 @@ h2 {
 .reason-list ul,
 .source-detail-item p,
 .boundary-panel ul {
-  color: #64748b;
+  color: var(--text-tertiary);
   line-height: 1.8;
 }
 
@@ -573,20 +673,21 @@ h2 {
 .boundary-panel {
   padding: 16px 18px;
   border-radius: 18px;
-  background: #f8fafc;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color-soft);
 }
 
 .meta-item strong,
 .source-detail-item strong {
   display: block;
   margin-bottom: 8px;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .source-detail-item span {
   display: block;
   margin-bottom: 6px;
-  color: #1e293b;
+  color: var(--text-secondary);
   font-weight: 600;
 }
 
@@ -603,12 +704,12 @@ h2 {
 
 .source-verification-text {
   margin-top: -2px;
-  color: #1d4ed8;
+  color: var(--brand-primary);
 }
 
 .answer-text {
   margin: 0;
-  color: #334155;
+  color: var(--text-secondary);
 }
 
 .reason-list ul,
@@ -623,6 +724,7 @@ h2 {
 }
 
 @media (max-width: 1080px) {
+  .assistant-guide-grid,
   .assistant-grid,
   .hero-shell,
   .hero-actions,
@@ -635,6 +737,10 @@ h2 {
 @media (max-width: 768px) {
   .assistant-page {
     padding: 16px;
+  }
+
+  .assistant-guide-grid {
+    gap: 16px;
   }
 }
 </style>

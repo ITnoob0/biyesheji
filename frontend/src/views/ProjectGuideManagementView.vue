@@ -24,8 +24,12 @@
       />
     </div>
 
-    <div v-else class="guide-grid content-shell">
-      <el-card shadow="never" class="workspace-surface-card">
+    <div
+      v-else
+      class="guide-grid content-shell"
+      :class="{ 'guide-grid--single': !showFormCard || !showListCard }"
+    >
+      <el-card v-if="showFormCard" shadow="never" class="workspace-surface-card">
         <template #header>
           <div class="card-header workspace-section-head">
             <span>{{ editingId ? '编辑项目指南' : '新增项目指南' }}</span>
@@ -119,7 +123,7 @@
         </el-form>
       </el-card>
 
-      <el-card shadow="never" class="workspace-surface-card">
+      <el-card v-if="showListCard" shadow="never" class="workspace-surface-card">
         <template #header>
           <div class="card-header card-header-wrap workspace-section-head">
             <span>指南列表</span>
@@ -218,7 +222,7 @@
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import type {
@@ -229,6 +233,17 @@ import type {
   GuideStatus,
   ProjectGuideRecord,
 } from './project-guides/types'
+
+type GuideManagementSection = 'overview' | 'manage' | 'lifecycle'
+
+const props = withDefaults(
+  defineProps<{
+    sectionMode?: GuideManagementSection
+  }>(),
+  {
+    sectionMode: 'overview',
+  },
+)
 
 const guideEndpoint = '/api/project-guides/'
 const router = useRouter()
@@ -258,6 +273,9 @@ const ruleProfileOptions: Array<{ label: string; value: GuideRuleProfile }> = [
 ]
 
 const checkedUser = ref<SessionUser | null>(null)
+const activeSection = computed(() => props.sectionMode)
+const showFormCard = computed(() => activeSection.value === 'manage')
+const showListCard = computed(() => ['overview', 'lifecycle'].includes(activeSection.value))
 const formRef = ref<FormInstance>()
 const guides = ref<ProjectGuideRecord[]>([])
 const summary = ref<GuideLifecycleSummary | null>(null)
@@ -441,7 +459,7 @@ onMounted(async () => {
 
 <style scoped>
 .guide-page {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 28px;
   background:
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 28%),
@@ -507,6 +525,10 @@ h1 {
   grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
   gap: 20px;
   margin-top: 20px;
+}
+
+.guide-grid--single {
+  grid-template-columns: 1fr;
 }
 
 .double-grid {

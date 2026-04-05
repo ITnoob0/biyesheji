@@ -41,10 +41,10 @@ const assert = (condition, message) => {
 const verifyRedirectRecovery = () => {
   assert(resolvePostLoginRedirect('/entry', '/profile/100001') === '/profile/100001', '应优先回跳缓存的目标页')
   assert(resolvePostLoginRedirect('/entry', '') === '/entry', '无缓存回跳时应使用路由 redirect')
-  assert(resolvePostLoginRedirect('', '') === '/dashboard', '无 redirect 时应回到画像首页')
+  assert(resolvePostLoginRedirect('', '') === '', '无 redirect 时应交给工作台首页逻辑按身份决定去向')
 
   assert(resolveWorkspaceHomePath({ is_admin: true }) === '/dashboard', '管理员工作台首页应支持画像主页')
-  assert(resolveWorkspaceHomePath({ is_admin: false }) === '/profile-editor', '教师工作台首页应落到个人中心')
+  assert(resolveWorkspaceHomePath({ is_admin: false }) === '/profile-editor', '教师工作台首页应回到个人中心')
   assert(
     resolvePostLoginLandingPath('/dashboard', { id: 1, is_admin: true }) === '/dashboard',
     '管理员登录后应允许回到自己的画像主页',

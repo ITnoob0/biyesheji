@@ -217,6 +217,13 @@ def build_department_distribution(teachers) -> list[dict]:
     return [{'name': item['department'] or '未填写院系', 'value': item['count']} for item in distribution]
 
 
+def build_comparison_department_distribution(primary_department: str, compare_department: str, teachers) -> list[dict]:
+    target_departments = [item for item in [primary_department, compare_department] if item]
+    if not target_departments:
+        return []
+    return build_department_distribution(teachers.filter(department__in=target_departments))
+
+
 def build_department_breakdown(teachers, querysets: dict) -> list[dict]:
     teacher_counts = {item['department'] or '未填写院系': item['teacher_count'] for item in teachers.values('department').annotate(teacher_count=Count('id'))}
     paper_counts = {item['teacher__department'] or '未填写院系': item['count'] for item in querysets['paper'].values('teacher__department').annotate(count=Count('id'))}
@@ -333,11 +340,17 @@ def build_collaboration_overview(paper_queryset, collaboration_queryset, paper_t
     }
 
 
-def build_comparison_summary(current_metrics: dict, baseline_metrics: dict, year: int | None, achievement_type: str = 'all') -> dict:
+def build_comparison_summary(
+    current_metrics: dict,
+    baseline_metrics: dict,
+    year: int | None,
+    achievement_type: str = 'all',
+    compare_department: str = '',
+) -> dict:
     baseline_teacher_total = baseline_metrics['teacher_total'] or 1
     baseline_achievement_total = baseline_metrics['achievement_total'] or 1
     scope_label = '当前筛选范围'
-    compare_label = f'{year} 年全校口径' if year else '全校口径'
+    compare_label = compare_department or (f'{year} 年全校口径' if year else '全校口径')
     type_label = ACHIEVEMENT_TYPE_LABELS.get(achievement_type, '全部成果')
     return {
         'scope_label': scope_label,
@@ -358,9 +371,11 @@ def build_comparison_summary(current_metrics: dict, baseline_metrics: dict, year
     }
 
 
-def build_filter_options():
-    user_model = get_user_model()
-    teachers = user_model.objects.filter(is_superuser=False).order_by('department', 'id')
+def build_filter_options(teachers=None):
+    if teachers is None:
+        user_model = get_user_model()
+        teachers = user_model.objects.filter(is_superuser=False)
+    teachers = teachers.order_by('department', 'id')
     years = sorted(
         {
             item.year

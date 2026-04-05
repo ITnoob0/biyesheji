@@ -4,9 +4,12 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import './assets/workspace-system.css'
+import { initializeWorkspaceTheme } from './utils/workspaceTheme'
 
 import App from './App.vue'
 import router from './router'
+
+initializeWorkspaceTheme()
 
 const app = createApp(App)
 

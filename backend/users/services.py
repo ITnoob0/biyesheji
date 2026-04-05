@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from achievements.models import TeacherProfile
 
-from .access import is_admin_user
+from .access import is_admin_user, is_college_admin_user, is_system_admin_user
 
 
 DEFAULT_PASSWORD_SECURITY_NOTICE = "请妥善保管工号与密码，建议使用高强度密码并定期更新。"
@@ -78,7 +78,11 @@ def set_user_active_status(user, *, is_active: bool) -> None:
 
 
 def get_user_role_code(user) -> str:
-    return "admin" if is_admin_user(user) else "teacher"
+    if is_system_admin_user(user):
+        return "admin"
+    if is_college_admin_user(user):
+        return "college_admin"
+    return "teacher"
 
 
 def get_user_role_label(user) -> str:
@@ -155,6 +159,68 @@ def get_user_permission_scope(user) -> dict:
             "不能使用学院级统计和教师对比能力",
         ],
         "future_extension_hint": "后续如扩展多角色，应继续优先在统一权限入口中集中扩展，而不是在页面和接口中散落判断。",
+    }
+
+
+def get_user_role_label(user) -> str:
+    if is_system_admin_user(user):
+        return "系统管理员"
+    if is_college_admin_user(user):
+        return "学院管理员"
+    return "教师账户"
+
+
+def get_user_permission_scope(user) -> dict:
+    if is_system_admin_user(user):
+        return {
+            "entry_role": "admin",
+            "scope_summary": "系统管理员可在全校范围管理教师账户、查看学院看板、维护项目指南，并查看教师画像、成果与管理分析结果。",
+            "allowed_actions": [
+                "管理教师账户",
+                "重置教师密码",
+                "维护项目指南",
+                "查看学院看板",
+                "查看指定教师画像与成果",
+            ],
+            "restricted_actions": [
+                "不通过教师成果入口直接代教师新增、修改或删除成果",
+            ],
+            "future_extension_hint": "后续如继续扩展管理角色，应优先在统一权限入口中扩展，而不是在页面和接口中分散判断。",
+        }
+
+    if is_college_admin_user(user):
+        return {
+            "entry_role": "college_admin",
+            "scope_summary": "学院管理员保留教师本人账户能力，并可在本学院范围内查看教师信息、学院看板和项目指南管理结果，不具备全校管理范围。",
+            "allowed_actions": [
+                "查看本学院教师信息",
+                "查看本学院学院看板",
+                "管理本学院教师账户",
+                "查看本学院教师画像与成果",
+            ],
+            "restricted_actions": [
+                "不能查看其他学院教师数据",
+                "不能访问系统管理员全校范围管理能力",
+            ],
+            "future_extension_hint": "如后续继续扩展学院管理员能力，应继续保持学院范围约束，不上收为全校管理权限。",
+        }
+
+    return {
+        "entry_role": "teacher",
+        "scope_summary": "教师可维护本人资料与成果，并查看本人的画像、图谱、推荐与问答结果，不可访问管理员入口或其他教师数据。",
+        "allowed_actions": [
+            "维护本人资料",
+            "修改本人密码",
+            "录入、编辑和删除本人成果",
+            "查看本人画像、图谱、推荐与问答结果",
+        ],
+        "restricted_actions": [
+            "不能访问管理员入口",
+            "不能管理教师账户",
+            "不能查看其他教师数据",
+            "不能使用学院级统计和教师对比能力",
+        ],
+        "future_extension_hint": "后续如扩展更多角色，应继续优先在统一权限入口中集中扩展，而不是在页面和接口中分散判断。",
     }
 
 

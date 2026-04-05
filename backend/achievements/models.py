@@ -165,6 +165,49 @@ class AcademicService(BaseAchievement):
         return f'[学术服务] {self.title}'
 
 
+class AchievementOperationLog(models.Model):
+    ACHIEVEMENT_TYPE_CHOICES = (
+        ('papers', '论文成果'),
+        ('projects', '科研项目'),
+        ('intellectual-properties', '知识产权'),
+        ('teaching-achievements', '教学成果'),
+        ('academic-services', '学术服务'),
+    )
+    ACTION_CHOICES = (
+        ('CREATE', '手工新增'),
+        ('UPDATE', '编辑更新'),
+        ('DELETE', '删除记录'),
+        ('IMPORT', '批量导入'),
+    )
+    SOURCE_CHOICES = (
+        ('manual', '手工维护'),
+        ('bibtex', 'BibTeX 导入'),
+        ('system', '系统生成'),
+    )
+
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='achievement_operation_logs',
+    )
+    achievement_type = models.CharField(max_length=40, choices=ACHIEVEMENT_TYPE_CHOICES)
+    achievement_id = models.IntegerField(null=True, blank=True)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
+    summary = models.CharField(max_length=300)
+    changed_fields = models.JSONField(default=list, blank=True)
+    title_snapshot = models.CharField(max_length=300, blank=True)
+    detail_snapshot = models.CharField(max_length=300, blank=True)
+    snapshot_payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at', '-id')
+
+    def __str__(self) -> str:
+        return f"{self.get_achievement_type_display()} / {self.get_action_display()} / {self.title_snapshot or self.achievement_id or '已删除记录'}"
+
+
 class PaperOperationLog(models.Model):
     ACTION_CHOICES = (
         ('CREATE', '手工新增'),

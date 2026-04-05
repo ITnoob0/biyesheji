@@ -1,4 +1,4 @@
-export type TeacherAccountRoleCode = 'admin' | 'teacher'
+export type TeacherAccountRoleCode = 'admin' | 'college_admin' | 'teacher'
 export type TeacherContactVisibility = 'email_only' | 'phone_only' | 'both' | 'internal_only'
 
 export interface TeacherPermissionScope {

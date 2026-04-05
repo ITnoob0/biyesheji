@@ -117,3 +117,8 @@ GRAPH_SIGNAL_SYNC_ENABLED = os.environ.get('GRAPH_SIGNAL_SYNC_ENABLED', '0') == 
 NEO4J_URI = os.environ.get('NEO4J_URI', 'neo4j://127.0.0.1:7687')
 NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
 NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD', 'liujianlei')
+
+# 8. Dify 助手配置
+DIFY_BASE_URL = os.environ.get('DIFY_BASE_URL', '').strip()
+DIFY_API_KEY = os.environ.get('DIFY_API_KEY', '').strip()
+DIFY_REQUEST_TIMEOUT = int(os.environ.get('DIFY_REQUEST_TIMEOUT', '30'))

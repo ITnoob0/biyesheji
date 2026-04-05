@@ -6,11 +6,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.access import ACADEMY_SCOPE_MESSAGE, ensure_admin_user
+from users.access import ACADEMY_SCOPE_MESSAGE, ensure_admin_user, is_college_admin_user
 
 from .academy_dashboard_analysis import (
     build_collaboration_overview,
     build_comparison_summary,
+    build_comparison_department_distribution,
     build_department_breakdown,
     build_department_distribution,
     build_department_drilldown,
@@ -45,13 +46,27 @@ def filter_teachers_queryset(*, all_teachers, department: str, teacher_id: str, 
     return teachers
 
 
-def build_overview_payload(*, teachers, all_teachers, year: int | None, achievement_type: str, rank_by: str, selected_department: str, selected_teacher_id: str):
+def build_overview_payload(
+    *,
+    teachers,
+    all_teachers,
+    year: int | None,
+    achievement_type: str,
+    rank_by: str,
+    selected_department: str,
+    selected_teacher_id: str,
+    compare_department: str = '',
+):
     teacher_ids = list(teachers.values_list('id', flat=True))
     current_querysets = build_scope_querysets(teacher_ids, year, achievement_type)
     baseline_teacher_ids = list(all_teachers.values_list('id', flat=True))
     baseline_querysets = build_scope_querysets(baseline_teacher_ids, year, achievement_type)
     comparison_scope_querysets = build_scope_querysets(teacher_ids, None, achievement_type)
-    comparison_baseline_querysets = build_scope_querysets(baseline_teacher_ids, None, achievement_type)
+    comparison_baseline_teachers = (
+        all_teachers.filter(department=compare_department) if compare_department else all_teachers
+    )
+    comparison_baseline_teacher_ids = list(comparison_baseline_teachers.values_list('id', flat=True))
+    comparison_baseline_querysets = build_scope_querysets(comparison_baseline_teacher_ids, None, achievement_type)
 
     teacher_total = teachers.count()
     paper_total = current_querysets['paper'].count()
@@ -145,8 +160,19 @@ def build_overview_payload(*, teachers, all_teachers, year: int | None, achievem
         'yearly_trend': yearly_trend,
         'comparison_trend': comparison_trend,
         'trend_summary': build_trend_summary(yearly_trend),
-        'comparison_summary': build_comparison_summary(current_metrics, baseline_metrics, year, achievement_type=achievement_type),
+        'comparison_summary': build_comparison_summary(
+            current_metrics,
+            baseline_metrics,
+            year,
+            achievement_type=achievement_type,
+            compare_department=compare_department,
+        ),
         'department_distribution': build_department_distribution(teachers),
+        'comparison_department_distribution': build_comparison_department_distribution(
+            selected_department,
+            compare_department,
+            all_teachers,
+        ),
         'department_breakdown': build_department_breakdown(teachers, current_querysets),
         'top_active_teachers': teacher_rank[:12],
         'collaboration_overview': build_collaboration_overview(
@@ -172,14 +198,21 @@ class AcademyOverviewDashboardView(APIView):
 
         user_model = get_user_model()
         all_teachers = user_model.objects.filter(is_superuser=False)
+        if is_college_admin_user(request.user):
+            all_teachers = all_teachers.filter(is_staff=False, department=request.user.department)
 
         department = request.query_params.get('department', '').strip()
+        compare_department = request.query_params.get('compare_department', '').strip()
         teacher_id = request.query_params.get('teacher_id', '').strip()
         teacher_title = request.query_params.get('teacher_title', '').strip()
         achievement_type = request.query_params.get('achievement_type', 'all').strip() or 'all'
         rank_by = request.query_params.get('rank_by', 'achievement_total').strip() or 'achievement_total'
         year = normalize_year(request.query_params.get('year'))
         has_collaboration = parse_bool_query_param(request.query_params.get('has_collaboration'))
+
+        if is_college_admin_user(request.user):
+            department = request.user.department or ''
+            compare_department = ''
 
         teachers = filter_teachers_queryset(
             all_teachers=all_teachers,
@@ -197,9 +230,11 @@ class AcademyOverviewDashboardView(APIView):
             rank_by=rank_by,
             selected_department=department,
             selected_teacher_id=teacher_id,
+            compare_department=compare_department,
         )
         payload['active_filters'] = {
             'department': department,
+            'compare_department': compare_department,
             'teacher_id': int(teacher_id) if teacher_id else None,
             'teacher_title': teacher_title,
             'year': year,
@@ -207,7 +242,7 @@ class AcademyOverviewDashboardView(APIView):
             'achievement_type': achievement_type,
             'rank_by': rank_by,
         }
-        payload['filter_options'] = build_filter_options()
+        payload['filter_options'] = build_filter_options(all_teachers)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -219,6 +254,8 @@ class AcademyOverviewExportView(APIView):
 
         user_model = get_user_model()
         all_teachers = user_model.objects.filter(is_superuser=False)
+        if is_college_admin_user(request.user):
+            all_teachers = all_teachers.filter(is_staff=False, department=request.user.department)
 
         department = request.query_params.get('department', '').strip()
         teacher_id = request.query_params.get('teacher_id', '').strip()
@@ -228,6 +265,9 @@ class AcademyOverviewExportView(APIView):
         export_target = request.query_params.get('export_target', 'teachers').strip() or 'teachers'
         year = normalize_year(request.query_params.get('year'))
         has_collaboration = parse_bool_query_param(request.query_params.get('has_collaboration'))
+
+        if is_college_admin_user(request.user):
+            department = request.user.department or ''
 
         teachers = filter_teachers_queryset(
             all_teachers=all_teachers,
