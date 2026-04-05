@@ -12,6 +12,7 @@ declare module 'vue-router' {
     activeMenu?: string
     requiresAuth?: boolean
     requiresAdmin?: boolean
+    requiresSystemAdmin?: boolean
     guestOnly?: boolean
     menuRoles?: Array<'teacher' | 'admin' | 'college_admin'>
   }

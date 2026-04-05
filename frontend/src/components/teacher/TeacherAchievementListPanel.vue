@@ -14,22 +14,31 @@
       </div>
 
       <div class="filter-grid">
-        <el-select v-model="selectedType" placeholder="按成果类型筛选">
+        <el-select v-model="selectedType" class="filter-select" placeholder="按成果类型筛选">
           <el-option label="全部类型" value="all" />
           <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
 
         <el-date-picker
           v-model="selectedDateRange"
+          class="filter-date-range"
           type="daterange"
           range-separator="至"
           start-placeholder="开始时间"
           end-placeholder="结束时间"
           value-format="YYYY-MM-DD"
           clearable
+          @change="handleDateRangeChange"
         />
 
-        <el-select v-model="selectedAuthorRank" placeholder="按作者排名筛选">
+        <el-select v-model="selectedRecentYearWindow" class="filter-select filter-select-recent" placeholder="按近年范围筛选" @change="handleRecentYearWindowChange">
+          <el-option label="全部区间" value="all" />
+          <el-option label="近一年" value="recent_1" />
+          <el-option label="近三年" value="recent_3" />
+          <el-option label="近五年" value="recent_5" />
+        </el-select>
+
+        <el-select v-model="selectedAuthorRank" class="filter-select" placeholder="按作者排名筛选">
           <el-option label="全部排名" value="all" />
           <el-option label="负责人 / 第一作者" value="lead" />
           <el-option label="参与成员" value="participating" />
@@ -80,6 +89,7 @@ const props = defineProps<{
 const selectedType = ref('all')
 const selectedAuthorRank = ref<'all' | 'lead' | 'participating' | 'unspecified'>('all')
 const selectedDateRange = ref<[string, string] | []>([])
+const selectedRecentYearWindow = ref<'all' | 'recent_1' | 'recent_3' | 'recent_5'>('all')
 
 const typeOptions = computed(() => {
   const seen = new Map<string, string>()
@@ -94,6 +104,22 @@ const filteredRecords = computed(() =>
     if (selectedType.value !== 'all' && item.type !== selectedType.value) return false
     if (selectedAuthorRank.value !== 'all' && item.author_rank_category !== selectedAuthorRank.value) return false
 
+    if (selectedRecentYearWindow.value !== 'all') {
+      const acquiredDate = new Date(item.date_acquired)
+      if (Number.isNaN(acquiredDate.getTime())) return false
+
+      const recentBoundary = new Date()
+      if (selectedRecentYearWindow.value === 'recent_1') {
+        recentBoundary.setFullYear(recentBoundary.getFullYear() - 1)
+      } else if (selectedRecentYearWindow.value === 'recent_3') {
+        recentBoundary.setFullYear(recentBoundary.getFullYear() - 3)
+      } else {
+        recentBoundary.setFullYear(recentBoundary.getFullYear() - 5)
+      }
+
+      if (acquiredDate < recentBoundary) return false
+    }
+
     if (selectedDateRange.value.length === 2) {
       const [start, end] = selectedDateRange.value
       if (item.date_acquired < start || item.date_acquired > end) return false
@@ -107,6 +133,19 @@ const resetFilters = () => {
   selectedType.value = 'all'
   selectedAuthorRank.value = 'all'
   selectedDateRange.value = []
+  selectedRecentYearWindow.value = 'all'
+}
+
+const handleDateRangeChange = () => {
+  if (selectedDateRange.value.length === 2) {
+    selectedRecentYearWindow.value = 'all'
+  }
+}
+
+const handleRecentYearWindowChange = () => {
+  if (selectedRecentYearWindow.value !== 'all') {
+    selectedDateRange.value = []
+  }
 }
 
 const resolveAchievementTagType = (type: string): 'success' | 'warning' | 'info' | 'primary' | 'danger' => {
@@ -169,8 +208,21 @@ const resolveAchievementTagType = (type: string): 'success' | 'warning' | 'info'
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr 1.35fr 1fr 1fr;
+  align-items: center;
   gap: 12px;
+}
+
+.filter-select {
+  width: 100%;
+}
+
+.filter-date-range {
+  width: 100%;
+}
+
+.filter-select-recent {
+  min-width: 132px;
 }
 
 .achievement-list {

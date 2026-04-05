@@ -66,21 +66,43 @@ def build_management_data_meta():
     }
 
 
-def apply_year_filter(queryset: QuerySet, year: int | None) -> QuerySet:
+def apply_year_filter(
+    queryset: QuerySet,
+    year: int | None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+) -> QuerySet:
     if year:
         return queryset.filter(date_acquired__year=year)
+
+    if year_from:
+        queryset = queryset.filter(date_acquired__year__gte=year_from)
+
+    if year_to:
+        queryset = queryset.filter(date_acquired__year__lte=year_to)
+
     return queryset
 
 
-def build_scope_querysets(teacher_ids: list[int], year: int | None, achievement_type: str = 'all') -> dict:
-    paper_queryset = apply_year_filter(Paper.objects.filter(teacher_id__in=teacher_ids), year)
-    project_queryset = apply_year_filter(Project.objects.filter(teacher_id__in=teacher_ids), year)
-    ip_queryset = apply_year_filter(IntellectualProperty.objects.filter(teacher_id__in=teacher_ids), year)
-    teaching_queryset = apply_year_filter(TeachingAchievement.objects.filter(teacher_id__in=teacher_ids), year)
-    service_queryset = apply_year_filter(AcademicService.objects.filter(teacher_id__in=teacher_ids), year)
+def build_scope_querysets(
+    teacher_ids: list[int],
+    year: int | None,
+    achievement_type: str = 'all',
+    year_from: int | None = None,
+    year_to: int | None = None,
+) -> dict:
+    paper_queryset = apply_year_filter(Paper.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
+    project_queryset = apply_year_filter(Project.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
+    ip_queryset = apply_year_filter(IntellectualProperty.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
+    teaching_queryset = apply_year_filter(TeachingAchievement.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
+    service_queryset = apply_year_filter(AcademicService.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
     collaboration_queryset = CoAuthor.objects.filter(paper__teacher_id__in=teacher_ids)
     if year:
         collaboration_queryset = collaboration_queryset.filter(paper__date_acquired__year=year)
+    if year_from:
+        collaboration_queryset = collaboration_queryset.filter(paper__date_acquired__year__gte=year_from)
+    if year_to:
+        collaboration_queryset = collaboration_queryset.filter(paper__date_acquired__year__lte=year_to)
 
     if achievement_type != 'all':
         if achievement_type != 'paper':

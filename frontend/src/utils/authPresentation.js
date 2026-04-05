@@ -3,6 +3,7 @@ import { resolveApiErrorMessage } from './apiFeedback.js'
 const DEFAULT_PERMISSION_MESSAGE = '当前身份没有权限执行此操作。'
 const DEFAULT_LOGIN_FAILURE_MESSAGE = '登录失败，请检查工号/账号和密码。'
 const DEFAULT_ADMIN_ROUTE_NOTICE = '当前账号为教师身份，不能访问管理员入口。'
+const DEFAULT_SYSTEM_ADMIN_ROUTE_NOTICE = '当前账号不是系统管理员，不能访问系统管理员入口。'
 const DEFAULT_ADMIN_PORTRAIT_NOTICE = '管理员登录后默认进入教师管理，请先选择教师后再查看画像。'
 const CONTACT_VISIBILITY_LABELS = {
   email_only: '仅公开邮箱',
@@ -14,6 +15,12 @@ const CONTACT_VISIBILITY_LABELS = {
 export const resolveRoleLabel = user => {
   if (user?.role_label && String(user.role_label).trim()) {
     return String(user.role_label).trim()
+  }
+  if (user?.role_code === 'system_admin' || user?.role_code === 'admin') {
+    return '系统管理员'
+  }
+  if (user?.role_code === 'college_admin') {
+    return '学院管理员'
   }
   return user?.is_admin ? '系统管理员' : '教师账户'
 }
@@ -80,6 +87,14 @@ export const buildAdminRouteNotice = (featureLabel = '管理员入口') => {
     return DEFAULT_ADMIN_ROUTE_NOTICE
   }
   return `当前账号为教师身份，不能访问${normalized}。`
+}
+
+export const buildSystemAdminRouteNotice = (featureLabel = '系统管理员入口') => {
+  const normalized = typeof featureLabel === 'string' ? featureLabel.trim() : ''
+  if (!normalized || normalized === '系统管理员入口') {
+    return DEFAULT_SYSTEM_ADMIN_ROUTE_NOTICE
+  }
+  return `当前账号不是系统管理员，不能访问${normalized}。`
 }
 
 export const buildSelfOnlyNotice = (resourceLabel = '本人的画像与账户信息') => {

@@ -25,8 +25,16 @@ interface SectionFilterState {
   compare_department: string
   teacher_id: number | undefined
   teacher_title: string
-  year: number | undefined
+  year: string | undefined
 }
+
+type YearQuickFilter = 'recent_1' | 'recent_3' | 'recent_5'
+
+const YEAR_QUICK_FILTER_OPTIONS: Array<{ label: string; value: YearQuickFilter }> = [
+  { label: '近一年', value: 'recent_1' },
+  { label: '近三年', value: 'recent_3' },
+  { label: '近五年', value: 'recent_5' },
+]
 
 const props = withDefaults(
   defineProps<{
@@ -109,6 +117,13 @@ const filterOptions = computed(
       ranking_modes: [],
     },
 )
+const yearFilterOptions = computed(() => [
+  ...YEAR_QUICK_FILTER_OPTIONS,
+  ...filterOptions.value.years.map(item => ({
+    label: `${item} 年`,
+    value: String(item),
+  })),
+])
 const statistics = computed(() => activeData.value?.statistics ?? [])
 const topTeachers = computed(() => activeData.value?.top_active_teachers ?? [])
 const recentRecords = computed(() => activeData.value?.recent_scope_records ?? [])
@@ -179,8 +194,9 @@ const currentExportTarget = computed(() => {
 
 const buildRequestParams = () => {
   const state = activeState.value
+  const yearParams = resolveYearFilterParams(state.year)
   const params: Record<string, string | number | undefined> = {
-    year: state.year,
+    ...yearParams,
     teacher_title: state.teacher_title || undefined,
   }
 
@@ -205,6 +221,31 @@ const buildRequestParams = () => {
     params.department = state.department || undefined
   }
   return params
+}
+
+const resolveYearFilterParams = (value: string | undefined): { year?: number; year_from?: number } => {
+  if (!value) {
+    return {}
+  }
+
+  if (value === 'recent_1') {
+    return { year_from: new Date().getFullYear() }
+  }
+
+  if (value === 'recent_3') {
+    return { year_from: new Date().getFullYear() - 2 }
+  }
+
+  if (value === 'recent_5') {
+    return { year_from: new Date().getFullYear() - 4 }
+  }
+
+  const parsed = Number(value)
+  if (Number.isFinite(parsed)) {
+    return { year: parsed }
+  }
+
+  return {}
 }
 
 const applyPayload = (payload: AcademyOverviewResponse) => {
@@ -404,7 +445,7 @@ onUnmounted(() => {
             </el-select>
 
             <el-select v-model="activeState.year" clearable placeholder="年份" @change="loadSectionData">
-              <el-option v-for="item in filterOptions.years" :key="item" :label="`${item} 年`" :value="item" />
+              <el-option v-for="item in yearFilterOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
 
             <el-select v-model="activeState.teacher_title" clearable placeholder="职称" @change="loadSectionData">

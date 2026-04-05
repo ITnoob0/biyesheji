@@ -73,7 +73,11 @@ const getCurrentRole = (user: SessionUser | null | undefined): 'teacher' | 'admi
 
 const canDisplayRoute = (route: RouteRecordRaw, user: SessionUser | null | undefined): boolean => {
   const role = getCurrentRole(user)
-  if (route.meta?.requiresAdmin && role !== 'admin') {
+  if (route.meta?.requiresAdmin && role === 'teacher') {
+    return false
+  }
+
+  if (route.meta?.requiresSystemAdmin && role !== 'admin') {
     return false
   }
 

@@ -46,7 +46,13 @@ export const buildPaperYearOptions = summary => {
     value: String(item.year),
   }))
 
-  return [{ label: '全部年份', value: 'ALL' }, ...options]
+  return [
+    { label: '全部年份', value: 'ALL' },
+    { label: '近一年', value: 'RECENT_1' },
+    { label: '近三年', value: 'RECENT_3' },
+    { label: '近五年', value: 'RECENT_5' },
+    ...options,
+  ]
 }
 
 export const buildImportFeedbackLines = payload => {

@@ -3,7 +3,7 @@ import MainLayout from '../layout/MainLayout.vue'
 import LoginView from '../views/LoginView.vue'
 import TeacherRegisterView from '../views/TeacherRegisterView.vue'
 import ForgotPasswordView from '../views/ForgotPasswordView.vue'
-import { buildAdminRouteNotice, buildSelfOnlyNotice } from '../utils/authPresentation.js'
+import { buildAdminRouteNotice, buildSelfOnlyNotice, buildSystemAdminRouteNotice } from '../utils/authPresentation.js'
 import { initializeHttpClient } from '../utils/http'
 import { clearSessionAuth, ensureSessionUserContext, getSessionUser, setSessionNotice } from '../utils/sessionAuth'
 import { resolveWorkspaceHomePath } from '../utils/workspaceNavigation.js'
@@ -77,6 +77,24 @@ router.beforeEach(async to => {
     setSessionNotice(buildAdminRouteNotice(adminFeatureLabel))
     return {
       name: 'dashboard',
+      replace: true,
+    }
+  }
+
+  if (to.meta.requiresSystemAdmin && sessionUser.role_code !== 'system_admin' && sessionUser.role_code !== 'admin') {
+    const systemAdminFeatureLabel =
+      to.name === 'teacher-management-accounts'
+        ? '添加教师入口'
+        : to.name === 'teacher-management-college-admins'
+          ? '创建学院管理员入口'
+          : to.name === 'project-guide-management'
+            ? '项目指南管理入口'
+            : to.name === 'academy-dashboard'
+              ? '学院级统计看板'
+              : '系统管理员入口'
+    setSessionNotice(buildSystemAdminRouteNotice(systemAdminFeatureLabel))
+    return {
+      path: resolveWorkspaceHomePath(sessionUser),
       replace: true,
     }
   }

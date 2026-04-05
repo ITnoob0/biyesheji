@@ -38,6 +38,21 @@ const buildQueryParams = <T extends TabName>(tab: T, rawState?: Partial<Achievem
       return
     }
 
+    if (tab === 'papers' && key === 'year') {
+      if (normalized === 'RECENT_1') {
+        params.append('year_from', String(new Date().getFullYear()))
+        return
+      }
+      if (normalized === 'RECENT_3') {
+        params.append('year_from', String(new Date().getFullYear() - 2))
+        return
+      }
+      if (normalized === 'RECENT_5') {
+        params.append('year_from', String(new Date().getFullYear() - 4))
+        return
+      }
+    }
+
     params.append(key, normalized)
   })
 

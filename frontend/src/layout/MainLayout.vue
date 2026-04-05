@@ -235,7 +235,15 @@ const profileInitial = computed(() => {
 })
 
 const roleLabel = computed(() => resolveRoleLabel(currentUser.value))
-const profileBadge = computed(() => (currentUser.value?.is_admin ? 'Admin' : 'Teacher'))
+const profileBadge = computed(() => {
+  if (currentUser.value?.role_code === 'system_admin' || currentUser.value?.role_code === 'admin') {
+    return 'System Admin'
+  }
+  if (currentUser.value?.role_code === 'college_admin') {
+    return 'College Admin'
+  }
+  return 'Teacher'
+})
 const profileSecondaryLine = computed(() => {
   const user = currentUser.value
   if (!user) {

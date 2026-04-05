@@ -51,6 +51,8 @@ def build_overview_payload(
     teachers,
     all_teachers,
     year: int | None,
+    year_from: int | None,
+    year_to: int | None,
     achievement_type: str,
     rank_by: str,
     selected_department: str,
@@ -58,9 +60,15 @@ def build_overview_payload(
     compare_department: str = '',
 ):
     teacher_ids = list(teachers.values_list('id', flat=True))
-    current_querysets = build_scope_querysets(teacher_ids, year, achievement_type)
+    current_querysets = build_scope_querysets(teacher_ids, year, achievement_type, year_from=year_from, year_to=year_to)
     baseline_teacher_ids = list(all_teachers.values_list('id', flat=True))
-    baseline_querysets = build_scope_querysets(baseline_teacher_ids, year, achievement_type)
+    baseline_querysets = build_scope_querysets(
+        baseline_teacher_ids,
+        year,
+        achievement_type,
+        year_from=year_from,
+        year_to=year_to,
+    )
     comparison_scope_querysets = build_scope_querysets(teacher_ids, None, achievement_type)
     comparison_baseline_teachers = (
         all_teachers.filter(department=compare_department) if compare_department else all_teachers
@@ -208,6 +216,8 @@ class AcademyOverviewDashboardView(APIView):
         achievement_type = request.query_params.get('achievement_type', 'all').strip() or 'all'
         rank_by = request.query_params.get('rank_by', 'achievement_total').strip() or 'achievement_total'
         year = normalize_year(request.query_params.get('year'))
+        year_from = normalize_year(request.query_params.get('year_from'))
+        year_to = normalize_year(request.query_params.get('year_to'))
         has_collaboration = parse_bool_query_param(request.query_params.get('has_collaboration'))
 
         if is_college_admin_user(request.user):
@@ -226,6 +236,8 @@ class AcademyOverviewDashboardView(APIView):
             teachers=teachers,
             all_teachers=all_teachers,
             year=year,
+            year_from=year_from,
+            year_to=year_to,
             achievement_type=achievement_type,
             rank_by=rank_by,
             selected_department=department,
@@ -238,6 +250,8 @@ class AcademyOverviewDashboardView(APIView):
             'teacher_id': int(teacher_id) if teacher_id else None,
             'teacher_title': teacher_title,
             'year': year,
+            'year_from': year_from,
+            'year_to': year_to,
             'has_collaboration': has_collaboration,
             'achievement_type': achievement_type,
             'rank_by': rank_by,
@@ -264,6 +278,8 @@ class AcademyOverviewExportView(APIView):
         rank_by = request.query_params.get('rank_by', 'achievement_total').strip() or 'achievement_total'
         export_target = request.query_params.get('export_target', 'teachers').strip() or 'teachers'
         year = normalize_year(request.query_params.get('year'))
+        year_from = normalize_year(request.query_params.get('year_from'))
+        year_to = normalize_year(request.query_params.get('year_to'))
         has_collaboration = parse_bool_query_param(request.query_params.get('has_collaboration'))
 
         if is_college_admin_user(request.user):
@@ -280,6 +296,8 @@ class AcademyOverviewExportView(APIView):
             teachers=teachers,
             all_teachers=all_teachers,
             year=year,
+            year_from=year_from,
+            year_to=year_to,
             achievement_type=achievement_type,
             rank_by=rank_by,
             selected_department=department,

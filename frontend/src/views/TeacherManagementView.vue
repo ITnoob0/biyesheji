@@ -154,8 +154,9 @@ const props = withDefaults(
 const checkedAdmin = computed(() => Boolean(currentUser.value?.is_admin))
 const isSystemAdmin = computed(() => currentUser.value?.role_code === 'admin')
 const isCollegeAdmin = computed(() => currentUser.value?.role_code === 'college_admin')
+const canManageTeacherAccounts = computed(() => isSystemAdmin.value || isCollegeAdmin.value)
 const activeSection = computed(() => props.sectionMode)
-const showSummaryGrid = computed(() => activeSection.value === 'overview')
+const showSummaryGrid = computed(() => activeSection.value === 'overview' && isSystemAdmin.value)
 const showCreateCard = computed(() => activeSection.value !== 'overview')
 const showListCard = computed(() => activeSection.value === 'overview')
 const showManagementShell = computed(() => showCreateCard.value || showListCard.value)
@@ -503,7 +504,10 @@ watch(
 onMounted(async () => {
   const adminUser = await ensureAdminUser()
   if (!adminUser) return
-  await Promise.all([loadTeachers(), loadManagementSummary()])
+  await loadTeachers()
+  if (isSystemAdmin.value) {
+    await loadManagementSummary()
+  }
 })
 </script>
 
@@ -652,13 +656,21 @@ onMounted(async () => {
             </div>
           </template>
 
-          <el-alert :title="managementSummary.recovery_guidance" type="info" :closable="false" show-icon />
+          <el-alert v-if="isSystemAdmin" :title="managementSummary.recovery_guidance" type="info" :closable="false" show-icon />
           <el-alert
+            v-if="isSystemAdmin"
             :title="managementSummary.future_extension_hint"
             type="warning"
             :closable="false"
             show-icon
             class="summary-guidance"
+          />
+          <el-alert
+            v-else
+            title="当前仅展示本学院范围内的教师账户信息。"
+            type="info"
+            :closable="false"
+            show-icon
           />
 
           <div class="toolbar-row">
@@ -676,7 +688,7 @@ onMounted(async () => {
               </el-select>
             </div>
 
-            <div class="toolbar-actions">
+            <div v-if="canManageTeacherAccounts" class="toolbar-actions">
               <el-button :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('activate')">批量恢复</el-button>
               <el-button :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('deactivate')">批量停用</el-button>
               <el-button type="warning" :disabled="!hasSelection" :loading="bulkLoading" @click="executeBulkAction('reset_password')">
@@ -744,19 +756,22 @@ onMounted(async () => {
             <el-table-column label="操作" width="132">
               <template #default="{ row }">
                 <div class="table-actions">
-                  <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
-                  <el-dropdown trigger="click" @command="handleMoreCommand(row, $event)">
-                    <el-button link type="primary" :loading="resetLoadingId === row.id">更多</el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item command="profile">查看画像</el-dropdown-item>
-                        <el-dropdown-item command="toggle-status">
-                          {{ row.is_active ? '停用账户' : '恢复启用' }}
-                        </el-dropdown-item>
-                        <el-dropdown-item command="reset-password">重置密码</el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
+                  <template v-if="canManageTeacherAccounts">
+                    <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+                    <el-dropdown trigger="click" @command="handleMoreCommand(row, $event)">
+                      <el-button link type="primary" :loading="resetLoadingId === row.id">更多</el-button>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="profile">查看画像</el-dropdown-item>
+                          <el-dropdown-item command="toggle-status">
+                            {{ row.is_active ? '停用账户' : '恢复启用' }}
+                          </el-dropdown-item>
+                          <el-dropdown-item command="reset-password">重置密码</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </template>
+                  <el-button v-else link type="primary" @click="handleMoreAction(row, 'profile')">查看画像</el-button>
                 </div>
               </template>
             </el-table-column>
