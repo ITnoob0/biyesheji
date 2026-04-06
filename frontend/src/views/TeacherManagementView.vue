@@ -936,13 +936,13 @@ h1 {
 
 .summary-label {
   display: block;
-  color: var(--text-tertiary);
+  color: var(--el-text-color-secondary);
   margin-bottom: 10px;
 }
 
 .summary-value {
   font-size: 30px;
-  color: var(--text-primary);
+  color: var(--el-text-color-primary);
 }
 
 .management-shell {
@@ -1009,7 +1009,7 @@ h1 {
   padding: 16px 20px;
   border-radius: 16px;
   background: var(--surface-2);
-  color: var(--text-secondary);
+  color: var(--el-text-color-primary);
   text-align: left;
 }
 
@@ -1033,11 +1033,11 @@ h1 {
 
 .account-primary {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--el-text-color-primary);
 }
 
 .account-secondary {
-  color: var(--text-tertiary);
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -1063,11 +1063,11 @@ h1 {
 }
 
 .teacher-overview-table :deep(.el-table__header-wrapper .cell) {
-  color: var(--text-primary);
+  color: var(--el-text-color-primary);
 }
 
 .teacher-overview-table :deep(.el-table__body-wrapper .cell) {
-  color: var(--text-primary);
+  color: var(--el-text-color-primary);
 }
 
 .teacher-overview-table :deep(.el-table__fixed-right th.el-table__cell > .cell),
@@ -1131,7 +1131,7 @@ h1 {
 }
 
 .security-secondary {
-  color: var(--text-tertiary);
+  color: var(--el-text-color-secondary);
 }
 
 :deep(.focus-row) {
