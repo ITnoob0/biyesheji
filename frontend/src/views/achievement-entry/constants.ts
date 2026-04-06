@@ -16,6 +16,7 @@ export const paperImportEndpointMap = {
 
 export const paperSummaryEndpoint = '/api/achievements/papers/summary/'
 export const paperGovernanceEndpoint = '/api/achievements/papers/governance/'
+export const paperPendingReviewEndpoint = '/api/achievements/papers/pending-review/'
 export const paperCompareEndpoint = '/api/achievements/papers/compare/'
 export const paperExportEndpoint = '/api/achievements/papers/export/'
 export const paperRepresentativeBatchEndpoint = '/api/achievements/papers/representative/batch-update/'

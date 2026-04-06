@@ -591,6 +591,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='软件导刊',
             citation_count=6,
+            status='APPROVED',
         )
         Project.objects.create(
             teacher=self.user,
@@ -599,7 +600,8 @@ class AchievementEntryApiTests(APITestCase):
             level='PROVINCIAL',
             role='PI',
             funding_amount='18.00',
-            status='ONGOING',
+            project_status='ONGOING',
+            status='APPROVED',
         )
         IntellectualProperty.objects.create(
             teacher=self.user,
@@ -608,6 +610,7 @@ class AchievementEntryApiTests(APITestCase):
             ip_type='SOFTWARE_COPYRIGHT',
             registration_number='PORTRAIT-IP-001',
             is_transformed=True,
+            status='APPROVED',
         )
         TeachingAchievement.objects.create(
             teacher=self.user,
@@ -615,6 +618,7 @@ class AchievementEntryApiTests(APITestCase):
             date_acquired='2025-03-15',
             achievement_type='COURSE',
             level='省级',
+            status='APPROVED',
         )
         AcademicService.objects.create(
             teacher=self.user,
@@ -622,6 +626,7 @@ class AchievementEntryApiTests(APITestCase):
             date_acquired='2025-03-18',
             service_type='EDITOR',
             organization='中国计算机学会',
+            status='APPROVED',
         )
 
         response = self.client.get('/api/achievements/dashboard-stats/')
@@ -733,6 +738,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='测试期刊',
             citation_count=3,
+            status='APPROVED',
         )
 
         self.client.force_authenticate(user=admin)
@@ -860,6 +866,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='测试期刊',
             citation_count=3,
+            status='APPROVED',
         )
         Project.objects.create(
             teacher=self.user,
@@ -868,7 +875,8 @@ class AchievementEntryApiTests(APITestCase):
             level='PROVINCIAL',
             role='PI',
             funding_amount='12.00',
-            status='ONGOING',
+            project_status='ONGOING',
+            status='APPROVED',
         )
 
         self.client.force_authenticate(user=admin)
@@ -1061,6 +1069,7 @@ class AchievementEntryApiTests(APITestCase):
             date_acquired='2025-03-01',
             paper_type='JOURNAL',
             journal_name='测试期刊',
+            status='APPROVED',
         )
         Paper.objects.create(
             teacher=teacher_out_scope,
@@ -1069,6 +1078,7 @@ class AchievementEntryApiTests(APITestCase):
             date_acquired='2024-03-01',
             paper_type='JOURNAL',
             journal_name='测试期刊',
+            status='APPROVED',
         )
 
         self.client.force_authenticate(user=admin)
@@ -1154,6 +1164,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='测试期刊',
             citation_count=15,
+            status='APPROVED',
         )
         paper_a.coauthors.create(name='合作作者甲')
         Paper.objects.create(
@@ -1164,6 +1175,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='测试期刊',
             citation_count=5,
+            status='APPROVED',
         )
         Project.objects.create(
             teacher=teacher_b,
@@ -1172,7 +1184,8 @@ class AchievementEntryApiTests(APITestCase):
             level='PROVINCIAL',
             role='PI',
             funding_amount='20.00',
-            status='ONGOING',
+            project_status='ONGOING',
+            status='APPROVED',
         )
 
         self.client.force_authenticate(user=admin)
@@ -1543,3 +1556,226 @@ class TeacherPortraitApiTests(APITestCase):
         self.assertIn('教师画像分析报告', markdown_response.content.decode('utf-8'))
         self.assertIn('快照摘要', markdown_response.content.decode('utf-8'))
         self.assertIn('变化说明', markdown_response.content.decode('utf-8'))
+
+
+class AchievementReviewFlowApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.system_admin = user_model.objects.create_superuser(
+            id=901001,
+            username='sysadmin-review',
+            password='Admin123456',
+            real_name='系统管理员审批',
+            department='科研管理中心',
+        )
+        self.college_admin = user_model.objects.create_user(
+            id=901002,
+            username='college-admin-review',
+            password='Admin123456',
+            real_name='学院管理员审批',
+            department='人工智能学院',
+            title='学院管理员',
+            is_staff=True,
+        )
+        self.teacher = user_model.objects.create_user(
+            id=901003,
+            username='901003',
+            password='teacher123456',
+            real_name='本院教师',
+            department='人工智能学院',
+            title='讲师',
+        )
+        self.other_teacher = user_model.objects.create_user(
+            id=901004,
+            username='901004',
+            password='teacher123456',
+            real_name='外院教师',
+            department='计算机学院',
+            title='讲师',
+        )
+
+    def create_paper(self, teacher, title='待审核论文', status='DRAFT'):
+        return Paper.objects.create(
+            teacher=teacher,
+            title=title,
+            abstract='这是一个足够长的摘要，用于验证成果审批流与版本管理功能。',
+            date_acquired='2025-05-01',
+            paper_type='JOURNAL',
+            journal_name='审批测试期刊',
+            status=status,
+        )
+
+    def create_project(self, teacher, title='待审核项目', status='DRAFT'):
+        return Project.objects.create(
+            teacher=teacher,
+            title=title,
+            date_acquired='2025-05-02',
+            level='PROVINCIAL',
+            role='PI',
+            funding_amount='10.00',
+            project_status='ONGOING',
+            status=status,
+        )
+
+    def create_ip(self, teacher, title='待审核知识产权', status='DRAFT'):
+        return IntellectualProperty.objects.create(
+            teacher=teacher,
+            title=title,
+            date_acquired='2025-05-03',
+            ip_type='SOFTWARE_COPYRIGHT',
+            registration_number=f'IP-{teacher.id}-{title}',
+            is_transformed=False,
+            status=status,
+        )
+
+    def create_teaching(self, teacher, title='待审核教学成果', status='DRAFT'):
+        return TeachingAchievement.objects.create(
+            teacher=teacher,
+            title=title,
+            date_acquired='2025-05-04',
+            achievement_type='COURSE',
+            level='校级',
+            status=status,
+        )
+
+    def create_service(self, teacher, title='待审核学术服务', status='DRAFT'):
+        return AcademicService.objects.create(
+            teacher=teacher,
+            title=title,
+            date_acquired='2025-05-05',
+            service_type='INVITED_TALK',
+            organization='测试机构',
+            status=status,
+        )
+
+    def test_teacher_can_submit_paper_for_review(self):
+        paper = self.create_paper(self.teacher)
+        self.client.force_authenticate(user=self.teacher)
+
+        response = self.client.post(f'/api/achievements/papers/{paper.id}/submit-review/', format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        paper.refresh_from_db()
+        self.assertEqual(paper.status, 'PENDING_REVIEW')
+
+    def test_college_admin_only_sees_pending_papers_in_own_college(self):
+        self.create_paper(self.teacher, title='本院待审核', status='PENDING_REVIEW')
+        self.create_paper(self.other_teacher, title='外院待审核', status='PENDING_REVIEW')
+        self.client.force_authenticate(user=self.college_admin)
+
+        response = self.client.get('/api/achievements/papers/pending-review/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], '本院待审核')
+
+    def test_reject_requires_reason_and_logs_comment(self):
+        paper = self.create_paper(self.teacher, status='PENDING_REVIEW')
+        self.client.force_authenticate(user=self.college_admin)
+
+        invalid_response = self.client.post(f'/api/achievements/papers/{paper.id}/reject/', {}, format='json')
+        valid_response = self.client.post(
+            f'/api/achievements/papers/{paper.id}/reject/',
+            {'reason': '期刊级别与附件证明不一致，请补充说明。'},
+            format='json',
+        )
+
+        self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(valid_response.status_code, status.HTTP_200_OK)
+        paper.refresh_from_db()
+        self.assertEqual(paper.status, 'REJECTED')
+
+    def test_teacher_editing_approved_paper_resets_status_to_pending_review(self):
+        paper = self.create_paper(self.teacher, status='APPROVED')
+        self.client.force_authenticate(user=self.teacher)
+
+        response = self.client.patch(
+            f'/api/achievements/papers/{paper.id}/',
+            {
+                'title': '已通过论文（修订版）',
+                'abstract': paper.abstract,
+                'date_acquired': '2025-05-01',
+                'paper_type': 'JOURNAL',
+                'journal_name': '审批测试期刊',
+                'coauthors': [],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        paper.refresh_from_db()
+        self.assertEqual(paper.status, 'PENDING_REVIEW')
+
+    def test_college_admin_can_view_pending_review_for_all_achievement_types(self):
+        self.create_paper(self.teacher, title='本院待审核论文', status='PENDING_REVIEW')
+        self.create_project(self.teacher, title='本院待审核项目', status='PENDING_REVIEW')
+        self.create_ip(self.teacher, title='本院待审核知识产权', status='PENDING_REVIEW')
+        self.create_teaching(self.teacher, title='本院待审核教学成果', status='PENDING_REVIEW')
+        self.create_service(self.teacher, title='本院待审核学术服务', status='PENDING_REVIEW')
+
+        self.create_project(self.other_teacher, title='外院待审核项目', status='PENDING_REVIEW')
+        self.create_ip(self.other_teacher, title='外院待审核知识产权', status='PENDING_REVIEW')
+
+        endpoint_map = {
+            'papers': '/api/achievements/papers/pending-review/',
+            'projects': '/api/achievements/projects/pending-review/',
+            'intellectual_properties': '/api/achievements/intellectual-properties/pending-review/',
+            'teaching_achievements': '/api/achievements/teaching-achievements/pending-review/',
+            'academic_services': '/api/achievements/academic-services/pending-review/',
+        }
+
+        self.client.force_authenticate(user=self.college_admin)
+        results = {key: self.client.get(url) for key, url in endpoint_map.items()}
+
+        for key, response in results.items():
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=f'{key} pending-review 接口未返回 200')
+            self.assertEqual(len(response.data), 1, msg=f'{key} 未按学院范围过滤待审核列表')
+
+        self.assertEqual(results['papers'].data[0]['title'], '本院待审核论文')
+        self.assertEqual(results['projects'].data[0]['title'], '本院待审核项目')
+        self.assertEqual(results['intellectual_properties'].data[0]['title'], '本院待审核知识产权')
+        self.assertEqual(results['teaching_achievements'].data[0]['title'], '本院待审核教学成果')
+        self.assertEqual(results['academic_services'].data[0]['title'], '本院待审核学术服务')
+
+    def test_college_admin_can_approve_non_paper_achievements(self):
+        project = self.create_project(self.teacher, status='PENDING_REVIEW')
+        ip_record = self.create_ip(self.teacher, status='PENDING_REVIEW')
+        teaching = self.create_teaching(self.teacher, status='PENDING_REVIEW')
+        service = self.create_service(self.teacher, status='PENDING_REVIEW')
+
+        endpoint_pairs = [
+            (project, f'/api/achievements/projects/{project.id}/approve/'),
+            (ip_record, f'/api/achievements/intellectual-properties/{ip_record.id}/approve/'),
+            (teaching, f'/api/achievements/teaching-achievements/{teaching.id}/approve/'),
+            (service, f'/api/achievements/academic-services/{service.id}/approve/'),
+        ]
+
+        self.client.force_authenticate(user=self.college_admin)
+        for instance, endpoint in endpoint_pairs:
+            response = self.client.post(endpoint, {}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK, msg=f'审批通过失败: {endpoint}')
+            instance.refresh_from_db()
+            self.assertEqual(instance.status, 'APPROVED')
+
+    def test_college_admin_reject_requires_reason_for_non_paper_achievements(self):
+        project = self.create_project(self.teacher, status='PENDING_REVIEW')
+        ip_record = self.create_ip(self.teacher, status='PENDING_REVIEW')
+        teaching = self.create_teaching(self.teacher, status='PENDING_REVIEW')
+        service = self.create_service(self.teacher, status='PENDING_REVIEW')
+
+        endpoint_pairs = [
+            (project, f'/api/achievements/projects/{project.id}/reject/'),
+            (ip_record, f'/api/achievements/intellectual-properties/{ip_record.id}/reject/'),
+            (teaching, f'/api/achievements/teaching-achievements/{teaching.id}/reject/'),
+            (service, f'/api/achievements/academic-services/{service.id}/reject/'),
+        ]
+
+        self.client.force_authenticate(user=self.college_admin)
+        for instance, endpoint in endpoint_pairs:
+            invalid_response = self.client.post(endpoint, {}, format='json')
+            self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+            valid_response = self.client.post(endpoint, {'reason': '材料缺失，请补充后重提。'}, format='json')
+            self.assertEqual(valid_response.status_code, status.HTTP_200_OK)
+            instance.refresh_from_db()
+            self.assertEqual(instance.status, 'REJECTED')

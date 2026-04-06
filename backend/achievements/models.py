@@ -22,6 +22,13 @@ class TeacherProfile(models.Model):
 
 
 class BaseAchievement(models.Model):
+    REVIEW_STATUS_CHOICES = (
+        ('DRAFT', '草稿'),
+        ('PENDING_REVIEW', '待审核'),
+        ('APPROVED', '已通过'),
+        ('REJECTED', '已驳回'),
+    )
+
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -29,6 +36,12 @@ class BaseAchievement(models.Model):
     )
     title = models.CharField(max_length=300)
     date_acquired = models.DateField(verbose_name='发表/立项时间')
+    status = models.CharField(
+        max_length=20,
+        choices=REVIEW_STATUS_CHOICES,
+        default='DRAFT',
+        verbose_name='审批状态',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -114,10 +127,17 @@ class Project(BaseAchievement):
     level = models.CharField(max_length=20, choices=PROJECT_LEVELS)
     role = models.CharField(max_length=20, choices=ROLE_TYPES)
     funding_amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name='经费金额(万元)')
-    status = models.CharField(max_length=50, default='ONGOING', verbose_name='项目状态')
+    project_status = models.CharField(max_length=50, default='ONGOING', verbose_name='项目状态')
 
     def __str__(self) -> str:
         return f'[项目] {self.title}'
+
+    def save(self, *args, **kwargs):
+        valid_review_statuses = {choice[0] for choice in self.REVIEW_STATUS_CHOICES}
+        if self.status not in valid_review_statuses:
+            self.project_status = self.status
+            self.status = 'DRAFT'
+        super().save(*args, **kwargs)
 
 
 class IntellectualProperty(BaseAchievement):
@@ -178,6 +198,9 @@ class AchievementOperationLog(models.Model):
         ('UPDATE', '编辑更新'),
         ('DELETE', '删除记录'),
         ('IMPORT', '批量导入'),
+        ('SUBMIT_REVIEW', '提交审核'),
+        ('APPROVE', '审核通过'),
+        ('REJECT', '审核驳回'),
     )
     SOURCE_CHOICES = (
         ('manual', '手工维护'),
@@ -190,15 +213,24 @@ class AchievementOperationLog(models.Model):
         on_delete=models.CASCADE,
         related_name='achievement_operation_logs',
     )
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='achievement_review_logs',
+        null=True,
+        blank=True,
+    )
     achievement_type = models.CharField(max_length=40, choices=ACHIEVEMENT_TYPE_CHOICES)
     achievement_id = models.IntegerField(null=True, blank=True)
     action = models.CharField(max_length=20, choices=ACTION_CHOICES)
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
     summary = models.CharField(max_length=300)
     changed_fields = models.JSONField(default=list, blank=True)
+    change_details = models.JSONField(default=list, blank=True)
     title_snapshot = models.CharField(max_length=300, blank=True)
     detail_snapshot = models.CharField(max_length=300, blank=True)
     snapshot_payload = models.JSONField(default=dict, blank=True)
+    review_comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

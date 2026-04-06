@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from achievements.visibility import APPROVED_STATUS
 from users.access import GRAPH_SCOPE_MESSAGE, ensure_self_or_admin_user
 from .analysis import build_graph_analysis
 
@@ -372,14 +373,14 @@ class AcademicGraphTopologyView(APIView):
             )
 
         papers = list(
-            Paper.objects.filter(teacher=teacher)
+            Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS)
             .prefetch_related('coauthors', 'paperkeyword_set__keyword')
             .order_by('-date_acquired', '-created_at')
         )
-        projects = list(Project.objects.filter(teacher=teacher).order_by('-date_acquired', '-created_at'))
-        ips = list(IntellectualProperty.objects.filter(teacher=teacher).order_by('-date_acquired', '-created_at'))
-        teachings = list(TeachingAchievement.objects.filter(teacher=teacher).order_by('-date_acquired', '-created_at'))
-        services = list(AcademicService.objects.filter(teacher=teacher).order_by('-date_acquired', '-created_at'))
+        projects = list(Project.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
+        ips = list(IntellectualProperty.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
+        teachings = list(TeachingAchievement.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
+        services = list(AcademicService.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
 
         if not any([papers, projects, ips, teachings, services]):
             return self._finalize_response(

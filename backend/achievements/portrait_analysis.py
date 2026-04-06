@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from .models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
 from .scoring_engine import TeacherScoringEngine
+from .visibility import APPROVED_STATUS
 
 RUNTIME_SNAPSHOT_VERSION = 'portrait-runtime-v1'
 
@@ -117,7 +118,7 @@ def _resolve_recent_years(user, span: int = 4) -> list[int]:
     for model in (Paper, Project, IntellectualProperty, TeachingAchievement, AcademicService):
         year_candidates.update(
             year
-            for year in model.objects.filter(teacher=user).values_list('date_acquired__year', flat=True)
+            for year in model.objects.filter(teacher=user, status=APPROVED_STATUS).values_list('date_acquired__year', flat=True)
             if year
         )
 

@@ -9,6 +9,7 @@ from achievements.portrait_analysis import build_snapshot_boundary
 from achievements.academy_dashboard_analysis import build_scope_querysets
 from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
 from achievements.scoring_engine import TeacherScoringEngine
+from achievements.visibility import APPROVED_STATUS
 from project_guides.models import ProjectGuide
 from project_guides.services import ProjectGuideRecommendationService
 from users.access import ACADEMY_SCOPE_MESSAGE, ASSISTANT_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
@@ -225,11 +226,11 @@ class PortraitAssistantService:
     @staticmethod
     def _collect_recent_records(teacher, limit: int = 3) -> list[dict]:
         collections = [
-            ('paper', Paper.objects.filter(teacher=teacher)),
-            ('project', Project.objects.filter(teacher=teacher)),
-            ('intellectual_property', IntellectualProperty.objects.filter(teacher=teacher)),
-            ('teaching_achievement', TeachingAchievement.objects.filter(teacher=teacher)),
-            ('academic_service', AcademicService.objects.filter(teacher=teacher)),
+            ('paper', Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS)),
+            ('project', Project.objects.filter(teacher=teacher, status=APPROVED_STATUS)),
+            ('intellectual_property', IntellectualProperty.objects.filter(teacher=teacher, status=APPROVED_STATUS)),
+            ('teaching_achievement', TeachingAchievement.objects.filter(teacher=teacher, status=APPROVED_STATUS)),
+            ('academic_service', AcademicService.objects.filter(teacher=teacher, status=APPROVED_STATUS)),
         ]
 
         records = []
@@ -476,11 +477,11 @@ class PortraitAssistantService:
     @classmethod
     def _achievement_summary(cls, teacher):
         metrics = TeacherScoringEngine.collect_metrics(teacher)
-        latest_paper = Paper.objects.filter(teacher=teacher).order_by('-date_acquired').first()
-        latest_project = Project.objects.filter(teacher=teacher).order_by('-date_acquired').first()
-        latest_ip = IntellectualProperty.objects.filter(teacher=teacher).order_by('-date_acquired').first()
-        latest_teaching = TeachingAchievement.objects.filter(teacher=teacher).order_by('-date_acquired').first()
-        latest_service = AcademicService.objects.filter(teacher=teacher).order_by('-date_acquired').first()
+        latest_paper = Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired').first()
+        latest_project = Project.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired').first()
+        latest_ip = IntellectualProperty.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired').first()
+        latest_teaching = TeachingAchievement.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired').first()
+        latest_service = AcademicService.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired').first()
 
         latest_items = [
             item

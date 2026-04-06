@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from achievements.models import Paper, PaperKeyword
+from achievements.visibility import APPROVED_STATUS
 from neo4j import GraphDatabase
 from typing import Any
 
@@ -24,7 +25,7 @@ class Command(BaseCommand):
 
             self.stdout.write("Syncing Teachers and Papers...")
             # 直接遍历论文，动态确保教师节点存在
-            for paper in Paper.objects.select_related('teacher'):
+            for paper in Paper.objects.filter(status=APPROVED_STATUS).select_related('teacher'):
                 # 1. 确保主讲教师节点存在（即使没有 TeacherProfile）
                 teacher_name = paper.teacher.get_full_name() or paper.teacher.username
                 session.run(
@@ -76,7 +77,7 @@ class Command(BaseCommand):
                         )
 
                 # 5. 同步关键词
-                for pk in PaperKeyword.objects.filter(paper=paper).select_related('keyword'):
+                for pk in PaperKeyword.objects.filter(paper=paper, paper__status=APPROVED_STATUS).select_related('keyword'):
                     session.run("MERGE (k:Keyword {name: $name})", name=pk.keyword.name)
                     session.run(
                         "MATCH (p:Paper {paper_id: $paper_id}), (k:Keyword {name: $name}) "

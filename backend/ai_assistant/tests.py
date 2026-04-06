@@ -44,6 +44,7 @@ class PortraitAssistantApiTests(APITestCase):
             journal_name='软件导刊',
             citation_count=8,
             doi='10.1000/assistant-portrait-paper',
+            status='APPROVED',
         )
         self.guide = ProjectGuide.objects.create(
             title='科研画像智能分析专项指南',

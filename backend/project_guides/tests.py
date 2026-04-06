@@ -44,6 +44,7 @@ class ProjectGuideApiTests(APITestCase):
             journal_name='现代教育技术',
             citation_count=5,
             doi='10.1000/guide-rec-100004',
+            status='APPROVED',
         )
         for keyword in ['科研画像', '智能推荐', '教育数据']:
             keyword_obj, _ = ResearchKeyword.objects.get_or_create(name=keyword)

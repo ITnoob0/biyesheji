@@ -2,6 +2,7 @@ from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractYear
 
 from .models import AcademicService, CoAuthor, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
+from .visibility import APPROVED_STATUS
 
 
 class TeacherScoringEngine:
@@ -79,11 +80,11 @@ class TeacherScoringEngine:
 
     @classmethod
     def collect_metrics(cls, teacher_user, year: int | None = None):
-        papers = Paper.objects.filter(teacher=teacher_user)
-        projects = Project.objects.filter(teacher=teacher_user)
-        intellectual_properties = IntellectualProperty.objects.filter(teacher=teacher_user)
-        teaching_achievements = TeachingAchievement.objects.filter(teacher=teacher_user)
-        academic_services = AcademicService.objects.filter(teacher=teacher_user)
+        papers = Paper.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
+        projects = Project.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
+        intellectual_properties = IntellectualProperty.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
+        teaching_achievements = TeachingAchievement.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
+        academic_services = AcademicService.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
 
         if year is not None:
             papers = papers.filter(date_acquired__year=year)
@@ -101,12 +102,20 @@ class TeacherScoringEngine:
         teaching_count = teaching_achievements.count()
         service_count = academic_services.count()
 
-        keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user).count()
-        collaborator_count = CoAuthor.objects.filter(paper__teacher=teacher_user).values('name').distinct().count()
+        keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__status=APPROVED_STATUS).count()
+        collaborator_count = CoAuthor.objects.filter(paper__teacher=teacher_user, paper__status=APPROVED_STATUS).values('name').distinct().count()
         if year is not None:
-            keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year).count()
+            keyword_count = PaperKeyword.objects.filter(
+                paper__teacher=teacher_user,
+                paper__status=APPROVED_STATUS,
+                paper__date_acquired__year=year,
+            ).count()
             collaborator_count = (
-                CoAuthor.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year=year)
+                CoAuthor.objects.filter(
+                    paper__teacher=teacher_user,
+                    paper__status=APPROVED_STATUS,
+                    paper__date_acquired__year=year,
+                )
                 .values('name')
                 .distinct()
                 .count()
@@ -149,7 +158,7 @@ class TeacherScoringEngine:
             return year_metrics
 
         paper_years = (
-            Paper.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            Paper.objects.filter(teacher=teacher_user, status=APPROVED_STATUS, date_acquired__year__in=normalized_years)
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
             .annotate(paper_count=Count('id'), citation_total=Sum('citation_count'))
@@ -159,7 +168,7 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['citation_total'] = item['citation_total'] or 0
 
         project_years = (
-            Project.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            Project.objects.filter(teacher=teacher_user, status=APPROVED_STATUS, date_acquired__year__in=normalized_years)
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
             .annotate(project_count=Count('id'), funding_total=Sum('funding_amount'))
@@ -169,7 +178,11 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['funding_total'] = float(item['funding_total'] or 0)
 
         ip_years = (
-            IntellectualProperty.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            IntellectualProperty.objects.filter(
+                teacher=teacher_user,
+                status=APPROVED_STATUS,
+                date_acquired__year__in=normalized_years,
+            )
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
             .annotate(ip_count=Count('id'), transformed_ip_count=Count('id', filter=Q(is_transformed=True)))
@@ -179,7 +192,11 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['transformed_ip_count'] = item['transformed_ip_count']
 
         teaching_years = (
-            TeachingAchievement.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            TeachingAchievement.objects.filter(
+                teacher=teacher_user,
+                status=APPROVED_STATUS,
+                date_acquired__year__in=normalized_years,
+            )
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
             .annotate(teaching_count=Count('id'))
@@ -188,7 +205,11 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['teaching_count'] = item['teaching_count']
 
         service_years = (
-            AcademicService.objects.filter(teacher=teacher_user, date_acquired__year__in=normalized_years)
+            AcademicService.objects.filter(
+                teacher=teacher_user,
+                status=APPROVED_STATUS,
+                date_acquired__year__in=normalized_years,
+            )
             .annotate(year=ExtractYear('date_acquired'))
             .values('year')
             .annotate(service_count=Count('id'))
@@ -197,7 +218,11 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['service_count'] = item['service_count']
 
         keyword_years = (
-            PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year__in=normalized_years)
+            PaperKeyword.objects.filter(
+                paper__teacher=teacher_user,
+                paper__status=APPROVED_STATUS,
+                paper__date_acquired__year__in=normalized_years,
+            )
             .annotate(year=ExtractYear('paper__date_acquired'))
             .values('year')
             .annotate(keyword_count=Count('id'))
@@ -206,7 +231,11 @@ class TeacherScoringEngine:
             year_metrics[item['year']]['keyword_count'] = item['keyword_count']
 
         collaborator_years = (
-            CoAuthor.objects.filter(paper__teacher=teacher_user, paper__date_acquired__year__in=normalized_years)
+            CoAuthor.objects.filter(
+                paper__teacher=teacher_user,
+                paper__status=APPROVED_STATUS,
+                paper__date_acquired__year__in=normalized_years,
+            )
             .annotate(year=ExtractYear('paper__date_acquired'))
             .values('year')
             .annotate(collaborator_count=Count('name', distinct=True))

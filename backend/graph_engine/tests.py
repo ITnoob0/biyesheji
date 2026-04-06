@@ -40,6 +40,7 @@ class GraphTopologyFallbackTests(APITestCase):
             doi='10.1234/portrait-fallback-test',
             paper_type='JOURNAL',
             journal_name='教育信息化研究',
+            status='APPROVED',
         )
         CoAuthor.objects.create(paper=paper, name='校内合作者', is_internal=True)
         CoAuthor.objects.create(paper=paper, name='校外合作者', is_internal=False)
@@ -52,7 +53,8 @@ class GraphTopologyFallbackTests(APITestCase):
             level='PROVINCIAL',
             role='PI',
             funding_amount='12.50',
-            status='ONGOING',
+            project_status='ONGOING',
+            status='APPROVED',
         )
         ip = IntellectualProperty.objects.create(
             teacher=self.user,
@@ -61,6 +63,7 @@ class GraphTopologyFallbackTests(APITestCase):
             ip_type='SOFTWARE_COPYRIGHT',
             registration_number='IP-2026-001',
             is_transformed=False,
+            status='APPROVED',
         )
         teaching = TeachingAchievement.objects.create(
             teacher=self.user,
@@ -68,6 +71,7 @@ class GraphTopologyFallbackTests(APITestCase):
             date_acquired='2026-03-04',
             achievement_type='TEACHING_REFORM',
             level='校级',
+            status='APPROVED',
         )
         service = AcademicService.objects.create(
             teacher=self.user,
@@ -75,6 +79,7 @@ class GraphTopologyFallbackTests(APITestCase):
             date_acquired='2026-03-05',
             service_type='INVITED_TALK',
             organization='教育数据治理协作组织',
+            status='APPROVED',
         )
 
         response = self.client.get(self.url)
@@ -146,6 +151,7 @@ class GraphTopologyFallbackTests(APITestCase):
                 doi=f'10.1234/circle-test-{index + 1}',
                 paper_type='JOURNAL',
                 journal_name='图谱分析验证期刊',
+                status='APPROVED',
             )
             CoAuthor.objects.create(paper=paper, name='核心合作者', is_internal=False)
             if index < 2:
@@ -173,6 +179,7 @@ class GraphTopologyFallbackTests(APITestCase):
             doi='10.1234/graph-fallback-runtime',
             paper_type='JOURNAL',
             journal_name='教育信息化研究',
+            status='APPROVED',
         )
         CoAuthor.objects.create(paper=paper, name='回退合作者', is_internal=False)
 
@@ -222,6 +229,7 @@ class GraphTopologyFallbackTests(APITestCase):
             doi='10.1234/admin-graph-view',
             paper_type='JOURNAL',
             journal_name='教育信息化研究',
+            status='APPROVED',
         )
         CoAuthor.objects.create(paper=paper, name='协作作者', is_internal=True)
 

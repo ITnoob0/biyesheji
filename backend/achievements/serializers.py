@@ -23,8 +23,9 @@ class CoAuthorDetailSerializer(serializers.ModelSerializer):
 
 class TeacherOwnedAchievementSerializer(serializers.ModelSerializer):
     teacher_name = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
 
-    read_only_fields = ('id', 'teacher', 'teacher_name', 'created_at')
+    read_only_fields = ('id', 'teacher', 'teacher_name', 'created_at', 'status')
 
     def validate_title(self, value):
         cleaned = value.strip()
@@ -40,6 +41,15 @@ class TeacherOwnedAchievementSerializer(serializers.ModelSerializer):
 
     def get_teacher_name(self, obj):
         return obj.teacher.real_name or obj.teacher.username
+
+    def get_status_label(self, obj):
+        return obj.get_status_display() if hasattr(obj, 'get_status_display') else ''
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        if request and request.user.id == instance.teacher_id and instance.status in {'APPROVED', 'REJECTED'}:
+            validated_data['status'] = 'PENDING_REVIEW'
+        return super().update(instance, validated_data)
 
 
 class PaperSerializer(TeacherOwnedAchievementSerializer):
@@ -79,6 +89,8 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'doi',
             'publication_year',
             'created_at',
+            'status',
+            'status_label',
             'coauthors',
             'coauthor_details',
             'keywords',
@@ -139,6 +151,8 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
 
     def update(self, instance, validated_data):
         coauthor_names = validated_data.pop('coauthors', None)
+        if instance.status in {'APPROVED', 'REJECTED'}:
+            validated_data['status'] = 'PENDING_REVIEW'
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -177,15 +191,25 @@ class ProjectSerializer(TeacherOwnedAchievementSerializer):
             'teacher_name',
             'title',
             'date_acquired',
+            'status',
+            'status_label',
             'level',
             'level_display',
             'role',
             'role_display',
             'funding_amount',
-            'status',
+            'project_status',
             'created_at',
         )
         read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('level_display', 'role_display')
+
+    def to_internal_value(self, data):
+        mutable_data = data.copy()
+        raw_status = mutable_data.get('status')
+        if raw_status and raw_status not in {'DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED'} and not mutable_data.get('project_status'):
+            mutable_data['project_status'] = raw_status
+            mutable_data.pop('status', None)
+        return super().to_internal_value(mutable_data)
 
     def validate_funding_amount(self, value):
         if value < 0:
@@ -204,6 +228,8 @@ class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
             'teacher_name',
             'title',
             'date_acquired',
+            'status',
+            'status_label',
             'ip_type',
             'ip_type_display',
             'registration_number',
@@ -230,6 +256,8 @@ class TeachingAchievementSerializer(TeacherOwnedAchievementSerializer):
             'teacher_name',
             'title',
             'date_acquired',
+            'status',
+            'status_label',
             'achievement_type',
             'achievement_type_display',
             'level',
@@ -249,6 +277,8 @@ class AcademicServiceSerializer(TeacherOwnedAchievementSerializer):
             'teacher_name',
             'title',
             'date_acquired',
+            'status',
+            'status_label',
             'service_type',
             'service_type_display',
             'organization',
@@ -289,6 +319,12 @@ class AchievementOperationLogSerializer(serializers.ModelSerializer):
     action_label = serializers.CharField(source='get_action_display', read_only=True)
     source_label = serializers.CharField(source='get_source_display', read_only=True)
     achievement_type_label = serializers.CharField(source='get_achievement_type_display', read_only=True)
+    operator_name = serializers.SerializerMethodField()
+
+    def get_operator_name(self, obj):
+        if not obj.operator:
+            return ''
+        return obj.operator.real_name or obj.operator.username
 
     class Meta:
         model = AchievementOperationLog
@@ -301,11 +337,15 @@ class AchievementOperationLogSerializer(serializers.ModelSerializer):
             'action_label',
             'source',
             'source_label',
+            'operator',
+            'operator_name',
             'summary',
             'changed_fields',
+            'change_details',
             'title_snapshot',
             'detail_snapshot',
             'snapshot_payload',
+            'review_comment',
             'created_at',
         )
 
@@ -322,3 +362,14 @@ class PaperCleanupApplySerializer(serializers.Serializer):
 
     paper_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False)
     action = serializers.ChoiceField(choices=ACTION_CHOICES)
+
+
+class AchievementReviewActionSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+
+    def validate_reason(self, value):
+        return value.strip()
+
+
+class AchievementRejectSerializer(AchievementReviewActionSerializer):
+    reason = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)

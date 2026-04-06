@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Max, QuerySet, Sum
 
 from .models import AcademicService, CoAuthor, IntellectualProperty, Paper, Project, TeachingAchievement
+from .visibility import APPROVED_STATUS
 
 ACHIEVEMENT_TYPE_LABELS = {
     'all': '全部成果',
@@ -91,12 +92,37 @@ def build_scope_querysets(
     year_from: int | None = None,
     year_to: int | None = None,
 ) -> dict:
-    paper_queryset = apply_year_filter(Paper.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
-    project_queryset = apply_year_filter(Project.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
-    ip_queryset = apply_year_filter(IntellectualProperty.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
-    teaching_queryset = apply_year_filter(TeachingAchievement.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
-    service_queryset = apply_year_filter(AcademicService.objects.filter(teacher_id__in=teacher_ids), year, year_from, year_to)
-    collaboration_queryset = CoAuthor.objects.filter(paper__teacher_id__in=teacher_ids)
+    paper_queryset = apply_year_filter(
+        Paper.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS),
+        year,
+        year_from,
+        year_to,
+    )
+    project_queryset = apply_year_filter(
+        Project.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS),
+        year,
+        year_from,
+        year_to,
+    )
+    ip_queryset = apply_year_filter(
+        IntellectualProperty.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS),
+        year,
+        year_from,
+        year_to,
+    )
+    teaching_queryset = apply_year_filter(
+        TeachingAchievement.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS),
+        year,
+        year_from,
+        year_to,
+    )
+    service_queryset = apply_year_filter(
+        AcademicService.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS),
+        year,
+        year_from,
+        year_to,
+    )
+    collaboration_queryset = CoAuthor.objects.filter(paper__teacher_id__in=teacher_ids, paper__status=APPROVED_STATUS)
     if year:
         collaboration_queryset = collaboration_queryset.filter(paper__date_acquired__year=year)
     if year_from:
@@ -401,11 +427,11 @@ def build_filter_options(teachers=None):
     years = sorted(
         {
             item.year
-            for item in list(Paper.objects.values_list('date_acquired', flat=True))
-            + list(Project.objects.values_list('date_acquired', flat=True))
-            + list(IntellectualProperty.objects.values_list('date_acquired', flat=True))
-            + list(TeachingAchievement.objects.values_list('date_acquired', flat=True))
-            + list(AcademicService.objects.values_list('date_acquired', flat=True))
+            for item in list(Paper.objects.filter(status=APPROVED_STATUS).values_list('date_acquired', flat=True))
+            + list(Project.objects.filter(status=APPROVED_STATUS).values_list('date_acquired', flat=True))
+            + list(IntellectualProperty.objects.filter(status=APPROVED_STATUS).values_list('date_acquired', flat=True))
+            + list(TeachingAchievement.objects.filter(status=APPROVED_STATUS).values_list('date_acquired', flat=True))
+            + list(AcademicService.objects.filter(status=APPROVED_STATUS).values_list('date_acquired', flat=True))
             if item
         }
     )
@@ -430,7 +456,7 @@ def build_filter_options(teachers=None):
 def build_recent_achievement_records(teacher_ids: list[int], achievement_type: str = 'all', limit: int = 8) -> list[dict]:
     records = []
     if achievement_type in {'all', 'paper'}:
-        for item in Paper.objects.filter(teacher_id__in=teacher_ids).order_by('-date_acquired', '-created_at')[:limit]:
+        for item in Paper.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at')[:limit]:
             records.append({
                 'type': 'paper',
                 'title': item.title,
@@ -440,7 +466,7 @@ def build_recent_achievement_records(teacher_ids: list[int], achievement_type: s
                 'detail': item.journal_name,
             })
     if achievement_type in {'all', 'project'}:
-        for item in Project.objects.filter(teacher_id__in=teacher_ids).order_by('-date_acquired', '-created_at')[:limit]:
+        for item in Project.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at')[:limit]:
             records.append({
                 'type': 'project',
                 'title': item.title,
@@ -450,7 +476,7 @@ def build_recent_achievement_records(teacher_ids: list[int], achievement_type: s
                 'detail': item.get_level_display(),
             })
     if achievement_type in {'all', 'ip'}:
-        for item in IntellectualProperty.objects.filter(teacher_id__in=teacher_ids).order_by('-date_acquired', '-created_at')[:limit]:
+        for item in IntellectualProperty.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at')[:limit]:
             records.append({
                 'type': 'ip',
                 'title': item.title,
@@ -460,7 +486,7 @@ def build_recent_achievement_records(teacher_ids: list[int], achievement_type: s
                 'detail': item.get_ip_type_display(),
             })
     if achievement_type in {'all', 'teaching'}:
-        for item in TeachingAchievement.objects.filter(teacher_id__in=teacher_ids).order_by('-date_acquired', '-created_at')[:limit]:
+        for item in TeachingAchievement.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at')[:limit]:
             records.append({
                 'type': 'teaching',
                 'title': item.title,
@@ -470,7 +496,7 @@ def build_recent_achievement_records(teacher_ids: list[int], achievement_type: s
                 'detail': item.level,
             })
     if achievement_type in {'all', 'service'}:
-        for item in AcademicService.objects.filter(teacher_id__in=teacher_ids).order_by('-date_acquired', '-created_at')[:limit]:
+        for item in AcademicService.objects.filter(teacher_id__in=teacher_ids, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at')[:limit]:
             records.append({
                 'type': 'service',
                 'title': item.title,

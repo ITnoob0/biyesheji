@@ -81,7 +81,7 @@ router.beforeEach(async to => {
     }
   }
 
-  if (to.meta.requiresSystemAdmin && sessionUser.role_code !== 'system_admin' && sessionUser.role_code !== 'admin') {
+  if (to.meta.requiresSystemAdmin && sessionUser.role_code !== 'admin') {
     const systemAdminFeatureLabel =
       to.name === 'teacher-management-accounts'
         ? '添加教师入口'

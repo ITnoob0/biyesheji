@@ -291,6 +291,13 @@
                 </template>
               </el-table-column>
               <el-table-column prop="paper_type_display" label="类型" width="88" />
+              <el-table-column label="审批状态" width="104">
+                <template #default="{ row }">
+                  <el-tag :type="resolveAchievementStatusTagType(row.status)" effect="plain">
+                    {{ row.status_label }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="journal_name" label="期刊/会议" min-width="150" />
               <el-table-column prop="date_acquired" label="时间" width="104" />
               <el-table-column label="关键词" min-width="156">
@@ -324,6 +331,11 @@
             :scoped-teacher-id="scopedTeacherId"
             :refresh-key="historyRefreshKey.papers"
           />
+          <AchievementReviewGovernancePanel
+            :tab="'papers'"
+            :can-review="canReviewAchievements"
+            @updated="handleGovernanceUpdated('papers')"
+          />
         </el-tab-pane>
 
       <el-tab-pane label="科研项目" name="projects">
@@ -354,8 +366,8 @@
                   <el-input-number v-model="projectForm.funding_amount" :min="0" :precision="2" style="width: 100%" />
                 </el-form-item>
               </div>
-              <el-form-item label="项目状态" prop="status">
-                <el-input v-model="projectForm.status" placeholder="如 ONGOING、COMPLETED" />
+              <el-form-item label="项目状态" prop="project_status">
+                <el-input v-model="projectForm.project_status" placeholder="如 ONGOING、COMPLETED" />
               </el-form-item>
               <div class="actions">
                 <el-button v-if="isEditing('projects')" @click="resetProjectForm">取消编辑</el-button>
@@ -412,6 +424,11 @@
             :records="projects"
             :scoped-teacher-id="scopedTeacherId"
             :refresh-key="historyRefreshKey.projects"
+          />
+          <AchievementReviewGovernancePanel
+            :tab="'projects'"
+            :can-review="canReviewAchievements"
+            @updated="handleGovernanceUpdated('projects')"
           />
         </el-tab-pane>
 
@@ -502,6 +519,11 @@
             :scoped-teacher-id="scopedTeacherId"
             :refresh-key="historyRefreshKey['intellectual-properties']"
           />
+          <AchievementReviewGovernancePanel
+            :tab="'intellectual-properties'"
+            :can-review="canReviewAchievements"
+            @updated="handleGovernanceUpdated('intellectual-properties')"
+          />
         </el-tab-pane>
 
       <el-tab-pane label="教学成果" name="teaching-achievements">
@@ -582,6 +604,11 @@
             :records="teachingAchievements"
             :scoped-teacher-id="scopedTeacherId"
             :refresh-key="historyRefreshKey['teaching-achievements']"
+          />
+          <AchievementReviewGovernancePanel
+            :tab="'teaching-achievements'"
+            :can-review="canReviewAchievements"
+            @updated="handleGovernanceUpdated('teaching-achievements')"
           />
         </el-tab-pane>
 
@@ -664,6 +691,11 @@
             :scoped-teacher-id="scopedTeacherId"
             :refresh-key="historyRefreshKey['academic-services']"
           />
+          <AchievementReviewGovernancePanel
+            :tab="'academic-services'"
+            :can-review="canReviewAchievements"
+            @updated="handleGovernanceUpdated('academic-services')"
+          />
         </el-tab-pane>
     </el-tabs>
 
@@ -679,6 +711,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaperBibtexImportDialog from './achievement-entry/PaperBibtexImportDialog.vue'
 import AchievementOperationHistoryPanel from './achievement-entry/AchievementOperationHistoryPanel.vue'
+import AchievementReviewGovernancePanel from './achievement-entry/AchievementReviewGovernancePanel.vue'
 import { createAchievement, deleteAchievement, fetchAchievementList, fetchPaperSummary, updateAchievement } from './achievement-entry/api'
 import { removeAchievementRecord, upsertAchievementRecord } from './achievement-entry/recordState.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
@@ -751,6 +784,7 @@ const canManageAchievements = computed(() => {
   if (!scopedTeacherId.value) return true
   return scopedTeacherId.value === sessionUser.value.id
 })
+const canReviewAchievements = computed(() => Boolean(sessionUser.value?.is_admin))
 const bibtexDialogVisible = ref(false)
 const dashboardStats = ref<DashboardStatsResponse | null>(null)
 const paperSummary = ref<PaperSummaryResponse | null>(null)
@@ -809,7 +843,7 @@ const projectForm = reactive<ProjectFormState>({
   level: 'NATIONAL',
   role: 'PI',
   funding_amount: 0,
-  status: 'ONGOING',
+  project_status: 'ONGOING',
 })
 
 const ipForm = reactive<IpFormState>({
@@ -1050,7 +1084,7 @@ const resetProjectForm = (): void => {
   projectForm.level = 'NATIONAL'
   projectForm.role = 'PI'
   projectForm.funding_amount = 0
-  projectForm.status = 'ONGOING'
+  projectForm.project_status = 'ONGOING'
   editingMap.projects = null
 }
 
@@ -1111,7 +1145,7 @@ const populateProjectForm = (record: ProjectRecord): void => {
   projectForm.level = record.level
   projectForm.role = record.role
   projectForm.funding_amount = Number(record.funding_amount)
-  projectForm.status = record.status
+  projectForm.project_status = record.project_status
 }
 
 const populateIpForm = (record: IpRecord): void => {
@@ -1162,7 +1196,7 @@ const submitAchievement = async <T extends TabName>(
     if (editingMap[tab]) {
       ElMessage.success(`${editingLabelMap[tab].edit}已保存`)
     } else {
-      ElMessage.success(`${editingLabelMap[tab].create}已提交`)
+      ElMessage.success(`${editingLabelMap[tab].create}已提交并进入审核`)
     }
 
       if (tab === 'papers') papers.value = upsertAchievementRecord(papers.value, savedRecord as PaperRecord)
@@ -1181,6 +1215,22 @@ const submitAchievement = async <T extends TabName>(
   } finally {
     submittingMap[tab] = false
   }
+}
+
+const resolveAchievementStatusTagType = (status: string): 'info' | 'warning' | 'success' | 'danger' => {
+  if (status === 'PENDING_REVIEW') return 'warning'
+  if (status === 'APPROVED') return 'success'
+  if (status === 'REJECTED') return 'danger'
+  return 'info'
+}
+
+const handleGovernanceUpdated = async (tab: TabName): Promise<void> => {
+  await fetchRecords(tab)
+  if (tab === 'papers') {
+    await Promise.all([fetchPaperInsights(), fetchDashboardStats()])
+    return
+  }
+  await fetchDashboardStats()
 }
 
 const submitPaper = async (): Promise<void> => {

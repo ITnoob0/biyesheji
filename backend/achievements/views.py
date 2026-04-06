@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -17,6 +17,10 @@ from core.api_errors import api_error_response
 from graph_engine.services import AcademicGraphSyncService
 from users.access import (
     PROFILE_SCOPE_MESSAGE,
+    can_access_teacher_scope,
+    ensure_admin_user,
+    is_admin_user,
+    is_college_admin_user,
     ensure_self_or_admin_user,
     ensure_self_user,
 )
@@ -63,6 +67,7 @@ from .scoring_engine import TeacherScoringEngine
 from .serializers import (
     AcademicServiceSerializer,
     AchievementOperationLogSerializer,
+    AchievementRejectSerializer,
     IntellectualPropertySerializer,
     PaperCleanupApplySerializer,
     PaperOperationLogSerializer,
@@ -71,6 +76,7 @@ from .serializers import (
     ProjectSerializer,
     TeachingAchievementSerializer,
 )
+from .visibility import APPROVED_STATUS
 
 
 def parse_bool_query_param(value: str) -> bool | None:
@@ -445,6 +451,46 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
     search_fields: tuple[str, ...] = ()
     operation_log_type: str = ''
 
+    def create(self, request, *args, **kwargs):
+        if is_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='成果录入和维护仅限教师本人操作，管理员当前仅可查看与验证。',
+                code='achievement_self_service_forbidden',
+                request=request,
+            )
+        return super().create(request, *args, **kwargs)
+
+
+    def update(self, request, *args, **kwargs):
+        if is_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='管理员不可通过教师自助入口编辑成果。',
+                code='achievement_self_service_forbidden',
+                request=request,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        if is_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='管理员不可通过教师自助入口编辑成果。',
+                code='achievement_self_service_forbidden',
+                request=request,
+            )
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        if is_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='管理员不可通过教师自助入口删除成果。',
+                code='achievement_self_service_forbidden',
+                request=request,
+            )
+        return super().destroy(request, *args, **kwargs)
     def get_queryset(self):
         queryset = self.queryset
         teacher_id = self.request.query_params.get('teacher_id', '').strip()
@@ -499,8 +545,6 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
             action='DELETE',
             source='manual',
             summary=f'删除{instance.title}',
-            teacher=self.request.user,
-            achievement_type=self.operation_log_type,
             title_snapshot=instance.title,
             detail_snapshot=detail_snapshot,
             snapshot_payload=snapshot_payload,
@@ -566,6 +610,130 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
 
     def delete_graph_snapshot(self, identifier):
         return None
+    def sync_graph_by_status(self, instance):
+        if instance.status == APPROVED_STATUS:
+            self.sync_graph(instance)
+            return
+        self.delete_graph_snapshot(instance.id)
+
+    def _ensure_can_review(self, target_teacher):
+        ensure_admin_user(self.request.user)
+        if not can_access_teacher_scope(self.request.user, target_teacher):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='当前账号无权审核该教师成果。',
+                code='achievement_review_forbidden',
+                request=self.request,
+                next_step='请确认审核账号权限或切换到目标教师所属管理范围。',
+            )
+        return None
+
+    @action(detail=True, methods=['post'], url_path='submit-review')
+    def submit_review(self, request, pk=None):
+        instance = self.get_object()
+        ensure_self_user(request.user, instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
+
+        if instance.status != 'PENDING_REVIEW':
+            instance.status = 'PENDING_REVIEW'
+            instance.save(update_fields=['status'])
+            self.log_operation(
+                instance=instance,
+                action='SUBMIT_REVIEW',
+                source='manual',
+                summary=f'提交审核：{instance.title}',
+                changed_fields=['审批状态'],
+            )
+            self.sync_graph_by_status(instance)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='pending-review')
+    def pending_review(self, request):
+        ensure_admin_user(request.user)
+        queryset = self.queryset.filter(status='PENDING_REVIEW')
+        if is_college_admin_user(request.user):
+            queryset = queryset.filter(teacher__department=request.user.department)
+        serializer = self.get_serializer(queryset.order_by('-date_acquired', '-created_at')[:100], many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='approve')
+    def approve(self, request, pk=None):
+        instance = self.queryset.filter(pk=pk).select_related('teacher').first()
+        if instance is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='成果记录不存在。',
+                code='achievement_not_found',
+                request=request,
+            )
+        denied = self._ensure_can_review(instance.teacher)
+        if denied is not None:
+            return denied
+
+        instance.status = APPROVED_STATUS
+        instance.save(update_fields=['status'])
+        self.log_operation(
+            instance=instance,
+            action='APPROVE',
+            source='manual',
+            summary=f'审核通过：{instance.title}',
+            changed_fields=['审批状态'],
+        )
+        self.sync_graph_by_status(instance)
+        return Response(self.get_serializer(instance).data)
+
+    @action(detail=True, methods=['post'], url_path='reject')
+    def reject(self, request, pk=None):
+        instance = self.queryset.filter(pk=pk).select_related('teacher').first()
+        if instance is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='成果记录不存在。',
+                code='achievement_not_found',
+                request=request,
+            )
+        denied = self._ensure_can_review(instance.teacher)
+        if denied is not None:
+            return denied
+
+        serializer = AchievementRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get('reason', '')
+
+        instance.status = 'REJECTED'
+        instance.save(update_fields=['status'])
+        self.log_operation(
+            instance=instance,
+            action='REJECT',
+            source='manual',
+            summary=f'审核驳回：{instance.title}',
+            changed_fields=['审批状态'],
+            snapshot_payload={
+                **build_achievement_operation_snapshot(self.operation_log_type, instance)[0],
+                '审核意见': reason,
+            },
+        )
+        AchievementOperationLog.objects.filter(
+            teacher_id=instance.teacher_id,
+            achievement_type=self.operation_log_type,
+            achievement_id=instance.id,
+            action='REJECT',
+        ).order_by('-id').update(operator=request.user, review_comment=reason)
+        self.sync_graph_by_status(instance)
+        return Response(self.get_serializer(instance).data)
+
+    @action(detail=True, methods=['get'], url_path='workflow-logs')
+    def workflow_logs(self, request, pk=None):
+        instance = self.get_object()
+        ensure_self_or_admin_user(request.user, instance.teacher, ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE)
+        queryset = AchievementOperationLog.objects.filter(
+            teacher_id=instance.teacher_id,
+            achievement_type=self.operation_log_type,
+            achievement_id=instance.id,
+        ).order_by('-created_at', '-id')[:50]
+        serializer = AchievementOperationLogSerializer(queryset, many=True)
+        return Response({'history': serializer.data})
 
 
 class PaperViewSet(TeacherOwnedAchievementViewSet):
@@ -1054,7 +1222,7 @@ class ProjectViewSet(TeacherOwnedAchievementViewSet):
     operation_log_type = 'projects'
     queryset = Project.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
     serializer_class = ProjectSerializer
-    search_fields = ('title', 'status')
+    search_fields = ('title', 'project_status', 'status')
 
     def sync_graph(self, instance):
         AcademicGraphSyncService.sync_project(
@@ -1063,7 +1231,7 @@ class ProjectViewSet(TeacherOwnedAchievementViewSet):
             teacher=self.teacher_payload(instance),
             level=instance.level,
             role=instance.role,
-            status=instance.status,
+            status=instance.project_status,
         )
 
     def delete_graph_snapshot(self, identifier):
@@ -1269,3 +1437,5 @@ class TeacherPortraitReportView(APIView):
         report_payload = build_portrait_report(user)
         report_payload['data_meta'] = get_portrait_data_meta(user)
         return Response(report_payload)
+
+

@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
 from achievements.scoring_engine import TeacherScoringEngine
+from achievements.visibility import APPROVED_STATUS
 from users.access import COMPARE_SCOPE_MESSAGE, RECOMMENDATION_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
 from users.services import get_teacher_profile
 
@@ -106,7 +107,7 @@ class ProjectGuideRecommendationService:
         profile_keywords.extend(split_text_tokens(profile.discipline if profile else ''))
 
         paper_keywords = list(
-            PaperKeyword.objects.filter(paper__teacher=user)
+            PaperKeyword.objects.filter(paper__teacher=user, paper__status=APPROVED_STATUS)
             .select_related('keyword')
             .values_list('keyword__name', flat=True)
             .distinct()[:30]
@@ -127,11 +128,11 @@ class ProjectGuideRecommendationService:
         cutoff_year = timezone.now().date().year - 3
         recent_cutoff = date(cutoff_year, 1, 1)
         recent_activity_count = (
-            Paper.objects.filter(teacher=user, date_acquired__gte=recent_cutoff).count()
-            + Project.objects.filter(teacher=user, date_acquired__gte=recent_cutoff).count()
-            + IntellectualProperty.objects.filter(teacher=user, date_acquired__gte=recent_cutoff).count()
-            + TeachingAchievement.objects.filter(teacher=user, date_acquired__gte=recent_cutoff).count()
-            + AcademicService.objects.filter(teacher=user, date_acquired__gte=recent_cutoff).count()
+            Paper.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
+            + Project.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
+            + IntellectualProperty.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
+            + TeachingAchievement.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
+            + AcademicService.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
         )
 
         radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
@@ -243,7 +244,7 @@ class ProjectGuideRecommendationService:
                 )
 
             keyword_papers = (
-                Paper.objects.filter(teacher=user)
+                Paper.objects.filter(teacher=user, status=APPROVED_STATUS)
                 .filter(keyword_filter)
                 .distinct()
                 .order_by('-date_acquired', '-created_at')[:2]
@@ -264,25 +265,25 @@ class ProjectGuideRecommendationService:
         dimension_to_candidate = {
             'funding_support': (
                 'project',
-                Project.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first(),
+                Project.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
                 '当前推荐会参考教师已有项目攻关基础。',
                 lambda item: f'{item.get_level_display()} / {item.get_role_display()}',
             ),
             'ip_strength': (
                 'intellectual_property',
-                IntellectualProperty.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first(),
+                IntellectualProperty.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
                 '当前推荐会参考教师已有知识产权沉淀。',
                 lambda item: f'{item.get_ip_type_display()} / 登记号 {item.registration_number}',
             ),
             'talent_training': (
                 'teaching_achievement',
-                TeachingAchievement.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first(),
+                TeachingAchievement.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
                 '当前推荐会参考教师已有教学与人才培养成果。',
                 lambda item: f'{item.get_achievement_type_display()} / {item.level}',
             ),
             'academic_reputation': (
                 'academic_service',
-                AcademicService.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first(),
+                AcademicService.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
                 '当前推荐会参考教师已有学术共同体贡献记录。',
                 lambda item: f'{item.get_service_type_display()} / {item.organization}',
             ),
@@ -299,7 +300,7 @@ class ProjectGuideRecommendationService:
                 break
 
         if len(records) < 3:
-            latest_project = Project.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first()
+            latest_project = Project.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first()
             append_record(
                 'project',
                 latest_project,
@@ -308,7 +309,7 @@ class ProjectGuideRecommendationService:
             )
 
         if len(records) < 3:
-            latest_paper = Paper.objects.filter(teacher=user).order_by('-date_acquired', '-created_at').first()
+            latest_paper = Paper.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first()
             append_record(
                 'paper',
                 latest_paper,

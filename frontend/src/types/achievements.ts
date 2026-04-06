@@ -5,6 +5,8 @@ export type TabName =
   | 'teaching-achievements'
   | 'academic-services'
 
+export type AchievementReviewStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'
+
 export type BibtexPreviewStatus = 'ready' | 'duplicate' | 'invalid'
 
 export interface BibtexIssueDetail {
@@ -37,6 +39,8 @@ export interface TeacherOwnedAchievementRecord {
   teacher_name: string
   title: string
   date_acquired: string
+  status: AchievementReviewStatus
+  status_label: string
   created_at?: string
 }
 
@@ -67,7 +71,7 @@ export interface ProjectRecord extends TeacherOwnedAchievementRecord {
   role: string
   role_display: string
   funding_amount: string
-  status: string
+  project_status: string
 }
 
 export interface IpRecord extends TeacherOwnedAchievementRecord {
@@ -113,7 +117,7 @@ export interface ProjectFormState {
   level: string
   role: string
   funding_amount: number
-  status: string
+  project_status: string
 }
 
 export interface IpFormState {
@@ -162,7 +166,7 @@ export interface ProjectMutationPayload {
   level: string
   role: string
   funding_amount: number
-  status: string
+  project_status: string
 }
 
 export interface IpMutationPayload {
@@ -346,12 +350,35 @@ export interface AchievementOperationLogRecord {
   action_label: string
   source: string
   source_label: string
+  operator: number | null
+  operator_name: string
   summary: string
   changed_fields: string[]
+  change_details: Array<{
+    field: string
+    from: string
+    to: string
+    summary: string
+  }>
   title_snapshot: string
   detail_snapshot: string
   snapshot_payload: Record<string, string>
+  review_comment: string
   created_at: string
+}
+
+export interface AchievementWorkflowHistoryResponse {
+  achievement_id: number
+  history: AchievementOperationLogRecord[]
+}
+
+export interface AchievementReviewActionResponse {
+  id: number
+  teacher: number
+  teacher_name: string
+  title: string
+  status: AchievementReviewStatus
+  status_label: string
 }
 
 export interface CleanupSuggestion {

@@ -38,6 +38,8 @@ export function formatPasswordUpdatedAt(value: string | null | undefined): strin
 
 export function buildAdminRouteNotice(featureLabel?: string): string
 
+export function buildSystemAdminRouteNotice(featureLabel?: string): string
+
 export function buildAdminPortraitSelectionNotice(): string
 
 export function buildSessionRecoveryNotice(reason?: string, hasRedirectTarget?: boolean): string
