@@ -71,7 +71,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 30,
           moduleKey: 'personal-center',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
       {
@@ -83,7 +83,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 40,
           moduleKey: 'personal-center',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
     ],
@@ -202,7 +202,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       moduleRoot: true,
       hiddenInMenu: true,
       requiresAuth: true,
-      menuRoles: ['teacher'],
+      menuRoles: ['teacher', 'college_admin'],
     },
     children: [
       {
@@ -215,7 +215,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 10,
           moduleKey: 'achievement',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
       {
@@ -228,7 +228,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 20,
           moduleKey: 'achievement',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
       {
@@ -241,7 +241,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 30,
           moduleKey: 'achievement',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
       {
@@ -254,7 +254,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 40,
           moduleKey: 'achievement',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
       {
@@ -267,7 +267,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 50,
           moduleKey: 'achievement',
           requiresAuth: true,
-          menuRoles: ['teacher'],
+          menuRoles: ['teacher', 'college_admin'],
         },
       },
     ],
@@ -491,6 +491,36 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           title: '教师分析',
           order: 20,
           moduleKey: 'academy-dashboard',
+          requiresAuth: true,
+          requiresAdmin: true,
+          menuRoles: ['college_admin'],
+        },
+      },
+    ],
+  }),
+  buildModuleRoute({
+    path: 'achievement-review',
+    component: RouterView,
+    meta: {
+      title: '成果审核',
+      icon: 'CircleCheck',
+      order: 125,
+      moduleKey: 'achievement-review',
+      moduleRoot: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+      menuRoles: ['college_admin'],
+    },
+    children: [
+      {
+        path: '',
+        name: 'achievement-review',
+        component: AchievementEntryView,
+        props: { sectionMode: 'manage' },
+        meta: {
+          title: '待审核成果',
+          order: 10,
+          moduleKey: 'achievement-review',
           requiresAuth: true,
           requiresAdmin: true,
           menuRoles: ['college_admin'],
