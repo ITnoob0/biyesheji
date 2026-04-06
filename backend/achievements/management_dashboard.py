@@ -40,9 +40,9 @@ def filter_teachers_queryset(*, all_teachers, department: str, teacher_id: str, 
         teachers = teachers.filter(id=teacher_id)
     if has_collaboration is not None:
         if has_collaboration:
-            teachers = teachers.filter(papers__coauthors__isnull=False).distinct()
+            teachers = teachers.filter(papers__status='APPROVED', papers__coauthors__isnull=False).distinct()
         else:
-            teachers = teachers.exclude(papers__coauthors__isnull=False).distinct()
+            teachers = teachers.exclude(papers__status='APPROVED', papers__coauthors__isnull=False).distinct()
     return teachers
 
 

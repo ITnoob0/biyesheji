@@ -146,8 +146,13 @@ class IntellectualProperty(BaseAchievement):
         ('PATENT_UTILITY', '实用新型'),
         ('SOFTWARE_COPYRIGHT', '软件著作权'),
     )
+    ROLE_TYPES = (
+        ('PI', '负责人'),
+        ('CO_PI', '参与人'),
+    )
 
     ip_type = models.CharField(max_length=50, choices=IP_TYPES)
+    role = models.CharField(max_length=20, choices=ROLE_TYPES, default='PI', verbose_name='承担角色')
     registration_number = models.CharField(max_length=200)
     is_transformed = models.BooleanField(default=False, verbose_name='是否成果转化')
 
@@ -162,8 +167,13 @@ class TeachingAchievement(BaseAchievement):
         ('COURSE', '精品课程'),
         ('THESIS', '优秀论文指导'),
     )
+    ROLE_TYPES = (
+        ('PI', '负责人'),
+        ('CO_PI', '参与人'),
+    )
 
     achievement_type = models.CharField(max_length=50, choices=TYPES)
+    role = models.CharField(max_length=20, choices=ROLE_TYPES, default='PI', verbose_name='承担角色')
     level = models.CharField(max_length=100, verbose_name='级别')
 
     def __str__(self) -> str:

@@ -59,7 +59,7 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(response.data['publication_year'], 2025)
         self.assertEqual(len(response.data['coauthor_details']), 2)
         self.assertEqual(response.data['keywords'], ['教师画像', '智能辅助'])
-        graph_sync_service.sync_paper.assert_called_once()
+        graph_sync_service.sync_paper.assert_not_called()
 
     @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
@@ -314,7 +314,7 @@ class AchievementEntryApiTests(APITestCase):
 
         imported_paper = Paper.objects.get(teacher=self.user, doi='10.1000/imported-bibtex-paper')
         self.assertEqual(imported_paper.coauthors.count(), 2)
-        graph_sync_service.sync_paper.assert_called_once()
+        graph_sync_service.sync_paper.assert_not_called()
 
     @patch('achievements.views.AcademicGraphSyncService')
     @patch('achievements.views.AcademicAI')
@@ -442,11 +442,11 @@ class AchievementEntryApiTests(APITestCase):
         self.assertEqual(TeachingAchievement.objects.filter(teacher_id=100004).count(), 1)
         self.assertEqual(AcademicService.objects.filter(teacher_id=100004).count(), 1)
 
-        graph_sync_service.sync_paper.assert_called_once()
-        graph_sync_service.sync_project.assert_called_once()
-        graph_sync_service.sync_intellectual_property.assert_called_once()
-        graph_sync_service.sync_teaching_achievement.assert_called_once()
-        graph_sync_service.sync_academic_service.assert_called_once()
+        graph_sync_service.sync_paper.assert_not_called()
+        graph_sync_service.sync_project.assert_not_called()
+        graph_sync_service.sync_intellectual_property.assert_not_called()
+        graph_sync_service.sync_teaching_achievement.assert_not_called()
+        graph_sync_service.sync_academic_service.assert_not_called()
 
     @patch('achievements.views.AcademicGraphSyncService')
     def test_new_achievement_types_are_listed_for_current_teacher_only(self, graph_sync_service):
@@ -659,6 +659,7 @@ class AchievementEntryApiTests(APITestCase):
             citation_count=12,
             is_first_author=True,
             is_representative=True,
+            status='APPROVED',
         )
         Paper.objects.create(
             teacher=self.user,
@@ -670,6 +671,7 @@ class AchievementEntryApiTests(APITestCase):
             citation_count=3,
             is_first_author=False,
             is_representative=False,
+            status='APPROVED',
         )
         Project.objects.create(
             teacher=self.user,
@@ -678,7 +680,8 @@ class AchievementEntryApiTests(APITestCase):
             level='PROVINCIAL',
             role='PI',
             funding_amount='18.00',
-            status='ONGOING',
+            project_status='ONGOING',
+            status='APPROVED',
         )
 
         response = self.client.get(f'/api/achievements/all-achievements/{self.user.id}/')
@@ -1118,6 +1121,7 @@ class AchievementEntryApiTests(APITestCase):
             paper_type='JOURNAL',
             journal_name='测试期刊',
             citation_count=7,
+            status='APPROVED',
         )
         paper.coauthors.create(name='校外合作者')
 
@@ -1384,7 +1388,7 @@ class PaperGovernanceApiTests(APITestCase):
         self.assertIn('comparison_rows', compare_response.data)
         self.assertIn('summary', compare_response.data)
         self.assertEqual(compare_response.data['summary']['shared_coauthors'], [])
-        graph_sync_service.sync_paper.assert_called()
+        graph_sync_service.sync_paper.assert_not_called()
 
     @patch('achievements.views.AcademicGraphSyncService')
     def test_export_representative_batch_and_cleanup_apply_work(self, graph_sync_service):
@@ -1657,6 +1661,86 @@ class AchievementReviewFlowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         paper.refresh_from_db()
         self.assertEqual(paper.status, 'PENDING_REVIEW')
+
+    def test_teacher_create_all_achievement_types_defaults_to_pending_review(self):
+        self.client.force_authenticate(user=self.teacher)
+
+        responses = [
+            self.client.post(
+                '/api/achievements/papers/',
+                {
+                    'title': '待审论文',
+                    'abstract': '这是一个足够长的摘要，用于验证首轮提交自动进入待审核。',
+                    'date_acquired': '2025-06-01',
+                    'paper_type': 'JOURNAL',
+                    'journal_name': '测试期刊',
+                    'coauthors': [],
+                },
+                format='json',
+            ),
+            self.client.post(
+                '/api/achievements/projects/',
+                {
+                    'title': '待审项目',
+                    'date_acquired': '2025-06-02',
+                    'level': 'PROVINCIAL',
+                    'role': 'PI',
+                    'funding_amount': '10.00',
+                    'project_status': 'ONGOING',
+                },
+                format='json',
+            ),
+            self.client.post(
+                '/api/achievements/intellectual-properties/',
+                {
+                    'title': '待审知识产权',
+                    'date_acquired': '2025-06-03',
+                    'ip_type': 'SOFTWARE_COPYRIGHT',
+                    'registration_number': 'IP-PENDING-001',
+                    'is_transformed': False,
+                },
+                format='json',
+            ),
+            self.client.post(
+                '/api/achievements/teaching-achievements/',
+                {
+                    'title': '待审教学成果',
+                    'date_acquired': '2025-06-04',
+                    'achievement_type': 'COURSE',
+                    'level': '校级',
+                },
+                format='json',
+            ),
+            self.client.post(
+                '/api/achievements/academic-services/',
+                {
+                    'title': '待审学术服务',
+                    'date_acquired': '2025-06-05',
+                    'service_type': 'INVITED_TALK',
+                    'organization': '测试机构',
+                },
+                format='json',
+            ),
+        ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            self.assertEqual(response.data['status'], 'PENDING_REVIEW')
+
+    def test_admin_without_teacher_id_can_list_scoped_teacher_achievements(self):
+        own_college_project = self.create_project(self.teacher, title='本院项目', status='PENDING_REVIEW')
+        self.create_project(self.other_teacher, title='外院项目', status='PENDING_REVIEW')
+
+        self.client.force_authenticate(user=self.college_admin)
+        college_response = self.client.get('/api/achievements/projects/')
+        self.assertEqual(college_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(college_response.data), 1)
+        self.assertEqual(college_response.data[0]['id'], own_college_project.id)
+
+        self.client.force_authenticate(user=self.system_admin)
+        system_response = self.client.get('/api/achievements/projects/')
+        self.assertEqual(system_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(system_response.data), 2)
 
     def test_college_admin_only_sees_pending_papers_in_own_college(self):
         self.create_paper(self.teacher, title='本院待审核', status='PENDING_REVIEW')

@@ -1,6 +1,7 @@
 ﻿import { RouterView, type RouteRecordRaw } from 'vue-router'
 import AcademyDashboardView from '../views/AcademyDashboardView.vue'
 import AchievementEntryView from '../views/AchievementEntryView.vue'
+import AchievementReviewView from '../views/AchievementReviewView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import ProjectGuideManagementView from '../views/ProjectGuideManagementView.vue'
 import ProjectRecommendationView from '../views/ProjectRecommendationView.vue'
@@ -424,6 +425,19 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           menuRoles: ['college_admin'],
         },
       },
+      {
+        path: 'achievement-review',
+        name: 'teacher-management-achievement-review',
+        component: AchievementReviewView,
+        meta: {
+          title: '成果审核',
+          order: 30,
+          moduleKey: 'teacher-management',
+          requiresAuth: true,
+          requiresAdmin: true,
+          menuRoles: ['college_admin'],
+        },
+      },
     ],
   }),
   buildModuleRoute({
@@ -499,36 +513,6 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
     ],
   }),
   buildModuleRoute({
-    path: 'achievement-review',
-    component: RouterView,
-    meta: {
-      title: '成果审核',
-      icon: 'CircleCheck',
-      order: 125,
-      moduleKey: 'achievement-review',
-      moduleRoot: true,
-      requiresAuth: true,
-      requiresAdmin: true,
-      menuRoles: ['college_admin'],
-    },
-    children: [
-      {
-        path: '',
-        name: 'achievement-review',
-        component: AchievementEntryView,
-        props: { sectionMode: 'manage' },
-        meta: {
-          title: '待审核成果',
-          order: 10,
-          moduleKey: 'achievement-review',
-          requiresAuth: true,
-          requiresAdmin: true,
-          menuRoles: ['college_admin'],
-        },
-      },
-    ],
-  }),
-  buildModuleRoute({
     path: 'project-guides',
     component: RouterView,
     meta: {
@@ -587,4 +571,3 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
     ],
   }),
 ]
-

@@ -171,7 +171,11 @@ const resolveAchievementTagType = (type: string): 'success' | 'warning' | 'info'
   gap: 14px;
   padding: 16px 18px;
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.9));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--panel-bg) 86%, var(--brand-primary) 14%),
+    color-mix(in srgb, var(--panel-bg) 96%, var(--surface-2) 4%)
+  );
   border: 1px solid var(--border-color-soft);
 }
 

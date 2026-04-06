@@ -930,19 +930,19 @@ h1 {
 .summary-card {
   border: none;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  background: color-mix(in srgb, var(--panel-bg) 92%, var(--brand-primary) 8%);
+  box-shadow: var(--workspace-shadow);
 }
 
 .summary-label {
   display: block;
-  color: #64748b;
+  color: var(--text-tertiary);
   margin-bottom: 10px;
 }
 
 .summary-value {
   font-size: 30px;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .management-shell {
@@ -961,8 +961,8 @@ h1 {
 .list-card {
   border: none;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.08);
+  background: var(--panel-bg);
+  box-shadow: var(--workspace-shadow);
 }
 
 .form-block {
@@ -1008,7 +1008,8 @@ h1 {
   margin-bottom: 16px;
   padding: 16px 20px;
   border-radius: 16px;
-  background: #f8fafc;
+  background: var(--surface-2);
+  color: var(--text-secondary);
   text-align: left;
 }
 
@@ -1032,11 +1033,11 @@ h1 {
 
 .account-primary {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 
 .account-secondary {
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
@@ -1059,6 +1060,14 @@ h1 {
   padding-left: 1px;
   padding-right: 1px;
   text-align: center;
+}
+
+.teacher-overview-table :deep(.el-table__header-wrapper .cell) {
+  color: var(--text-primary);
+}
+
+.teacher-overview-table :deep(.el-table__body-wrapper .cell) {
+  color: var(--text-primary);
 }
 
 .teacher-overview-table :deep(.el-table__fixed-right th.el-table__cell > .cell),
@@ -1122,7 +1131,7 @@ h1 {
 }
 
 .security-secondary {
-  color: #94a3b8;
+  color: var(--text-tertiary);
 }
 
 :deep(.focus-row) {

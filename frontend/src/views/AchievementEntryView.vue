@@ -402,7 +402,14 @@
               <el-table-column prop="level_display" label="级别" width="120" />
               <el-table-column prop="role_display" label="角色" width="120" />
               <el-table-column prop="funding_amount" label="经费(万元)" width="120" />
-              <el-table-column prop="status" label="状态" width="120" />
+              <el-table-column prop="project_status" label="项目状态" width="120" />
+              <el-table-column label="审批状态" width="104">
+                <template #default="{ row }">
+                  <el-tag :type="resolveAchievementStatusTagType(row.status)" effect="plain">
+                    {{ row.status_label }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
@@ -450,6 +457,11 @@
                   </el-select>
                 </el-form-item>
               </div>
+              <el-form-item label="承担角色" prop="role">
+                <el-select v-model="ipForm.role" style="width: 100%">
+                  <el-option v-for="option in projectRoleOptions" :key="option.value" :label="option.label" :value="option.value" />
+                </el-select>
+              </el-form-item>
               <el-form-item label="登记号/专利号" prop="registration_number">
                 <el-input v-model="ipForm.registration_number" placeholder="请输入登记号或专利号" />
               </el-form-item>
@@ -491,10 +503,18 @@
             <el-table :data="intellectualProperties" v-loading="loadingMap['intellectual-properties']" empty-text="暂无知识产权成果">
               <el-table-column prop="title" label="名称" min-width="220" />
               <el-table-column prop="ip_type_display" label="类型" width="140" />
+              <el-table-column prop="role_display" label="角色" width="100" />
               <el-table-column prop="registration_number" label="登记号" min-width="180" />
               <el-table-column label="转化" width="90">
                 <template #default="{ row }">
                   <el-tag :type="row.is_transformed ? 'success' : 'info'">{{ row.is_transformed ? '已转化' : '未转化' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="审批状态" width="104">
+                <template #default="{ row }">
+                  <el-tag :type="resolveAchievementStatusTagType(row.status)" effect="plain">
+                    {{ row.status_label }}
+                  </el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="date_acquired" label="时间" width="120" />
@@ -544,9 +564,17 @@
                   </el-select>
                 </el-form-item>
               </div>
-              <el-form-item label="级别" prop="level">
-                <el-input v-model="teachingForm.level" placeholder="如 国家级、省级、校级" />
-              </el-form-item>
+              <div class="double-grid">
+                <el-form-item label="承担角色" prop="role">
+                  <el-input v-if="isTeachingRoleLocked" model-value="指导教师" disabled />
+                  <el-select v-else v-model="teachingForm.role" style="width: 100%">
+                    <el-option v-for="option in projectRoleOptions" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="级别" prop="level">
+                  <el-input v-model="teachingForm.level" placeholder="如 国家级、省级、校级" />
+                </el-form-item>
+              </div>
               <div class="actions">
                 <el-button v-if="isEditing('teaching-achievements')" @click="resetTeachingForm">取消编辑</el-button>
                 <el-button v-else @click="resetTeachingForm">重置</el-button>
@@ -582,7 +610,15 @@
             <el-table :data="teachingAchievements" v-loading="loadingMap['teaching-achievements']" empty-text="暂无教学成果">
               <el-table-column prop="title" label="名称" min-width="220" />
               <el-table-column prop="achievement_type_display" label="类型" width="140" />
+              <el-table-column prop="role_display" label="角色" width="100" />
               <el-table-column prop="level" label="级别" width="120" />
+              <el-table-column label="审批状态" width="104">
+                <template #default="{ row }">
+                  <el-tag :type="resolveAchievementStatusTagType(row.status)" effect="plain">
+                    {{ row.status_label }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
@@ -669,6 +705,13 @@
               <el-table-column prop="title" label="事项" min-width="220" />
               <el-table-column prop="service_type_display" label="类型" width="140" />
               <el-table-column prop="organization" label="服务机构" min-width="180" />
+              <el-table-column label="审批状态" width="104">
+                <template #default="{ row }">
+                  <el-tag :type="resolveAchievementStatusTagType(row.status)" effect="plain">
+                    {{ row.status_label }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column prop="date_acquired" label="时间" width="120" />
               <el-table-column label="操作" width="140" fixed="right">
                 <template #default="{ row }">
@@ -850,6 +893,7 @@ const ipForm = reactive<IpFormState>({
   title: '',
   date_acquired: '',
   ip_type: 'PATENT_INVENTION',
+  role: 'PI',
   registration_number: '',
   is_transformed: false,
 })
@@ -858,6 +902,7 @@ const teachingForm = reactive<TeachingFormState>({
   title: '',
   date_acquired: '',
   achievement_type: 'COMPETITION',
+  role: 'PI',
   level: '',
 })
 
@@ -881,6 +926,8 @@ const activeSection = computed(() => props.sectionMode)
 const showOverviewGrid = computed(() => ['overview', 'statistics', 'representative'].includes(activeSection.value))
 const showEntryTabs = computed(() => ['manage', 'import'].includes(activeSection.value))
 const showImportGuide = computed(() => activeSection.value === 'import')
+const isTeachingGuidanceType = (achievementType: string): boolean => achievementType === 'COMPETITION' || achievementType === 'THESIS'
+const isTeachingRoleLocked = computed(() => isTeachingGuidanceType(teachingForm.achievement_type))
 const linkContextTitle = computed(() => {
   if (linkContext.value?.source === 'recommendation') {
     return '当前从推荐模块回跳，已定位到成果证据区。'
@@ -990,6 +1037,7 @@ const ipRules: FormRules = {
   title: requiredRule('请输入成果名称'),
   date_acquired: requiredRule('请选择授权时间'),
   ip_type: requiredRule('请选择知识产权类型'),
+  role: requiredRule('请选择承担角色'),
   registration_number: requiredRule('请输入登记号'),
 }
 
@@ -997,6 +1045,7 @@ const teachingRules: FormRules = {
   title: requiredRule('请输入成果名称'),
   date_acquired: requiredRule('请选择获得时间'),
   achievement_type: requiredRule('请选择成果类型'),
+  role: requiredRule('请选择承担角色'),
   level: requiredRule('请输入成果级别'),
 }
 
@@ -1091,6 +1140,7 @@ const resetProjectForm = (): void => {
 const resetIpForm = (): void => {
   ipFormRef.value?.resetFields()
   ipForm.ip_type = 'PATENT_INVENTION'
+  ipForm.role = 'PI'
   ipForm.is_transformed = false
   editingMap['intellectual-properties'] = null
 }
@@ -1098,6 +1148,7 @@ const resetIpForm = (): void => {
 const resetTeachingForm = (): void => {
   teachingFormRef.value?.resetFields()
   teachingForm.achievement_type = 'COMPETITION'
+  teachingForm.role = 'PI'
   editingMap['teaching-achievements'] = null
 }
 
@@ -1152,6 +1203,7 @@ const populateIpForm = (record: IpRecord): void => {
   ipForm.title = record.title
   ipForm.date_acquired = record.date_acquired
   ipForm.ip_type = record.ip_type
+  ipForm.role = record.role
   ipForm.registration_number = record.registration_number
   ipForm.is_transformed = record.is_transformed
 }
@@ -1160,6 +1212,7 @@ const populateTeachingForm = (record: TeachingRecord): void => {
   teachingForm.title = record.title
   teachingForm.date_acquired = record.date_acquired
   teachingForm.achievement_type = record.achievement_type
+  teachingForm.role = record.role
   teachingForm.level = record.level
 }
 
@@ -1427,6 +1480,16 @@ onMounted(() => {
 watch(linkContext, () => {
   focusAchievementEvidence()
 })
+
+watch(
+  () => teachingForm.achievement_type,
+  value => {
+    if (isTeachingGuidanceType(value)) {
+      teachingForm.role = 'PI'
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   activeSection,

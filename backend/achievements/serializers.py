@@ -219,6 +219,7 @@ class ProjectSerializer(TeacherOwnedAchievementSerializer):
 
 class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
     ip_type_display = serializers.CharField(source='get_ip_type_display', read_only=True)
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
         model = IntellectualProperty
@@ -232,11 +233,13 @@ class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
             'status_label',
             'ip_type',
             'ip_type_display',
+            'role',
+            'role_display',
             'registration_number',
             'is_transformed',
             'created_at',
         )
-        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('ip_type_display',)
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('ip_type_display', 'role_display')
 
     def validate_registration_number(self, value):
         cleaned = value.strip()
@@ -247,6 +250,7 @@ class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
 
 class TeachingAchievementSerializer(TeacherOwnedAchievementSerializer):
     achievement_type_display = serializers.CharField(source='get_achievement_type_display', read_only=True)
+    role_display = serializers.SerializerMethodField()
 
     class Meta:
         model = TeachingAchievement
@@ -260,10 +264,28 @@ class TeachingAchievementSerializer(TeacherOwnedAchievementSerializer):
             'status_label',
             'achievement_type',
             'achievement_type_display',
+            'role',
+            'role_display',
             'level',
             'created_at',
         )
-        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('achievement_type_display',)
+        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('achievement_type_display', 'role_display')
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        achievement_type = attrs.get('achievement_type')
+        if achievement_type is None and self.instance is not None:
+            achievement_type = self.instance.achievement_type
+
+        if achievement_type in {'COMPETITION', 'THESIS'}:
+            attrs['role'] = 'PI'
+
+        return attrs
+
+    def get_role_display(self, obj):
+        if obj.achievement_type in {'COMPETITION', 'THESIS'}:
+            return '指导教师'
+        return obj.get_role_display()
 
 
 class AcademicServiceSerializer(TeacherOwnedAchievementSerializer):

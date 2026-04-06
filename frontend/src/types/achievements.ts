@@ -77,6 +77,8 @@ export interface ProjectRecord extends TeacherOwnedAchievementRecord {
 export interface IpRecord extends TeacherOwnedAchievementRecord {
   ip_type: string
   ip_type_display: string
+  role: string
+  role_display: string
   registration_number: string
   is_transformed: boolean
 }
@@ -84,6 +86,8 @@ export interface IpRecord extends TeacherOwnedAchievementRecord {
 export interface TeachingRecord extends TeacherOwnedAchievementRecord {
   achievement_type: string
   achievement_type_display: string
+  role: string
+  role_display: string
   level: string
 }
 
@@ -124,6 +128,7 @@ export interface IpFormState {
   title: string
   date_acquired: string
   ip_type: string
+  role: string
   registration_number: string
   is_transformed: boolean
 }
@@ -132,6 +137,7 @@ export interface TeachingFormState {
   title: string
   date_acquired: string
   achievement_type: string
+  role: string
   level: string
 }
 
@@ -173,6 +179,7 @@ export interface IpMutationPayload {
   title: string
   date_acquired: string
   ip_type: string
+  role: string
   registration_number: string
   is_transformed: boolean
 }
@@ -181,6 +188,7 @@ export interface TeachingMutationPayload {
   title: string
   date_acquired: string
   achievement_type: string
+  role: string
   level: string
 }
 
