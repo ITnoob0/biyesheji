@@ -1,4 +1,5 @@
-export type GuideStatus = 'DRAFT' | 'OPEN' | 'CLOSED' | 'ARCHIVED'
+export type GuideStatus = 'DRAFT' | 'ACTIVE' | 'URGENT' | 'ARCHIVED'
+export type GuideScope = 'GLOBAL' | 'ACADEMY'
 export type GuideLevel = 'NATIONAL' | 'PROVINCIAL' | 'MUNICIPAL' | 'ENTERPRISE'
 export type RecommendationFeedbackSignal = '' | 'INTERESTED' | 'NOT_RELEVANT' | 'PLAN_TO_APPLY' | 'APPLIED'
 export type GuideRuleProfile =
@@ -27,6 +28,10 @@ export interface ProjectGuideRecord {
   guide_level_display: string
   status: GuideStatus
   status_display: string
+  scope: GuideScope
+  scope_display: string
+  academy_id?: number | null
+  academy_name?: string
   rule_profile: GuideRuleProfile
   rule_profile_display: string
   rule_config: GuideRuleConfig
@@ -208,14 +213,28 @@ export interface RecommendationPortraitLinkSummary {
 export interface GuideLifecycleSummary {
   total_count: number
   draft_count: number
-  open_count: number
-  closed_count: number
+  active_count: number
+  urgent_count: number
   archived_count: number
+  overdue_active_count: number
   deadline_warning_count: number
-  stale_open_count: number
+  stale_active_count: number
   config_coverage_count: number
   status_distribution: Record<string, number>
   rule_profile_distribution: Record<string, number>
+  // backward-compatible fields kept for older pages
+  open_count?: number
+  closed_count?: number
+  stale_open_count?: number
+}
+
+export interface GuideTargetedPushResponse {
+  detail: string
+  guide_id: number
+  guide_status: GuideStatus
+  scope: GuideScope
+  matched_count: number
+  notification_count?: number
 }
 
 export interface RecommendationResponse {

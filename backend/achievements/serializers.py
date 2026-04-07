@@ -27,6 +27,7 @@ class CoAuthorDetailSerializer(serializers.ModelSerializer):
 
 class CoAuthorInputSerializer(serializers.Serializer):
     name = serializers.CharField()
+    organization = serializers.CharField(required=False, allow_blank=True)
     user_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     order = serializers.IntegerField(required=False, min_value=1, allow_null=True)
     author_rank = serializers.IntegerField(required=False, min_value=1, allow_null=True)
@@ -151,6 +152,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             if order is not None:
                 author_rank = order
             name = (item.get('name') or '').strip()
+            organization = (item.get('organization') or '').strip()
 
             resolved_user = None
             if user_id:
@@ -166,10 +168,15 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
                 )
                 if resolved_user:
                     name = name or (resolved_user.real_name or resolved_user.username)
+                    organization = organization or (resolved_user.department or '')
 
             if not name:
                 continue
-            dedupe_key = f'u:{resolved_user.id}' if resolved_user else f'n:{name}'
+            dedupe_key = (
+                f'u:{resolved_user.id}'
+                if resolved_user
+                else f"n:{name}|o:{organization.lower()}"
+            )
             if dedupe_key in seen_keys:
                 continue
             is_corresponding = bool(item.get('is_corresponding', False))
@@ -181,6 +188,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             normalized.append(
                 {
                     'name': name,
+                    'organization': organization,
                     'user_id': resolved_user.id if resolved_user else None,
                     'author_rank': author_rank,
                     'is_corresponding': is_corresponding,
@@ -245,7 +253,10 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     def _resolve_coauthor_records(self, coauthor_names: list[str], coauthor_records: list[dict] | None):
         if coauthor_records:
             return coauthor_records
-        return [{'name': name, 'user_id': None, 'author_rank': None, 'is_corresponding': False} for name in coauthor_names]
+        return [
+            {'name': name, 'organization': '', 'user_id': None, 'author_rank': None, 'is_corresponding': False}
+            for name in coauthor_names
+        ]
 
     def _replace_coauthors(self, paper, coauthor_records):
         paper.coauthors.all().delete()
@@ -253,6 +264,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             CoAuthor.objects.create(
                 paper=paper,
                 name=item.get('name', '').strip(),
+                organization=(item.get('organization') or '').strip(),
                 internal_teacher_id=item.get('user_id'),
                 author_rank=item.get('author_rank'),
                 is_corresponding=bool(item.get('is_corresponding', False)),

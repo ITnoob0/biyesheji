@@ -57,7 +57,6 @@ const summaryLoading = ref(false)
 const avatarUploading = ref(false)
 const profileFormRef = ref<FormInstance>()
 const recentAchievements = ref<RecentAchievementRecord[]>([])
-const pendingClaimCount = ref(0)
 const achievementOverview = ref<AchievementOverview>({
   paper_count: 0,
   project_count: 0,
@@ -153,7 +152,6 @@ const activeSection = computed(() => props.sectionMode)
 const isPublicProfileSection = computed(() => activeSection.value === 'public-profile')
 const isSecuritySection = computed(() => activeSection.value === 'security')
 const isQuickLinksSection = computed(() => activeSection.value === 'quick-links')
-const canAccessClaimCenter = computed(() => currentUser.value?.role_code === 'teacher')
 
 const hydrateProfileForm = (user: SessionUser) => {
   Object.assign(profileForm, {
@@ -197,22 +195,8 @@ const loadSummary = async () => {
   }
 }
 
-const loadClaimPendingCount = async () => {
-  if (!canAccessClaimCenter.value) {
-    pendingClaimCount.value = 0
-    return
-  }
-  try {
-    const response = await axios.get<{ pending_count: number }>('/api/achievements/claims/pending-count/')
-    pendingClaimCount.value = Number(response.data.pending_count || 0)
-  } catch (error: any) {
-    pendingClaimCount.value = 0
-    ElMessage.error(resolveApiErrorMessage(error, '待认领成果统计加载失败'))
-  }
-}
-
 const refreshOverview = async () => {
-  await Promise.all([loadSummary(), loadClaimPendingCount()])
+  await loadSummary()
 }
 
 const beforeAvatarUpload = (file: File) => {
@@ -305,9 +289,6 @@ onMounted(async () => {
               <p>{{ profileCompleteness }}% 完整度 / {{ publicContactSummary }}</p>
             </div>
             <div class="header-actions">
-              <el-badge v-if="canAccessClaimCenter" :value="pendingClaimCount" :hidden="pendingClaimCount <= 0">
-                <el-button plain type="primary" @click="router.push('/profile-editor/achievement-claims')">待认领成果</el-button>
-              </el-badge>
               <el-button plain :loading="summaryLoading" @click="refreshOverview">刷新资料</el-button>
             </div>
           </div>

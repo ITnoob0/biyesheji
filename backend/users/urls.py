@@ -2,7 +2,13 @@ from django.urls import path
 
 from .views import (
     CurrentUserAvatarUploadView,
+    UserNotificationListView,
+    UserNotificationMarkAllReadView,
+    UserNotificationMarkReadView,
+    UserNotificationUnreadCountView,
     TeacherBulkActionView,
+    TeacherBulkImportView,
+    TeacherBulkImportTemplateView,
     CurrentUserPasswordChangeView,
     CurrentUserView,
     ForgotPasswordResetView,
@@ -23,6 +29,12 @@ urlpatterns = [
     path("teachers/", TeacherListCreateView.as_view(), name="teacher_list_create"),
     path("teachers/summary/", TeacherManagementSummaryView.as_view(), name="teacher_management_summary"),
     path("teachers/bulk-actions/", TeacherBulkActionView.as_view(), name="teacher_bulk_action"),
+    path("teachers/bulk-import/", TeacherBulkImportView.as_view(), name="teacher_bulk_import"),
+    path("teachers/bulk-import-template/", TeacherBulkImportTemplateView.as_view(), name="teacher_bulk_import_template"),
     path("teachers/<int:user_id>/", TeacherDetailView.as_view(), name="teacher_detail"),
     path("teachers/<int:user_id>/reset-password/", TeacherResetPasswordView.as_view(), name="teacher_reset_password"),
+    path("notifications/unread-count/", UserNotificationUnreadCountView.as_view(), name="user_notification_unread_count"),
+    path("notifications/", UserNotificationListView.as_view(), name="user_notification_list"),
+    path("notifications/read-all/", UserNotificationMarkAllReadView.as_view(), name="user_notification_read_all"),
+    path("notifications/<int:notification_id>/read/", UserNotificationMarkReadView.as_view(), name="user_notification_read"),
 ]

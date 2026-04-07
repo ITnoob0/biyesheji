@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from users.models import UserNotification
 
 from .models import (
     AcademicService,
@@ -2120,6 +2121,13 @@ class AchievementClaimFlowApiTests(APITestCase):
         self.assertIsNotNone(claim)
         self.assertEqual(claim.status, 'PENDING')
         self.assertEqual(claim.initiator_id, self.teacher_a.id)
+        self.assertGreaterEqual(
+            UserNotification.objects.filter(
+                recipient=self.teacher_b,
+                category=UserNotification.CATEGORY_ACHIEVEMENT_CLAIM,
+            ).count(),
+            1,
+        )
 
     def test_accept_claim_updates_status_and_all_achievements_contains_claimed_paper(self):
         paper = self._create_approved_paper()
@@ -2184,3 +2192,29 @@ class AchievementClaimFlowApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['records']), 1)
         self.assertEqual(response.data['records'][0]['target_user_name'], '李晨')
+
+    def test_college_admin_remind_writes_claim_notifications(self):
+        paper = self._create_approved_paper()
+        claim = AchievementClaim.objects.create(
+            achievement=paper,
+            initiator=self.teacher_a,
+            target_user=self.teacher_b,
+            status='PENDING',
+        )
+        AchievementClaim.objects.filter(id=claim.id).update(created_at=timezone.now() - timedelta(days=10))
+
+        self.client.force_authenticate(user=self.college_admin)
+        response = self.client.post(
+            '/api/achievements/claims/college-unclaimed/remind/',
+            {'days_threshold': 7},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data['reminded_count'], 1)
+        self.assertGreaterEqual(
+            UserNotification.objects.filter(
+                recipient=self.teacher_b,
+                category=UserNotification.CATEGORY_CLAIM_REMINDER,
+            ).count(),
+            1,
+        )

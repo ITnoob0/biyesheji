@@ -88,9 +88,6 @@ onMounted(() => {
     <div class="login-card">
       <p class="eyebrow">Teacher Research Profile</p>
       <h1>登录系统</h1>
-      <p class="description">
-        管理员继续使用 <code>admin</code> 登录，教师继续使用 6 位工号作为登录用户名。
-      </p>
 
       <el-alert
         v-if="loginErrorNotice"
@@ -117,13 +114,6 @@ onMounted(() => {
         show-icon
       />
 
-      <el-alert
-        title="若密码由管理员初始化或重置，登录后请尽快在“个人中心”页修改密码。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
-
       <el-input v-model="username" placeholder="工号 / 管理员账号" size="large" />
       <el-input
         v-model="password"
@@ -133,13 +123,9 @@ onMounted(() => {
         show-password
         @keyup.enter="handleLogin"
       />
+      <button type="button" class="forgot-link" @click="router.push('/forgot-password')">忘记密码？</button>
 
       <el-button type="primary" size="large" :loading="loading" @click="handleLogin">登录</el-button>
-
-      <div class="secondary-actions">
-        <el-button size="large" @click="router.push('/register')">教师注册</el-button>
-        <el-button size="large" @click="router.push('/forgot-password')">忘记密码</el-button>
-      </div>
     </div>
   </div>
 </template>
@@ -185,9 +171,19 @@ h1 {
   line-height: 1.6;
 }
 
-.secondary-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.forgot-link {
+  justify-self: end;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.forgot-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 </style>

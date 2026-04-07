@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import ProjectGuide, ProjectGuideFavorite, ProjectGuideRecommendationRecord
+from .models import Academy, ProjectGuide, ProjectGuideFavorite, ProjectGuideRecommendationRecord
 
 
 def normalize_text_list(values):
@@ -24,10 +24,21 @@ ALLOWED_RULE_CONFIG_KEYS = {
 
 
 class ProjectGuideSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(
+        choices=list(ProjectGuide.STATUS_CHOICES) + [('OPEN', '申报中'), ('CLOSED', '已截止')],
+    )
     guide_level_display = serializers.CharField(source='get_guide_level_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    scope_display = serializers.CharField(source='get_scope_display', read_only=True)
     rule_profile_display = serializers.CharField(source='get_rule_profile_display', read_only=True)
     created_by_name = serializers.SerializerMethodField()
+    academy_id = serializers.PrimaryKeyRelatedField(
+        source='academy',
+        queryset=Academy.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    academy_name = serializers.SerializerMethodField()
     status_timeline = serializers.SerializerMethodField()
 
     class Meta:
@@ -40,6 +51,10 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
             'guide_level_display',
             'status',
             'status_display',
+            'scope',
+            'scope_display',
+            'academy_id',
+            'academy_name',
             'rule_profile',
             'rule_profile_display',
             'rule_config',
@@ -91,6 +106,13 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('指南摘要至少需要 10 个字符。')
         return cleaned
 
+    def validate_status(self, value):
+        normalized = ProjectGuide.LEGACY_STATUS_MAP.get(value, value)
+        valid_statuses = {item[0] for item in ProjectGuide.STATUS_CHOICES}
+        if normalized not in valid_statuses:
+            raise serializers.ValidationError('指南状态不合法。')
+        return normalized
+
     def validate_support_amount(self, value):
         return value.strip()
 
@@ -124,10 +146,24 @@ class ProjectGuideSerializer(serializers.ModelSerializer):
             normalized[key] = max(0, min(number, 20))
         return normalized
 
+    def validate(self, attrs):
+        scope = attrs.get('scope', getattr(self.instance, 'scope', ProjectGuide.SCOPE_GLOBAL))
+        academy_id = attrs.get('academy', getattr(self.instance, 'academy', None))
+        if scope == ProjectGuide.SCOPE_GLOBAL:
+            attrs['academy'] = None
+        elif scope == ProjectGuide.SCOPE_ACADEMY and not academy_id:
+            raise serializers.ValidationError({'academy_id': '学院范围指南必须绑定归属学院。'})
+        return attrs
+
     def get_created_by_name(self, obj):
         if not obj.created_by_id:
             return ''
         return obj.created_by.real_name or obj.created_by.username
+
+    def get_academy_name(self, obj):
+        if not obj.academy_id:
+            return ''
+        return obj.academy.name
 
     def get_status_timeline(self, obj):
         timeline = []

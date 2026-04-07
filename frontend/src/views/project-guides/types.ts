@@ -1,7 +1,9 @@
 export type {
   GuideLifecycleSummary,
   GuideLevel,
+  GuideScope,
   RecommendationFeedbackSignal,
+  GuideTargetedPushResponse,
   GuideRuleConfig,
   GuideRuleProfile,
   GuideStatus,

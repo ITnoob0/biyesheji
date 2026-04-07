@@ -2,6 +2,20 @@ from django.conf import settings
 from django.db import models
 
 
+class Academy(models.Model):
+    name = models.CharField(max_length=100, unique=True, verbose_name='学院名称')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name',)
+        verbose_name = '学院'
+        verbose_name_plural = verbose_name
+
+    def __str__(self):
+        return self.name
+
+
 class ProjectGuide(models.Model):
     GUIDE_LEVELS = (
         ('NATIONAL', '国家级'),
@@ -10,11 +24,27 @@ class ProjectGuide(models.Model):
         ('ENTERPRISE', '企业合作'),
     )
 
+    STATUS_DRAFT = 'DRAFT'
+    STATUS_ACTIVE = 'ACTIVE'
+    STATUS_URGENT = 'URGENT'
+    STATUS_ARCHIVED = 'ARCHIVED'
     STATUS_CHOICES = (
-        ('DRAFT', '草稿'),
-        ('OPEN', '申报中'),
-        ('CLOSED', '已截止'),
-        ('ARCHIVED', '已归档'),
+        (STATUS_DRAFT, '草稿'),
+        (STATUS_ACTIVE, '申报中'),
+        (STATUS_URGENT, '临近截止'),
+        (STATUS_ARCHIVED, '已结束'),
+    )
+    LEGACY_STATUS_MAP = {
+        'OPEN': STATUS_ACTIVE,
+        'CLOSED': STATUS_ARCHIVED,
+    }
+    ACTIVE_PUSH_STATUSES = (STATUS_ACTIVE, STATUS_URGENT)
+
+    SCOPE_GLOBAL = 'GLOBAL'
+    SCOPE_ACADEMY = 'ACADEMY'
+    SCOPE_CHOICES = (
+        (SCOPE_GLOBAL, '全局'),
+        (SCOPE_ACADEMY, '学院'),
     )
 
     RULE_PROFILES = (
@@ -30,7 +60,17 @@ class ProjectGuide(models.Model):
     title = models.CharField(max_length=300, verbose_name='指南标题')
     issuing_agency = models.CharField(max_length=200, verbose_name='发布单位')
     guide_level = models.CharField(max_length=20, choices=GUIDE_LEVELS, default='PROVINCIAL', verbose_name='指南级别')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN', verbose_name='状态')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT, verbose_name='状态')
+    scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_GLOBAL, verbose_name='发布范围')
+    academy = models.ForeignKey(
+        Academy,
+        on_delete=models.SET_NULL,
+        related_name='project_guides',
+        null=True,
+        blank=True,
+        db_column='academy_id',
+        verbose_name='归属学院',
+    )
     application_deadline = models.DateField(blank=True, null=True, verbose_name='截止时间')
     summary = models.TextField(verbose_name='指南摘要')
     target_keywords = models.JSONField(default=list, blank=True, verbose_name='主题关键词')
@@ -67,6 +107,12 @@ class ProjectGuide(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        self.status = self.LEGACY_STATUS_MAP.get(self.status, self.status)
+        if self.scope == self.SCOPE_GLOBAL:
+            self.academy = None
+        super().save(*args, **kwargs)
 
 
 class ProjectGuideFavorite(models.Model):

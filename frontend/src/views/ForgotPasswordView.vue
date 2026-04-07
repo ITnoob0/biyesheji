@@ -9,8 +9,7 @@ import { resolveApiErrorMessage } from '../utils/authPresentation.js'
 interface ForgotPasswordFormState {
   employee_id: string
   real_name: string
-  new_password: string
-  confirm_password: string
+  department: string
 }
 
 const router = useRouter()
@@ -20,15 +19,13 @@ const loading = ref(false)
 const form = reactive<ForgotPasswordFormState>({
   employee_id: '',
   real_name: '',
-  new_password: '',
-  confirm_password: '',
+  department: '',
 })
 
 const rules: FormRules<ForgotPasswordFormState> = {
   employee_id: [{ required: true, message: '请输入工号', trigger: 'blur' }],
   real_name: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
-  new_password: [{ required: true, message: '请输入新密码', trigger: 'blur' }],
-  confirm_password: [{ required: true, message: '请再次输入新密码', trigger: 'blur' }],
+  department: [{ required: true, message: '请输入所属学院', trigger: 'blur' }],
 }
 
 const handleResetPassword = async () => {
@@ -41,10 +38,10 @@ const handleResetPassword = async () => {
 
   try {
     await axios.post('/api/users/forgot-password/', form)
-    ElMessage.success('密码已重置，请使用工号和新密码重新登录。')
+    ElMessage.success('申请已提交，学院管理员将处理你的密码重置请求。')
     router.push('/login')
   } catch (error: any) {
-    ElMessage.error(resolveApiErrorMessage(error, '密码重置失败，请检查工号和姓名。'))
+    ElMessage.error(resolveApiErrorMessage(error, '申请提交失败，请检查工号、姓名和所属学院。'))
   } finally {
     loading.value = false
   }
@@ -58,20 +55,20 @@ const handleResetPassword = async () => {
         <div>
           <p class="eyebrow">Password Recovery</p>
           <h1>忘记密码</h1>
-          <p class="description">请输入工号和真实姓名完成身份校验，然后设置新的登录密码。</p>
+          <p class="description">请输入工号、姓名和所属学院，向本学院管理员提交密码重置申请。</p>
         </div>
         <el-button @click="router.push('/login')">返回登录</el-button>
       </div>
 
       <el-alert
-        title="教师账号可通过工号和真实姓名自助重置密码；管理员账号请联系系统负责人处理。"
+        title="系统不再支持自助找回密码，申请提交后将由本学院管理员审核并重置。"
         type="info"
         :closable="false"
         show-icon
       />
 
       <el-alert
-        title="如果密码曾被管理员初始化或重置，建议通过安全渠道确认身份后再告知教师处理结果。"
+        title="管理员账号请联系系统管理员处理密码问题，本入口仅用于教师账号重置申请。"
         type="warning"
         :closable="false"
         show-icon
@@ -83,28 +80,15 @@ const handleResetPassword = async () => {
             <el-input v-model="form.employee_id" placeholder="例如 100001" />
           </el-form-item>
           <el-form-item label="真实姓名" prop="real_name">
-            <el-input v-model="form.real_name" placeholder="请输入注册时填写的真实姓名" />
+            <el-input v-model="form.real_name" placeholder="请输入姓名" />
           </el-form-item>
         </div>
-
-        <div class="grid two-cols">
-          <el-form-item label="新密码" prop="new_password">
-            <el-input v-model="form.new_password" type="password" show-password placeholder="请设置新密码" />
-          </el-form-item>
-          <el-form-item label="确认新密码" prop="confirm_password">
-            <el-input
-              v-model="form.confirm_password"
-              type="password"
-              show-password
-              placeholder="请再次输入新密码"
-              @keyup.enter="handleResetPassword"
-            />
-          </el-form-item>
-        </div>
+        <el-form-item label="所属学院" prop="department">
+          <el-input v-model="form.department" placeholder="例如 计算机学院" @keyup.enter="handleResetPassword" />
+        </el-form-item>
 
         <div class="actions">
-          <el-button type="primary" :loading="loading" @click="handleResetPassword">重置密码</el-button>
-          <el-button @click="router.push('/register')">去注册教师账号</el-button>
+          <el-button type="primary" :loading="loading" @click="handleResetPassword">提交重置申请</el-button>
         </div>
       </el-form>
     </div>

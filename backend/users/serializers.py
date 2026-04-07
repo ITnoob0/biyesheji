@@ -8,6 +8,7 @@ from rest_framework import serializers
 from .access import is_admin_user, is_college_admin_user, is_system_admin_user
 from .services import (
     build_teacher_management_summary,
+    bulk_create_user_notifications,
     build_public_contact_channels,
     get_teacher_profile,
     get_user_account_status_label,
@@ -22,6 +23,7 @@ from .services import (
     sync_teacher_profile,
     update_teacher_account_and_profile,
 )
+from .models import UserNotification
 
 DEFAULT_TEACHER_PASSWORD = "teacher123456"
 
@@ -374,13 +376,12 @@ class PasswordChangeSerializer(serializers.Serializer):
 class ForgotPasswordResetSerializer(serializers.Serializer):
     employee_id = serializers.CharField()
     real_name = serializers.CharField()
-    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
-    confirm_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    department = serializers.CharField()
 
     default_error_messages = {
-        "identity_mismatch": "工号与姓名不匹配，请重新确认。",
-        "inactive_user": "当前账户已停用，请联系管理员处理。",
-        "admin_account": "管理员账户请联系系统负责人处理密码重置。",
+        "identity_mismatch": "工号、姓名与所属学院不匹配，请重新确认。",
+        "admin_account": "管理员账号不支持通过该入口找回密码，请联系系统管理员处理。",
+        "no_college_admin": "该学院暂无可处理的学院管理员，请联系系统管理员。",
     }
 
     def validate_employee_id(self, value):
@@ -389,11 +390,9 @@ class ForgotPasswordResetSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        if attrs["new_password"] != attrs["confirm_password"]:
-            raise serializers.ValidationError({"confirm_password": "两次输入的新密码不一致。"})
-
         user_model = get_user_model()
-        login_account = attrs["employee_id"]
+        login_account = attrs["employee_id"].strip()
+        department = (attrs.get("department") or "").strip()
         try:
             user = user_model.objects.get(id=int(attrs["employee_id"]), username=login_account)
         except user_model.DoesNotExist as exc:
@@ -404,17 +403,53 @@ class ForgotPasswordResetSerializer(serializers.Serializer):
 
         if (user.real_name or "").strip() != attrs["real_name"].strip():
             raise serializers.ValidationError({"detail": self.error_messages["identity_mismatch"]})
+        if (user.department or "").strip() != department:
+            raise serializers.ValidationError({"detail": self.error_messages["identity_mismatch"]})
 
-        if not user.is_active:
-            raise serializers.ValidationError({"detail": self.error_messages["inactive_user"]})
+        admins = list(
+            user_model.objects.filter(
+                is_active=True,
+                is_staff=True,
+                is_superuser=False,
+                department=department,
+            ).order_by("id")
+        )
+        if not admins:
+            raise serializers.ValidationError({"detail": self.error_messages["no_college_admin"]})
 
-        validate_password(attrs["new_password"], user=user)
         attrs["user"] = user
+        attrs["college_admins"] = admins
+        attrs["department"] = department
         return attrs
 
     def save(self, **kwargs):
         user = self.validated_data["user"]
-        set_user_password(user, self.validated_data["new_password"], require_password_change=False)
+        admins = self.validated_data["college_admins"]
+        department = self.validated_data["department"]
+        requester_name = (user.real_name or user.username or "").strip()
+
+        bulk_create_user_notifications(
+            recipients=admins,
+            sender=None,
+            category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
+            title="收到教师密码重置申请",
+            content_builder=lambda recipient: (
+                f"教师 {requester_name}（工号 {user.username}）提交了密码重置申请，"
+                f"学院：{department}。请在教师总览中筛选并执行重置密码。"
+            ),
+            action_path="/teachers",
+            action_query_builder=lambda recipient: {
+                "focus": str(user.id),
+                "keyword": user.username,
+                "source": "password_reset_request",
+            },
+            payload_builder=lambda recipient: {
+                "teacher_id": user.id,
+                "employee_id": user.username,
+                "real_name": requester_name,
+                "department": department,
+            },
+        )
         return user
 
 
@@ -470,3 +505,30 @@ class CurrentUserAvatarUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(self.error_messages["file_too_large"])
 
         return value
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="get_category_display", read_only=True)
+    sender_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserNotification
+        fields = (
+            "id",
+            "category",
+            "category_label",
+            "title",
+            "content",
+            "action_path",
+            "action_query",
+            "payload",
+            "is_read",
+            "read_at",
+            "created_at",
+            "sender_name",
+        )
+
+    def get_sender_name(self, obj):
+        if not obj.sender_id:
+            return ""
+        return obj.sender.real_name or obj.sender.username

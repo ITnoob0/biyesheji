@@ -30,6 +30,7 @@ export interface CoAuthorDetail {
 
 export interface CoAuthorRecordInput {
   name: string
+  organization?: string
   user_id?: number | null
   is_internal?: boolean
   order?: number | null

@@ -842,6 +842,10 @@ const toggleRecommendationDetail = (guideId: number) => {
 }
 
 const matchesRecommendationContext = (item: RecommendationItem) => {
+  const guideIdFromQuery = Number(route.query.guide_id || 0)
+  if (Number.isFinite(guideIdFromQuery) && guideIdFromQuery > 0 && item.id === guideIdFromQuery) {
+    return true
+  }
   if (linkContext.value?.guideId && item.id === linkContext.value.guideId) {
     return true
   }

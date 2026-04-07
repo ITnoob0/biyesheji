@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -14,6 +16,7 @@ from .access import (
     is_college_admin_user,
     is_system_admin_user,
 )
+from .models import UserNotification
 from .serializers import (
     DEFAULT_TEACHER_PASSWORD,
     CurrentUserSerializer,
@@ -24,13 +27,16 @@ from .serializers import (
     TeacherAccountSerializer,
     TeacherBulkActionSerializer,
     TeacherCreateSerializer,
+    UserNotificationSerializer,
     TeacherManagementSummarySerializer,
     TeacherUpdateSerializer,
 )
 from .services import (
     build_teacher_management_summary,
+    build_bulk_import_template_xlsx,
     get_user_security_notice,
     log_account_lifecycle_event,
+    parse_bulk_account_import_file,
     set_user_active_status,
     set_user_password,
     store_user_avatar_upload,
@@ -147,10 +153,13 @@ class TeacherRegistrationView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = TeacherCreateSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return api_error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message="系统已关闭自助注册，请联系学院管理员创建账号。",
+            code="self_registration_disabled",
+            request=request,
+            next_step="请返回登录页，通过“忘记密码”提交重置申请，或联系学院管理员开通账号。",
+        )
 
 
 class ForgotPasswordResetView(APIView):
@@ -159,14 +168,167 @@ class ForgotPasswordResetView(APIView):
     def post(self, request):
         serializer = ForgotPasswordResetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        serializer.save()
         return Response(
             {
-                "detail": "密码已重置，请使用工号和新密码重新登录。",
-                "security_notice": get_user_security_notice(user),
+                "detail": "密码重置申请已提交，请等待本学院管理员处理后再登录。",
             },
             status=status.HTTP_200_OK,
         )
+
+
+class TeacherBulkImportView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        ensure_admin_user(request.user)
+
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file is None:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="请先上传导入文件。",
+                code="bulk_import_file_required",
+                request=request,
+                next_step="请选择 .xlsx 或 .csv 文件后重试。",
+            )
+
+        try:
+            rows = parse_bulk_account_import_file(uploaded_file)
+        except ValueError as exc:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=str(exc),
+                code="bulk_import_file_invalid",
+                request=request,
+                next_step="请按模板整理后重新上传。",
+            )
+
+        if not rows:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="未解析到可导入数据，请检查模板内容。",
+                code="bulk_import_empty_rows",
+                request=request,
+                next_step="请至少提供一行工号与姓名后重试。",
+            )
+
+        created_items = []
+        skipped_items = []
+
+        for row in rows:
+            employee_id = (row.get("employee_id") or "").strip()
+            real_name = (row.get("real_name") or "").strip()
+            department = (row.get("department") or "").strip()
+            row_number = row.get("row_number")
+
+            if not employee_id or not real_name:
+                skipped_items.append(
+                    {
+                        "row_number": row_number,
+                        "employee_id": employee_id,
+                        "real_name": real_name,
+                        "reason": "工号或姓名为空，已跳过。",
+                    }
+                )
+                continue
+
+            if is_system_admin_user(request.user):
+                if not department:
+                    skipped_items.append(
+                        {
+                            "row_number": row_number,
+                            "employee_id": employee_id,
+                            "real_name": real_name,
+                            "reason": "创建学院管理员时必须填写所属学院。",
+                        }
+                    )
+                    continue
+                payload = {
+                    "employee_id": employee_id,
+                    "role_code": "college_admin",
+                    "real_name": real_name,
+                    "department": department,
+                    "title": "学院管理员",
+                }
+            else:
+                department = (request.user.department or "").strip()
+                if not department:
+                    skipped_items.append(
+                        {
+                            "row_number": row_number,
+                            "employee_id": employee_id,
+                            "real_name": real_name,
+                            "reason": "当前学院管理员账号未配置所属学院，无法批量创建。",
+                        }
+                    )
+                    continue
+                payload = {
+                    "employee_id": employee_id,
+                    "role_code": "teacher",
+                    "real_name": real_name,
+                    "department": department,
+                    "title": "讲师",
+                }
+
+            serializer = TeacherCreateSerializer(data=payload, context={"request": request})
+            if not serializer.is_valid():
+                first_error = next(iter(serializer.errors.values()), ["数据校验失败"])
+                message = first_error[0] if isinstance(first_error, list) else str(first_error)
+                skipped_items.append(
+                    {
+                        "row_number": row_number,
+                        "employee_id": employee_id,
+                        "real_name": real_name,
+                        "reason": message,
+                    }
+                )
+                continue
+
+            user = serializer.save()
+            created_items.append(
+                {
+                    "row_number": row_number,
+                    "employee_id": user.id,
+                    "username": user.username,
+                    "real_name": user.real_name,
+                    "department": user.department,
+                    "title": user.title,
+                    "role_code": "college_admin" if user.is_staff else "teacher",
+                }
+            )
+
+        target_label = "学院管理员" if is_system_admin_user(request.user) else "教师"
+        return Response(
+            {
+                "detail": f"批量创建{target_label}完成。",
+                "created_count": len(created_items),
+                "skipped_count": len(skipped_items),
+                "temporary_password": DEFAULT_TEACHER_PASSWORD,
+                "created_items": created_items,
+                "skipped_items": skipped_items,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TeacherBulkImportTemplateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_admin_user(request.user)
+        is_system_admin = is_system_admin_user(request.user)
+        filename, content = build_bulk_import_template_xlsx(
+            is_system_admin=is_system_admin,
+            college_name=request.user.department or "",
+        )
+        response = HttpResponse(
+            content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class TeacherDetailView(APIView):
@@ -399,4 +561,84 @@ class TeacherBulkActionView(APIView):
                 "recovery_notice": "账户停用后将无法继续登录；恢复启用后可继续使用原密码登录。若执行了密码重置，教师需登录后尽快修改临时密码。",
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class UserNotificationUnreadCountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        unread_count = UserNotification.objects.filter(recipient=request.user, is_read=False).count()
+        return Response({"unread_count": unread_count})
+
+
+class UserNotificationListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        unread_only_raw = (request.query_params.get("unread_only", "") or "").strip().lower()
+        unread_only = unread_only_raw in {"1", "true", "yes"}
+        limit_raw = (request.query_params.get("limit", "20") or "20").strip()
+        try:
+            limit = max(min(int(limit_raw), 100), 1)
+        except (TypeError, ValueError):
+            limit = 20
+
+        queryset = UserNotification.objects.filter(recipient=request.user)
+        total_count = queryset.count()
+        unread_count = queryset.filter(is_read=False).count()
+        if unread_only:
+            queryset = queryset.filter(is_read=False)
+        records = queryset.order_by("is_read", "-created_at", "-id")[:limit]
+        serializer = UserNotificationSerializer(records, many=True)
+        return Response(
+            {
+                "total_count": total_count,
+                "unread_count": unread_count,
+                "records": serializer.data,
+            }
+        )
+
+
+class UserNotificationMarkReadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, notification_id: int):
+        notification = UserNotification.objects.filter(id=notification_id, recipient=request.user).first()
+        if notification is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="通知不存在。",
+                code="notification_not_found",
+                request=request,
+                next_step="请刷新通知列表后重试。",
+            )
+
+        if not notification.is_read:
+            notification.is_read = True
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["is_read", "read_at", "updated_at"])
+
+        unread_count = UserNotification.objects.filter(recipient=request.user, is_read=False).count()
+        return Response(
+            {
+                "detail": "通知已标记为已读。",
+                "unread_count": unread_count,
+                "notification": UserNotificationSerializer(notification).data,
+            }
+        )
+
+
+class UserNotificationMarkAllReadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        unread_queryset = UserNotification.objects.filter(recipient=request.user, is_read=False)
+        updated_count = unread_queryset.update(is_read=True, read_at=timezone.now())
+        return Response(
+            {
+                "detail": f"已将 {updated_count} 条通知标记为已读。",
+                "updated_count": updated_count,
+                "unread_count": 0,
+            }
         )

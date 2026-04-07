@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 
 from achievements.models import TeacherProfile
 
+from .models import UserNotification
 from .serializers import DEFAULT_TEACHER_PASSWORD
 
 
@@ -54,6 +55,31 @@ class TeacherUserApiTests(APITestCase):
         )
         return teacher
 
+    def create_college_admin(self, user_id=100301, **kwargs):
+        user_model = get_user_model()
+        defaults = {
+            "username": str(user_id),
+            "password": "CollegeAdmin123!",
+            "real_name": "学院管理员",
+            "department": "计算机学院",
+            "title": "学院管理员",
+            "is_staff": True,
+            "is_superuser": False,
+            "is_active": True,
+        }
+        defaults.update(kwargs)
+        password = defaults.pop("password")
+        admin_user = user_model.objects.create_user(id=user_id, password=password, **defaults)
+        TeacherProfile.objects.create(
+            user=admin_user,
+            department=admin_user.department,
+            discipline="学院治理",
+            title=admin_user.title,
+            research_interests="学院治理",
+            h_index=0,
+        )
+        return admin_user
+
     def test_admin_can_create_college_admin_with_personal_center_fields(self):
         self.client.force_authenticate(user=self.admin)
         payload = {
@@ -89,7 +115,7 @@ class TeacherUserApiTests(APITestCase):
         self.assertTrue(get_user_model().objects.get(id=100101).is_staff)
         self.assertTrue(TeacherProfile.objects.filter(user_id=100101, discipline="人工智能").exists())
 
-    def test_teacher_registration_sets_personal_center_fields(self):
+    def test_teacher_registration_is_disabled(self):
         payload = {
             "employee_id": "100102",
             "real_name": "李晓雨",
@@ -109,10 +135,9 @@ class TeacherUserApiTests(APITestCase):
 
         response = self.client.post(reverse("teacher_register"), payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertFalse(response.data["password_reset_required"])
-        self.assertEqual(response.data["role_code"], "teacher")
-        self.assertEqual(response.data["contact_phone"], "13912345678")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["error"]["code"], "self_registration_disabled")
+        self.assertFalse(get_user_model().objects.filter(id=100102).exists())
 
     def test_current_user_payload_includes_permission_scope(self):
         teacher = self.create_teacher(user_id=100108, real_name="边界教师")
@@ -276,26 +301,100 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("current_password", response.data)
 
-    def test_forgot_password_reset_updates_password_and_clears_force_change_flag(self):
+    def test_forgot_password_submits_reset_request_to_college_admin(self):
         teacher = self.create_teacher(user_id=100107, real_name="陈老师")
-        teacher.password_reset_required = True
-        teacher.save(update_fields=["password_reset_required"])
+        college_admin = self.create_college_admin(user_id=100302, department=teacher.department, real_name="学院管理员甲")
+        original_password_hash = teacher.password
 
         response = self.client.post(
             reverse("forgot_password_reset"),
             {
                 "employee_id": "100107",
                 "real_name": "陈老师",
-                "new_password": "SecurePass789!Q",
-                "confirm_password": "SecurePass789!Q",
+                "department": teacher.department,
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("申请已提交", response.data["detail"])
         teacher.refresh_from_db()
-        self.assertTrue(teacher.check_password("SecurePass789!Q"))
-        self.assertFalse(teacher.password_reset_required)
+        self.assertEqual(teacher.password, original_password_hash)
+
+        notification = UserNotification.objects.filter(
+            recipient=college_admin,
+            category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
+        ).first()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.action_path, "/teachers")
+        self.assertEqual(notification.action_query.get("keyword"), "100107")
+        self.assertEqual(notification.action_query.get("focus"), str(teacher.id))
+
+    def test_system_admin_can_bulk_import_college_admins_from_csv(self):
+        self.client.force_authenticate(user=self.admin)
+        csv_content = (
+            "工号,姓名,学院,固定说明（无需填写）\n"
+            "100401,学院管理员甲,人工智能学院,固定为学院管理员\n"
+            "100402,学院管理员乙,计算机学院,固定为学院管理员\n"
+        )
+        upload = SimpleUploadedFile(
+            "college-admins.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("teacher_bulk_import"),
+            {"file": upload},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created_count"], 2)
+        self.assertEqual(response.data["skipped_count"], 0)
+        self.assertTrue(get_user_model().objects.get(id=100401).is_staff)
+        self.assertEqual(get_user_model().objects.get(id=100401).title, "学院管理员")
+        self.assertEqual(response.data["temporary_password"], DEFAULT_TEACHER_PASSWORD)
+
+    def test_college_admin_can_bulk_import_teachers_with_fixed_department_and_title(self):
+        college_admin = self.create_college_admin(user_id=100303, department="教育技术学院")
+        self.client.force_authenticate(user=college_admin)
+        csv_content = (
+            "工号,姓名,学院固定说明（无需填写）,职称固定说明（无需填写）\n"
+            "100451,教师甲,固定为当前学院：教育技术学院,固定为讲师\n"
+            "100452,教师乙,固定为当前学院：教育技术学院,固定为讲师\n"
+        )
+        upload = SimpleUploadedFile(
+            "teachers.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("teacher_bulk_import"),
+            {"file": upload},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["created_count"], 2)
+        teacher_a = get_user_model().objects.get(id=100451)
+        self.assertFalse(teacher_a.is_staff)
+        self.assertEqual(teacher_a.department, "教育技术学院")
+        self.assertEqual(teacher_a.title, "讲师")
+
+    def test_admin_can_download_bulk_import_template_excel(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get(reverse("teacher_bulk_import_template"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            response["Content-Type"],
+        )
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"PK"))
 
     def test_non_admin_cannot_view_other_teacher_detail(self):
         teacher_a = self.create_teacher(user_id=100110, real_name="教师甲")
@@ -545,3 +644,91 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.data["detail"], "账户已停用，请联系管理员处理。")
         self.assertEqual(response.data["error"]["code"], "account_inactive")
         self.assertTrue(response.data["request_id"])
+
+
+class UserNotificationApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.teacher = user_model.objects.create_user(
+            id=100201,
+            username="100201",
+            password="Teacher123456!",
+            real_name="通知教师",
+            department="人工智能学院",
+            title="讲师",
+        )
+        self.sender = user_model.objects.create_user(
+            id=100202,
+            username="100202",
+            password="Teacher123456!",
+            real_name="发送人",
+            department="人工智能学院",
+            title="副教授",
+        )
+        self.client.force_authenticate(user=self.teacher)
+
+        self.n1 = UserNotification.objects.create(
+            recipient=self.teacher,
+            sender=self.sender,
+            category=UserNotification.CATEGORY_PROJECT_GUIDE_PUSH,
+            title="收到新的项目指南推送",
+            content="请查看推荐结果。",
+            action_path="/project-recommendations",
+            action_query={"guide_id": "1"},
+        )
+        self.n2 = UserNotification.objects.create(
+            recipient=self.teacher,
+            sender=self.sender,
+            category=UserNotification.CATEGORY_ACHIEVEMENT_CLAIM,
+            title="收到成果认领邀请",
+            content="请确认位次。",
+            action_path="/profile-editor/achievement-claims",
+            action_query={"source": "notification"},
+        )
+        self.n2.is_read = True
+        self.n2.save(update_fields=["is_read"])
+
+    def test_list_and_unread_count_api(self):
+        list_response = self.client.get(reverse("user_notification_list"))
+        unread_response = self.client.get(reverse("user_notification_unread_count"))
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(unread_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data["total_count"], 2)
+        self.assertEqual(list_response.data["unread_count"], 1)
+        self.assertEqual(unread_response.data["unread_count"], 1)
+        self.assertEqual(len(list_response.data["records"]), 2)
+        self.assertEqual(list_response.data["records"][0]["title"], "收到新的项目指南推送")
+
+        unread_only_response = self.client.get(reverse("user_notification_list"), {"unread_only": "true"})
+        self.assertEqual(unread_only_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(unread_only_response.data["records"]), 1)
+        self.assertTrue(all(not item["is_read"] for item in unread_only_response.data["records"]))
+
+    def test_mark_single_and_all_read(self):
+        single_response = self.client.post(
+            reverse("user_notification_read", kwargs={"notification_id": self.n1.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(single_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(single_response.data["unread_count"], 0)
+        self.n1.refresh_from_db()
+        self.assertTrue(self.n1.is_read)
+        self.assertIsNotNone(self.n1.read_at)
+
+        n3 = UserNotification.objects.create(
+            recipient=self.teacher,
+            sender=self.sender,
+            category=UserNotification.CATEGORY_CLAIM_REMINDER,
+            title="你有待处理的成果认领邀请",
+            content="请尽快处理。",
+        )
+        self.assertFalse(n3.is_read)
+
+        mark_all_response = self.client.post(reverse("user_notification_read_all"), {}, format="json")
+        self.assertEqual(mark_all_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(mark_all_response.data["unread_count"], 0)
+        self.assertEqual(mark_all_response.data["updated_count"], 1)
+        n3.refresh_from_db()
+        self.assertTrue(n3.is_read)

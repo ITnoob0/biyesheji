@@ -93,3 +93,52 @@ export interface TeacherBulkActionResponse {
   management_summary: TeacherManagementSummaryResponse
   recovery_notice: string
 }
+
+export interface TeacherBulkImportResponse {
+  detail: string
+  created_count: number
+  skipped_count: number
+  temporary_password: string
+  created_items: Array<{
+    row_number: number
+    employee_id: number
+    username: string
+    real_name: string
+    department: string
+    title: string
+    role_code: TeacherAccountRoleCode
+  }>
+  skipped_items: Array<{
+    row_number: number
+    employee_id: string
+    real_name: string
+    reason: string
+  }>
+}
+
+export type UserNotificationCategory =
+  | 'PROJECT_GUIDE_PUSH'
+  | 'ACHIEVEMENT_CLAIM'
+  | 'CLAIM_REMINDER'
+  | 'PASSWORD_RESET_REQUEST'
+
+export interface UserNotificationRecord {
+  id: number
+  category: UserNotificationCategory
+  category_label: string
+  title: string
+  content: string
+  action_path: string
+  action_query: Record<string, string>
+  payload: Record<string, any>
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+  sender_name: string
+}
+
+export interface UserNotificationListResponse {
+  total_count: number
+  unread_count: number
+  records: UserNotificationRecord[]
+}

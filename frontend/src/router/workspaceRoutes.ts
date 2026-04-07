@@ -559,7 +559,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
         component: ProjectGuideManagementView,
         props: { sectionMode: 'manage' },
         meta: {
-          title: '新增 / 编辑',
+          title: '新增项目',
           order: 20,
           moduleKey: 'project-guide-management',
           requiresAuth: true,

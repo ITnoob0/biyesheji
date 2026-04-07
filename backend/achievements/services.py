@@ -6,6 +6,9 @@ from typing import Iterable
 from django.contrib.auth import get_user_model
 from django.db.models import Q, QuerySet
 
+from users.models import UserNotification
+from users.services import create_user_notification
+
 from .models import AchievementClaim, CoAuthor, Paper
 from .visibility import APPROVED_STATUS
 
@@ -124,6 +127,26 @@ def sync_paper_claim_invitations(paper: Paper) -> dict:
             )
             if created:
                 created_count += 1
+                create_user_notification(
+                    recipient=target_user,
+                    sender=initiator,
+                    category=UserNotification.CATEGORY_ACHIEVEMENT_CLAIM,
+                    title='收到新的成果认领邀请',
+                    content=(
+                        f"你被邀请认领论文《{paper.title}》，"
+                        f"提议署名为第{coauthor.author_rank or '未填'}作者 / "
+                        f"{'通讯作者' if coauthor.is_corresponding else '非通讯作者'}。"
+                    ),
+                    action_path='/profile-editor/achievement-claims',
+                    action_query={'source': 'notification'},
+                    payload={
+                        'claim_id': claim.id,
+                        'paper_id': paper.id,
+                        'paper_title': paper.title,
+                        'proposed_author_rank': coauthor.author_rank,
+                        'proposed_is_corresponding': bool(coauthor.is_corresponding),
+                    },
+                )
                 continue
 
             update_fields: list[str] = []
@@ -142,6 +165,25 @@ def sync_paper_claim_invitations(paper: Paper) -> dict:
             if claim.status in {'REJECTED', 'CONFLICT'}:
                 claim.status = 'PENDING'
                 update_fields.append('status')
+                create_user_notification(
+                    recipient=target_user,
+                    sender=initiator,
+                    category=UserNotification.CATEGORY_ACHIEVEMENT_CLAIM,
+                    title='成果认领邀请已更新',
+                    content=(
+                        f"论文《{paper.title}》的认领邀请已重新发起，"
+                        f"请在成果认领中确认你的署名位次。"
+                    ),
+                    action_path='/profile-editor/achievement-claims',
+                    action_query={'source': 'notification'},
+                    payload={
+                        'claim_id': claim.id,
+                        'paper_id': paper.id,
+                        'paper_title': paper.title,
+                        'proposed_author_rank': coauthor.author_rank,
+                        'proposed_is_corresponding': bool(coauthor.is_corresponding),
+                    },
+                )
             if update_fields:
                 claim.save(update_fields=update_fields)
 

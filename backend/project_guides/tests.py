@@ -1,10 +1,14 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from achievements.models import Paper, PaperKeyword, ResearchKeyword, TeacherProfile
+from users.models import UserNotification
 
-from .models import ProjectGuide, ProjectGuideFavorite, ProjectGuideRecommendationRecord
+from .models import Academy, ProjectGuide, ProjectGuideFavorite, ProjectGuideRecommendationRecord
 
 
 class ProjectGuideApiTests(APITestCase):
@@ -509,3 +513,460 @@ class ProjectGuideApiTests(APITestCase):
         self.assertGreaterEqual(summary_response.data['archived_count'], 1)
         self.assertGreaterEqual(summary_response.data['config_coverage_count'], 1)
         self.assertIn('FOUNDATION_FIRST', summary_response.data['rule_profile_distribution'])
+
+
+class ProjectGuideAdminRbacPushTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.system_admin = user_model.objects.create_superuser(
+            id=120001,
+            username='pg-system-admin',
+            password='Admin123456',
+            real_name='系统管理员PG',
+        )
+        self.college_admin_x = user_model.objects.create_user(
+            id=120002,
+            username='pg-college-admin-x',
+            password='Admin123456',
+            real_name='学院管理员X',
+            department='学院X',
+            is_staff=True,
+        )
+        self.college_admin_y = user_model.objects.create_user(
+            id=120003,
+            username='pg-college-admin-y',
+            password='Admin123456',
+            real_name='学院管理员Y',
+            department='学院Y',
+            is_staff=True,
+        )
+        self.teacher_x = user_model.objects.create_user(
+            id=120010,
+            username='120010',
+            password='teacher123456',
+            real_name='教师X1',
+            department='学院X',
+            research_direction=['人工智能', '教育数据'],
+            title='副教授',
+        )
+        self.teacher_y = user_model.objects.create_user(
+            id=120011,
+            username='120011',
+            password='teacher123456',
+            real_name='教师Y1',
+            department='学院Y',
+            research_direction=['计算机视觉'],
+            title='讲师',
+        )
+
+    def _guide_payload(self, **overrides):
+        payload = {
+            'title': '项目指南默认标题',
+            'issuing_agency': '省教育厅',
+            'guide_level': 'PROVINCIAL',
+            'status': 'DRAFT',
+            'scope': 'GLOBAL',
+            'summary': '用于测试项目指南 RBAC 与推送行为的默认摘要内容。',
+            'target_keywords': ['人工智能'],
+            'target_disciplines': ['计算机科学'],
+            'recommendation_tags': ['测试'],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_case_1_system_admin_global_lifecycle_and_targeted_push(self):
+        self.client.force_authenticate(self.system_admin)
+        create_response = self.client.post(
+            '/api/project-guides/',
+            self._guide_payload(title='全局指南草稿', status='DRAFT', scope='GLOBAL'),
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        guide_id = create_response.data['id']
+
+        patch_response = self.client.patch(
+            f'/api/project-guides/{guide_id}/',
+            {'status': 'URGENT', 'target_keywords': ['人工智能', '教育数据']},
+            format='json',
+        )
+        self.assertEqual(patch_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(patch_response.data['status'], 'URGENT')
+
+        push_response = self.client.post(f'/api/project-guides/{guide_id}/targeted_push/', {}, format='json')
+        self.assertEqual(push_response.status_code, status.HTTP_200_OK)
+        self.assertIn('matched_count', push_response.data)
+        self.assertGreaterEqual(push_response.data['matched_count'], 1)
+        self.assertGreaterEqual(
+            UserNotification.objects.filter(
+                recipient=self.teacher_x,
+                category=UserNotification.CATEGORY_PROJECT_GUIDE_PUSH,
+            ).count(),
+            1,
+        )
+
+    def test_case_2_college_admin_scope_forced_to_academy(self):
+        self.client.force_authenticate(self.college_admin_x)
+        response = self.client.post(
+            '/api/project-guides/',
+            self._guide_payload(title='学院管理员创建指南', scope='GLOBAL', status='ACTIVE'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        guide = ProjectGuide.objects.get(id=response.data['id'])
+        self.assertEqual(guide.scope, ProjectGuide.SCOPE_ACADEMY)
+        self.assertIsNotNone(guide.academy_id)
+        self.assertEqual(guide.academy.name, '学院X')
+
+    def test_case_3_cross_academy_data_isolation(self):
+        academy_x = Academy.objects.create(name='学院X')
+        academy_y = Academy.objects.create(name='学院Y')
+        global_guide = ProjectGuide.objects.create(
+            title='全局可见指南',
+            issuing_agency='科技部',
+            guide_level='NATIONAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            summary='全局指南',
+            created_by=self.system_admin,
+        )
+        guide_a1 = ProjectGuide.objects.create(
+            title='学院X指南A1',
+            issuing_agency='学院X科研办',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='ACADEMY',
+            academy=academy_x,
+            summary='学院X指南',
+            created_by=self.college_admin_x,
+        )
+        guide_b1 = ProjectGuide.objects.create(
+            title='学院Y指南B1',
+            issuing_agency='学院Y科研办',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='ACADEMY',
+            academy=academy_y,
+            summary='学院Y指南',
+            created_by=self.college_admin_y,
+        )
+
+        self.client.force_authenticate(self.college_admin_y)
+        list_response = self.client.get('/api/project-guides/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in list_response.data}
+        self.assertIn(global_guide.id, returned_ids)
+        self.assertIn(guide_b1.id, returned_ids)
+        self.assertNotIn(guide_a1.id, returned_ids)
+
+        delete_response = self.client.delete(f'/api/project-guides/{guide_a1.id}/')
+        self.assertIn(delete_response.status_code, [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND])
+        self.assertTrue(ProjectGuide.objects.filter(id=guide_a1.id).exists())
+
+    def test_case_4_archived_guide_cannot_trigger_targeted_push(self):
+        self.client.force_authenticate(self.system_admin)
+        guide = ProjectGuide.objects.create(
+            title='已归档指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='ARCHIVED',
+            scope='GLOBAL',
+            summary='归档后禁止推送',
+            created_by=self.system_admin,
+        )
+        response = self.client.post(f'/api/project-guides/{guide.id}/targeted_push/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_lifecycle_filters_by_deadline_and_updated_at(self):
+        self.client.force_authenticate(self.system_admin)
+        today = timezone.now().date()
+
+        old_guide = ProjectGuide.objects.create(
+            title='生命周期旧指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            application_deadline=today - timedelta(days=10),
+            summary='用于验证生命周期旧数据筛选。',
+            created_by=self.system_admin,
+        )
+        recent_guide = ProjectGuide.objects.create(
+            title='生命周期新指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            application_deadline=today + timedelta(days=30),
+            summary='用于验证生命周期新数据筛选。',
+            created_by=self.system_admin,
+        )
+        ProjectGuide.objects.filter(id=old_guide.id).update(updated_at=timezone.now() - timedelta(days=40))
+
+        response = self.client.get(
+            '/api/project-guides/',
+            {
+                'status': 'ACTIVE',
+                'deadline_from': str(today),
+                'updated_from': str(today - timedelta(days=7)),
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_titles = {item['title'] for item in response.data}
+        self.assertIn(recent_guide.title, returned_titles)
+        self.assertNotIn(old_guide.title, returned_titles)
+
+    def test_lifecycle_summary_contains_overdue_active_count(self):
+        self.client.force_authenticate(self.system_admin)
+        today = timezone.now().date()
+        ProjectGuide.objects.create(
+            title='已超期未归档指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            application_deadline=today - timedelta(days=1),
+            summary='用于验证超期统计。',
+            created_by=self.system_admin,
+        )
+        ProjectGuide.objects.create(
+            title='正常进行指南',
+            issuing_agency='省教育厅',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            application_deadline=today + timedelta(days=10),
+            summary='用于验证超期统计。',
+            created_by=self.system_admin,
+        )
+        response = self.client.get('/api/project-guides/summary/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data['overdue_active_count'], 1)
+
+
+class ProjectRecommendationThreeRoleFlowTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.system_admin = user_model.objects.create_superuser(
+            id=130001,
+            username='rec-system-admin',
+            password='Admin123456',
+            real_name='系统管理员推荐',
+        )
+        self.college_admin_ai = user_model.objects.create_user(
+            id=130002,
+            username='rec-college-admin-ai',
+            password='Admin123456',
+            real_name='学院管理员AI',
+            is_staff=True,
+            department='人工智能学院',
+            title='教授',
+        )
+        self.college_admin_cs = user_model.objects.create_user(
+            id=130003,
+            username='rec-college-admin-cs',
+            password='Admin123456',
+            real_name='学院管理员CS',
+            is_staff=True,
+            department='计算机学院',
+            title='教授',
+        )
+        self.teacher_ai_1 = user_model.objects.create_user(
+            id=130010,
+            username='130010',
+            password='Teacher123456',
+            real_name='AI教师甲',
+            department='人工智能学院',
+            title='副教授',
+            research_direction=['知识图谱', '智能推荐'],
+        )
+        self.teacher_ai_2 = user_model.objects.create_user(
+            id=130011,
+            username='130011',
+            password='Teacher123456',
+            real_name='AI教师乙',
+            department='人工智能学院',
+            title='讲师',
+            research_direction=['智能推荐'],
+        )
+        self.teacher_cs_1 = user_model.objects.create_user(
+            id=130012,
+            username='130012',
+            password='Teacher123456',
+            real_name='CS教师甲',
+            department='计算机学院',
+            title='副教授',
+            research_direction=['计算机视觉'],
+        )
+
+        TeacherProfile.objects.create(
+            user=self.teacher_ai_1,
+            department='人工智能学院',
+            discipline='人工智能',
+            title='副教授',
+            research_interests='知识图谱, 智能推荐',
+            h_index=12,
+        )
+        TeacherProfile.objects.create(
+            user=self.teacher_ai_2,
+            department='人工智能学院',
+            discipline='人工智能',
+            title='讲师',
+            research_interests='智能推荐',
+            h_index=5,
+        )
+        TeacherProfile.objects.create(
+            user=self.teacher_cs_1,
+            department='计算机学院',
+            discipline='计算机科学',
+            title='副教授',
+            research_interests='计算机视觉',
+            h_index=9,
+        )
+
+        self.academy_ai = Academy.objects.create(name='人工智能学院')
+        self.academy_cs = Academy.objects.create(name='计算机学院')
+
+        self.global_active_guide = ProjectGuide.objects.create(
+            title='全校智能申报指南',
+            issuing_agency='科技处',
+            guide_level='NATIONAL',
+            status='ACTIVE',
+            scope='GLOBAL',
+            summary='全校范围内可申报的智能方向项目指南。',
+            target_keywords=['智能推荐', '知识图谱'],
+            target_disciplines=['人工智能', '计算机科学'],
+            created_by=self.system_admin,
+        )
+        self.ai_college_guide = ProjectGuide.objects.create(
+            title='人工智能学院专项指南',
+            issuing_agency='人工智能学院科研办',
+            guide_level='PROVINCIAL',
+            status='URGENT',
+            scope='ACADEMY',
+            academy=self.academy_ai,
+            summary='仅面向人工智能学院的专项申报指南。',
+            target_keywords=['知识图谱'],
+            target_disciplines=['人工智能'],
+            created_by=self.college_admin_ai,
+        )
+        self.cs_college_guide = ProjectGuide.objects.create(
+            title='计算机学院专项指南',
+            issuing_agency='计算机学院科研办',
+            guide_level='PROVINCIAL',
+            status='ACTIVE',
+            scope='ACADEMY',
+            academy=self.academy_cs,
+            summary='仅面向计算机学院的专项申报指南。',
+            target_keywords=['计算机视觉'],
+            target_disciplines=['计算机科学'],
+            created_by=self.college_admin_cs,
+        )
+        ProjectGuide.objects.create(
+            title='历史归档指南',
+            issuing_agency='科技处',
+            guide_level='MUNICIPAL',
+            status='ARCHIVED',
+            scope='GLOBAL',
+            summary='已归档指南，不应参与当前推荐。',
+            target_keywords=['历史'],
+            target_disciplines=['历史学'],
+            created_by=self.system_admin,
+        )
+
+        for teacher, title_suffix, keyword in [
+            (self.teacher_ai_1, 'A1', '智能推荐'),
+            (self.teacher_ai_2, 'A2', '知识图谱'),
+            (self.teacher_cs_1, 'C1', '计算机视觉'),
+        ]:
+            paper = Paper.objects.create(
+                teacher=teacher,
+                title=f'推荐测试论文-{title_suffix}',
+                abstract=f'围绕{keyword}方向开展研究。',
+                date_acquired='2025-06-01',
+                paper_type='JOURNAL',
+                journal_name='科研管理研究',
+                citation_count=3,
+                doi=f'10.1000/rec-flow-{title_suffix.lower()}',
+                status='APPROVED',
+            )
+            keyword_obj, _ = ResearchKeyword.objects.get_or_create(name=keyword)
+            PaperKeyword.objects.create(paper=paper, keyword=keyword_obj)
+
+    def test_teacher_recommendation_full_flow(self):
+        self.client.force_authenticate(self.teacher_ai_1)
+        rec_response = self.client.get('/api/project-guides/recommendations/')
+        self.assertEqual(rec_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(rec_response.data['recommendations'])
+
+        titles = {item['title'] for item in rec_response.data['recommendations']}
+        self.assertIn(self.global_active_guide.title, titles)
+        self.assertIn(self.ai_college_guide.title, titles)
+        self.assertNotIn(self.cs_college_guide.title, titles)
+        self.assertNotIn('历史归档指南', titles)
+
+        favorite_response = self.client.post(
+            f'/api/project-guides/{self.global_active_guide.id}/favorite/',
+            {'is_favorited': True},
+            format='json',
+        )
+        self.assertEqual(favorite_response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.global_active_guide.id, favorite_response.data['favorite_ids'])
+
+        feedback_response = self.client.post(
+            f'/api/project-guides/{self.global_active_guide.id}/feedback/',
+            {'feedback_signal': 'INTERESTED', 'feedback_note': '当前方向与本人研究较贴合。'},
+            format='json',
+        )
+        self.assertEqual(feedback_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(feedback_response.data['feedback_signal'], 'INTERESTED')
+
+        history_response = self.client.get('/api/project-guides/recommendation-history/')
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(history_response.data['history'])
+
+        forbidden_response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher_ai_2.id},
+        )
+        self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_college_admin_recommendation_scope_flow(self):
+        self.client.force_authenticate(self.college_admin_ai)
+        in_scope_response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher_ai_1.id},
+        )
+        self.assertEqual(in_scope_response.status_code, status.HTTP_200_OK)
+        self.assertIn('admin_analysis', in_scope_response.data)
+
+        titles = {item['title'] for item in in_scope_response.data['recommendations']}
+        self.assertIn(self.global_active_guide.title, titles)
+        self.assertIn(self.ai_college_guide.title, titles)
+        self.assertNotIn(self.cs_college_guide.title, titles)
+
+        compare_response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher_ai_1.id, 'compare_user_id': self.teacher_ai_2.id},
+        )
+        self.assertEqual(compare_response.status_code, status.HTTP_200_OK)
+        self.assertIn('comparison_summary', compare_response.data)
+        self.assertTrue(compare_response.data['comparison_teacher_snapshot'])
+
+        out_scope_response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher_cs_1.id},
+        )
+        self.assertEqual(out_scope_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_system_admin_recommendation_global_flow(self):
+        self.client.force_authenticate(self.system_admin)
+        response = self.client.get(
+            '/api/project-guides/recommendations/',
+            {'user_id': self.teacher_cs_1.id, 'compare_user_id': self.teacher_ai_1.id},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('admin_analysis', response.data)
+        self.assertTrue(response.data['comparison_teacher_snapshot'])
+        self.assertIn('comparison_summary', response.data)
+        self.assertEqual(response.data['teacher_snapshot']['user_id'], self.teacher_cs_1.id)
+        self.assertEqual(response.data['comparison_teacher_snapshot']['user_id'], self.teacher_ai_1.id)

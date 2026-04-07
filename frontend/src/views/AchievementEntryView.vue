@@ -196,19 +196,13 @@
               <el-form-item label="作者与认领设置">
                 <div class="coauthor-form-shell">
                   <div class="coauthor-row coauthor-row-head">
-                    <span>姓名</span>
-                    <span>是否本院教师</span>
-                    <span>本院教师搜索</span>
+                    <span>是否本校教师</span>
+                    <span>作者信息</span>
                     <span>作者位次</span>
                     <span>通讯作者</span>
                     <span>操作</span>
                   </div>
                   <div v-for="(author, index) in paperForm.coauthor_records" :key="`author-${index}`" class="coauthor-row">
-                    <el-input
-                      v-model="author.name"
-                      :disabled="Boolean(author.is_internal && author.user_id)"
-                      placeholder="作者姓名"
-                    />
                     <el-switch
                       v-model="author.is_internal"
                       inline-prompt
@@ -216,32 +210,44 @@
                       inactive-text="否"
                       @change="toggleInternalAuthor(author)"
                     />
-                    <el-select
-                      v-model="author.user_id"
-                      :disabled="!author.is_internal"
-                      filterable
-                      remote
-                      reserve-keyword
-                      clearable
-                      placeholder="搜索本院教师"
-                      :remote-method="searchInternalTeachers"
-                      @focus="searchInternalTeachers('')"
-                      @change="handleInternalTeacherChange(author)"
-                    >
-                      <el-option
-                        v-for="option in internalTeacherOptions"
-                        :key="option.id"
-                        :label="option.label"
-                        :value="option.id"
-                      />
-                    </el-select>
+                    <div class="coauthor-identity-field">
+                      <el-select
+                        v-if="author.is_internal"
+                        v-model="author.user_id"
+                        filterable
+                        remote
+                        reserve-keyword
+                        clearable
+                        placeholder="输入姓名或工号搜索本校教师"
+                        :remote-method="searchInternalTeachers"
+                        @focus="searchInternalTeachers('')"
+                        @change="handleInternalTeacherChange(author)"
+                      >
+                        <el-option
+                          v-for="option in internalTeacherOptions"
+                          :key="option.id"
+                          :label="option.label"
+                          :value="option.id"
+                        />
+                      </el-select>
+                      <div v-else class="coauthor-external-fields">
+                        <el-input
+                          v-model="author.name"
+                          placeholder="作者姓名"
+                        />
+                        <el-input
+                          v-model="author.organization"
+                          placeholder="任职单位"
+                        />
+                      </div>
+                    </div>
                     <el-input-number v-model="author.order" :min="1" :step="1" controls-position="right" />
                     <el-switch v-model="author.is_corresponding" inline-prompt active-text="是" inactive-text="否" />
                     <el-button text type="danger" @click="removeCoauthorRow(index)">删除</el-button>
                   </div>
                   <div class="coauthor-actions">
                     <el-button plain @click="addCoauthorRow">新增作者行</el-button>
-                    <span>支持学生一作、教师通讯、共同通讯；若选择本院教师将自动生成认领邀请。</span>
+                    <span>支持学生一作、教师通讯、共同通讯；若选择本校教师将自动生成认领邀请。</span>
                   </div>
                 </div>
               </el-form-item>
@@ -878,7 +884,7 @@ const canReviewAchievements = computed(() => Boolean(sessionUser.value?.is_admin
 const bibtexDialogVisible = ref(false)
 const dashboardStats = ref<DashboardStatsResponse | null>(null)
 const paperSummary = ref<PaperSummaryResponse | null>(null)
-const internalTeacherOptions = ref<Array<{ id: number; label: string }>>([])
+const internalTeacherOptions = ref<Array<{ id: number; label: string; name: string; username: string }>>([])
 
 const paperFormRef = ref<FormInstance>()
 const projectFormRef = ref<FormInstance>()
@@ -1107,6 +1113,7 @@ const serviceRules: FormRules = {
 
 const createEmptyCoauthorRow = (): CoAuthorRecordInput => ({
   name: '',
+  organization: '',
   user_id: null,
   is_internal: false,
   order: null,
@@ -1123,6 +1130,11 @@ const removeCoauthorRow = (index: number): void => {
 }
 
 const toggleInternalAuthor = (author: CoAuthorRecordInput): void => {
+  if (author.is_internal) {
+    author.name = ''
+    author.organization = ''
+    return
+  }
   if (!author.is_internal) {
     author.user_id = null
   }
@@ -1130,11 +1142,13 @@ const toggleInternalAuthor = (author: CoAuthorRecordInput): void => {
 
 const handleInternalTeacherChange = (author: CoAuthorRecordInput): void => {
   if (!author.user_id) {
+    author.name = ''
     return
   }
   const option = internalTeacherOptions.value.find(item => item.id === author.user_id)
   if (option) {
-    author.name = option.label
+    author.name = option.name
+    author.organization = ''
   }
 }
 
@@ -1146,7 +1160,9 @@ const searchInternalTeachers = async (keyword: string): Promise<void> => {
     const records = Array.isArray(data?.records) ? data.records : []
     internalTeacherOptions.value = records.map((item: any) => ({
       id: Number(item.id),
-      label: item.real_name || item.username || String(item.id),
+      name: (item.real_name || item.username || String(item.id)).trim(),
+      username: (item.username || String(item.id)).trim(),
+      label: `${(item.real_name || item.username || String(item.id)).trim()}（${(item.username || String(item.id)).trim()}）`,
     }))
   } catch {
     internalTeacherOptions.value = []
@@ -1161,11 +1177,30 @@ const normalizeCoauthorRecords = (): CoAuthorRecordInput[] => {
 
   for (const item of paperForm.coauthor_records) {
     const name = (item.name || '').trim()
-    if (!name) continue
 
     const userId = item.is_internal && item.user_id ? Number(item.user_id) : null
+    const organization = (item.organization || '').trim()
+    if (item.is_internal && !userId) {
+      ElMessage.warning('本校教师请先通过姓名或工号搜索并选择教师。')
+      return []
+    }
     if (userId && usedUserIds.has(userId)) continue
-    if (!userId && usedNames.has(name)) continue
+    if (!userId && !name && !organization) continue
+    if (!userId && !name) {
+      ElMessage.warning('非本校作者请填写姓名。')
+      return []
+    }
+    if (!userId && !organization) {
+      ElMessage.warning('非本校作者请填写任职单位。')
+      return []
+    }
+
+    const externalKey = `${name}|${organization.toLowerCase()}`
+    if (!userId && usedNames.has(externalKey)) continue
+    if (userId && !name) {
+      ElMessage.warning('本校教师请通过搜索并选择姓名/工号。')
+      return []
+    }
 
     const orderValue = item.order ? Number(item.order) : null
     if (orderValue && usedOrders.has(orderValue)) {
@@ -1174,11 +1209,12 @@ const normalizeCoauthorRecords = (): CoAuthorRecordInput[] => {
     }
 
     if (userId) usedUserIds.add(userId)
-    if (!userId) usedNames.add(name)
+    if (!userId) usedNames.add(externalKey)
     if (orderValue) usedOrders.add(orderValue)
 
     normalized.push({
       name,
+      organization: userId ? '' : organization,
       user_id: userId,
       is_internal: Boolean(userId),
       order: orderValue,
@@ -1324,6 +1360,7 @@ const populatePaperForm = (record: PaperRecord): void => {
   paperForm.doi = record.doi
   paperForm.coauthor_records = record.coauthor_details.map(item => ({
     name: item.name,
+    organization: item.organization || '',
     user_id: item.user_id || item.internal_teacher || null,
     is_internal: Boolean(item.user_id || item.internal_teacher),
     order: item.author_rank,
@@ -2071,7 +2108,7 @@ h1 {
 
 .coauthor-row {
   display: grid;
-  grid-template-columns: 1.6fr 0.9fr 1.4fr 1fr 0.9fr auto;
+  grid-template-columns: 0.9fr 2.4fr 1fr 0.9fr auto;
   gap: 10px;
   align-items: center;
 }
@@ -2079,6 +2116,40 @@ h1 {
 .coauthor-row-head {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.coauthor-row-head > span {
+  text-align: center;
+}
+
+.coauthor-row :deep(.el-switch),
+.coauthor-row :deep(.el-button) {
+  justify-self: center;
+}
+
+.coauthor-identity-field {
+  width: 100%;
+}
+
+.coauthor-external-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coauthor-row :deep(.el-switch) {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.coauthor-row :deep(.el-button.is-text),
+.coauthor-row :deep(.el-button--text) {
+  min-height: 32px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .coauthor-actions {
@@ -2120,6 +2191,10 @@ h1 {
   .coauthor-row {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .coauthor-external-fields {
+    grid-template-columns: 1fr;
   }
 
   .actions {

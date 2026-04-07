@@ -27,6 +27,8 @@ from users.access import (
     ensure_self_or_admin_user,
     ensure_self_user,
 )
+from users.models import UserNotification
+from users.services import bulk_create_user_notifications
 
 ACHIEVEMENT_SELF_SERVICE_ONLY_MESSAGE = '当前成果仅支持账号本人维护，查看他人成果时为只读。'
 
@@ -1818,12 +1820,7 @@ class AchievementClaimAuthorCandidateView(APIView):
             is_superuser=False,
         )
 
-        # 认领邀请用于“本院教师搜索”，默认收口为当前用户所在学院。
-        if request.user.department:
-            queryset = queryset.filter(department=request.user.department)
-        else:
-            queryset = queryset.none()
-
+        # 认领邀请用于“本校教师搜索”，支持按姓名/工号检索全校教师候选。
         queryset = queryset.exclude(id=request.user.id)
         if keyword:
             queryset = queryset.filter(Q(real_name__icontains=keyword) | Q(username__icontains=keyword))
@@ -2058,6 +2055,23 @@ class CollegeUnclaimedClaimRemindView(APIView):
             created_at__lt=cutoff,
         )
         reminded_count = queryset.count()
+        target_users = list(
+            get_user_model().objects.filter(id__in=queryset.values_list('target_user_id', flat=True).distinct())
+        )
+        if target_users:
+            bulk_create_user_notifications(
+                recipients=target_users,
+                sender=request.user,
+                category=UserNotification.CATEGORY_CLAIM_REMINDER,
+                title='你有待处理的成果认领邀请',
+                content_builder=lambda recipient: '学院管理员提醒：你有长期未处理的成果认领，请尽快确认或拒绝。',
+                action_path='/profile-editor/achievement-claims',
+                action_query_builder=lambda recipient: {'source': 'notification'},
+                payload_builder=lambda recipient: {
+                    'days_threshold': days_threshold,
+                    'department': request.user.department,
+                },
+            )
         return Response(
             {
                 'detail': f'已向本院 {reminded_count} 条长期未认领成果发送系统提醒。',

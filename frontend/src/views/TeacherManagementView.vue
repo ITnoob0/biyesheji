@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { FormInstance, FormRules, TableInstance } from 'element-plus'
+import type { FormInstance, FormRules, TableInstance, UploadInstance, UploadRequestOptions, UploadUserFile } from 'element-plus'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import TeacherRadarPreviewDialog from '../components/teacher/TeacherRadarPreviewDialog.vue'
 import {
@@ -17,6 +18,7 @@ import { ensureSessionUserContext, setSessionUser, setSessionNotice, type Sessio
 import type {
   TeacherAccountResponse,
   TeacherBulkActionResponse,
+  TeacherBulkImportResponse,
   TeacherCreateResponse,
   TeacherManagementSummaryResponse,
   TeacherPasswordResetResponse,
@@ -63,6 +65,11 @@ const lastCreatedAccount = ref<Pick<TeacherCreateResponse, 'employee_id' | 'user
 const lastBulkResult = ref<TeacherBulkActionResponse | null>(null)
 const editDialogVisible = ref(false)
 const radarPreviewVisible = ref(false)
+const bulkImportDialogVisible = ref(false)
+const bulkImportLoading = ref(false)
+const bulkImportUploadRef = ref<UploadInstance>()
+const bulkImportFileList = ref<UploadUserFile[]>([])
+const bulkImportResult = ref<TeacherBulkImportResponse | null>(null)
 const previewTeacherId = ref<number | null>(null)
 const previewTeacherName = ref('')
 const createFormRef = ref<FormInstance>()
@@ -267,6 +274,11 @@ const loadTeachers = async () => {
   }
 }
 
+const syncKeywordFilterFromRoute = () => {
+  const keyword = typeof route.query.keyword === 'string' ? route.query.keyword.trim() : ''
+  keywordFilter.value = keyword
+}
+
 const loadManagementSummary = async () => {
   try {
     const response = await axios.get<TeacherManagementSummaryResponse>('/api/users/teachers/summary/')
@@ -304,6 +316,64 @@ const createTeacher = async () => {
     )
   } finally {
     createLoading.value = false
+  }
+}
+
+const openBulkImportDialog = () => {
+  bulkImportDialogVisible.value = true
+  bulkImportResult.value = null
+  bulkImportFileList.value = []
+}
+
+const submitBulkImport = () => {
+  if (!bulkImportFileList.value.length) {
+    ElMessage.warning('请先选择导入文件。')
+    return
+  }
+  bulkImportUploadRef.value?.submit()
+}
+
+const handleBulkImportRequest = async (options: UploadRequestOptions) => {
+  bulkImportLoading.value = true
+  const formData = new FormData()
+  formData.append('file', options.file)
+
+  try {
+    const response = await axios.post<TeacherBulkImportResponse>('/api/users/teachers/bulk-import/', formData)
+    bulkImportResult.value = response.data
+    ElMessage.success(response.data.detail)
+    await Promise.all([loadTeachers(), loadManagementSummary()])
+    options.onSuccess?.(response.data as any)
+  } catch (error: any) {
+    const message = resolveApiErrorMessage(error, '批量创建失败')
+    ElMessage.error(message)
+    options.onError?.(error as any)
+  } finally {
+    bulkImportLoading.value = false
+  }
+}
+
+const downloadBulkImportTemplate = async () => {
+  try {
+    const response = await axios.get('/api/users/teachers/bulk-import-template/', {
+      responseType: 'blob',
+    })
+    const disposition = String(response.headers['content-disposition'] || '')
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    const filename = decodeURIComponent((match?.[1] || '批量创建模板.xlsx').trim())
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const objectUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(objectUrl)
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '模板下载失败'))
   }
 }
 
@@ -501,9 +571,18 @@ watch(
   },
 )
 
+watch(
+  () => route.query.keyword,
+  () => {
+    syncKeywordFilterFromRoute()
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
   const adminUser = await ensureAdminUser()
   if (!adminUser) return
+  syncKeywordFilterFromRoute()
   await loadTeachers()
   if (isSystemAdmin.value) {
     await loadManagementSummary()
@@ -565,7 +644,10 @@ onMounted(async () => {
           <template #header>
             <div class="card-header workspace-section-head">
               <span>{{ createCardTitle }}</span>
-              <el-tag type="warning" effect="plain">{{ isSystemAdmin ? '系统管理员入口' : '学院管理员入口' }}</el-tag>
+              <div class="card-header-actions">
+                <el-button plain size="small" @click="openBulkImportDialog">批量创建</el-button>
+                <el-tag type="warning" effect="plain">{{ isSystemAdmin ? '系统管理员入口' : '学院管理员入口' }}</el-tag>
+              </div>
             </div>
           </template>
 
@@ -575,7 +657,6 @@ onMounted(async () => {
             :closable="false"
             show-icon
           />
-
           <el-form ref="createFormRef" :model="createTeacherForm" :rules="createRules" label-position="top" class="form-block">
             <div class="grid two-cols">
               <el-form-item label="六位工号" prop="employee_id">
@@ -631,6 +712,22 @@ onMounted(async () => {
               <el-button type="primary" :loading="createLoading" @click="createTeacher">{{ createButtonText }}</el-button>
             </div>
           </el-form>
+
+          <el-result
+            v-if="bulkImportResult"
+            icon="success"
+            title="批量创建结果"
+            :sub-title="`成功 ${bulkImportResult.created_count} 条，跳过 ${bulkImportResult.skipped_count} 条。`"
+          >
+            <template #extra>
+              <div class="result-box">
+                <p>默认临时密码：{{ bulkImportResult.temporary_password }}</p>
+                <p v-if="bulkImportResult.skipped_items.length">
+                  跳过示例：第 {{ bulkImportResult.skipped_items[0]?.row_number }} 行 - {{ bulkImportResult.skipped_items[0]?.reason }}
+                </p>
+              </div>
+            </template>
+          </el-result>
 
           <el-result
             v-if="lastCreatedAccount"
@@ -780,6 +877,36 @@ onMounted(async () => {
       </section>
     </template>
 
+    <el-dialog v-model="bulkImportDialogVisible" title="批量创建账号" width="620px">
+      <el-upload
+        ref="bulkImportUploadRef"
+        v-model:file-list="bulkImportFileList"
+        drag
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.csv"
+        :http-request="handleBulkImportRequest"
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
+        <template #tip>
+          <div class="el-upload__tip">
+            仅支持 .xlsx / .csv。
+          </div>
+        </template>
+      </el-upload>
+      <button type="button" class="template-download-link" @click="downloadBulkImportTemplate">
+        下载批量创建模板
+      </button>
+
+      <template #footer>
+        <div class="dialog-actions">
+          <el-button @click="bulkImportDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="bulkImportLoading" @click="submitBulkImport">上传并批量创建</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="editDialogVisible" title="编辑教师资料" width="720px">
       <el-form ref="editFormRef" :model="editTeacher" :rules="editRules" label-position="top">
         <div class="grid two-cols">
@@ -917,6 +1044,29 @@ h1 {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.card-header-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.template-download-link {
+  margin-top: 8px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.template-download-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 
 .summary-grid {

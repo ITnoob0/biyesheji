@@ -683,7 +683,16 @@ class ProjectGuideRecommendationService:
             if record.guide_id and record.guide_id not in latest_feedback_records:
                 latest_feedback_records[record.guide_id] = record
 
-        guide_queryset = ProjectGuide.objects.filter(status='OPEN').order_by('application_deadline', '-updated_at')
+        guide_queryset = (
+            ProjectGuide.objects.filter(
+                status__in=[ProjectGuide.STATUS_ACTIVE, ProjectGuide.STATUS_URGENT, 'OPEN'],
+            )
+            .filter(
+                Q(scope=ProjectGuide.SCOPE_GLOBAL)
+                | Q(scope=ProjectGuide.SCOPE_ACADEMY, academy__name=user.department or ''),
+            )
+            .order_by('application_deadline', '-updated_at')
+        )
         recommendation_items = []
         comparison_summary = {
             'primary_better_count': 0,
@@ -889,8 +898,13 @@ class ProjectGuideRecommendationService:
         }
 
     @classmethod
-    def build_lifecycle_summary(cls):
+    def build_lifecycle_summary(cls, *, request_user=None):
         queryset = ProjectGuide.objects.all()
+        if request_user is not None and getattr(request_user, 'is_staff', False) and not getattr(request_user, 'is_superuser', False):
+            queryset = queryset.filter(
+                Q(scope=ProjectGuide.SCOPE_GLOBAL)
+                | Q(scope=ProjectGuide.SCOPE_ACADEMY, academy__name=request_user.department or ''),
+            )
         now = timezone.now().date()
         warning_deadline = now + timedelta(days=30)
         status_distribution = {item['status']: item['count'] for item in queryset.values('status').annotate(count=Count('id'))}
@@ -898,20 +912,32 @@ class ProjectGuideRecommendationService:
             item['rule_profile']: item['count']
             for item in queryset.values('rule_profile').annotate(count=Count('id'))
         }
+        active_status_filter = Q(status=ProjectGuide.STATUS_ACTIVE) | Q(status=ProjectGuide.STATUS_URGENT) | Q(status='OPEN')
 
         return {
             'total_count': queryset.count(),
-            'draft_count': status_distribution.get('DRAFT', 0),
-            'open_count': status_distribution.get('OPEN', 0),
+            'draft_count': status_distribution.get(ProjectGuide.STATUS_DRAFT, 0),
+            'active_count': status_distribution.get(ProjectGuide.STATUS_ACTIVE, 0),
+            'urgent_count': status_distribution.get(ProjectGuide.STATUS_URGENT, 0),
+            'archived_count': status_distribution.get(ProjectGuide.STATUS_ARCHIVED, 0),
+            'overdue_active_count': queryset.filter(
+                active_status_filter,
+                application_deadline__isnull=False,
+                application_deadline__lt=now,
+            ).count(),
+            # Backward-compatible fields retained for existing consumer code.
+            'open_count': status_distribution.get(ProjectGuide.STATUS_ACTIVE, 0) + status_distribution.get('OPEN', 0),
             'closed_count': status_distribution.get('CLOSED', 0),
-            'archived_count': status_distribution.get('ARCHIVED', 0),
             'deadline_warning_count': queryset.filter(
-                status='OPEN',
+                active_status_filter,
                 application_deadline__isnull=False,
                 application_deadline__gte=now,
                 application_deadline__lte=warning_deadline,
             ).count(),
-            'stale_open_count': queryset.filter(status='OPEN').filter(
+            'stale_open_count': queryset.filter(active_status_filter).filter(
+                Q(application_deadline__isnull=True) | Q(updated_at__lt=timezone.now() - timedelta(days=60))
+            ).count(),
+            'stale_active_count': queryset.filter(active_status_filter).filter(
                 Q(application_deadline__isnull=True) | Q(updated_at__lt=timezone.now() - timedelta(days=60))
             ).count(),
             'config_coverage_count': queryset.exclude(rule_config={}).count(),
