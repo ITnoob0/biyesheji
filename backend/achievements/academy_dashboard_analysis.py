@@ -27,6 +27,8 @@ RANKING_MODE_LABELS = {
     'collaboration_count': '合作关系',
 }
 
+DEFAULT_TEACHER_TITLE_FILTERS = ['教授', '副教授', '讲师']
+
 
 def parse_bool_query_param(value: str | None) -> bool | None:
     normalized = (value or '').strip().lower()
@@ -435,9 +437,15 @@ def build_filter_options(teachers=None):
             if item
         }
     )
+    dynamic_titles = [item for item in teachers.values_list('title', flat=True) if item]
+    teacher_titles = []
+    for title in DEFAULT_TEACHER_TITLE_FILTERS + sorted(set(dynamic_titles)):
+        if title and title not in teacher_titles:
+            teacher_titles.append(title)
+
     return {
         'departments': sorted({item for item in teachers.values_list('department', flat=True) if item}),
-        'teacher_titles': sorted({item for item in teachers.values_list('title', flat=True) if item}),
+        'teacher_titles': teacher_titles,
         'teachers': [
             {
                 'user_id': teacher.id,

@@ -11,7 +11,36 @@
       <div class="dialog-head">
         <div>
           <strong>{{ teacherName || '教师' }} · 综合能力雷达评估</strong>
-          <p>管理员侧预览当前教师画像的六维综合能力雷达，不跳转离开当前管理页面。</p>
+          <p>管理员侧可按年份查看画像，并叠加同侪基准线，不跳转离开当前管理页面。</p>
+        </div>
+        <div class="dialog-controls">
+          <el-select
+            v-model="selectedYear"
+            class="control-item year-select"
+            size="small"
+            placeholder="年份"
+            @change="loadPortraitAnalysis"
+          >
+            <el-option
+              v-for="year in availableYears"
+              :key="year"
+              :label="`${year} 年`"
+              :value="year"
+            />
+          </el-select>
+          <el-radio-group
+            v-if="isSystemAdmin"
+            v-model="benchmarkScope"
+            size="small"
+            class="control-item"
+            @change="loadPortraitAnalysis"
+          >
+            <el-radio-button label="college">本院平均</el-radio-button>
+            <el-radio-button label="university">全校平均</el-radio-button>
+          </el-radio-group>
+          <el-tag size="small" effect="plain" class="control-item">
+            {{ activeScope === 'university' ? '当前：全校平均' : '当前：本院平均' }}
+          </el-tag>
         </div>
       </div>
     </template>
@@ -19,7 +48,7 @@
     <div v-loading="loading" class="dialog-body">
       <el-empty v-if="!loading && !radarData.length" description="暂无可展示的雷达数据" :image-size="88" />
       <template v-else>
-        <RadarChart :radar-data="radarData" :teacher-name="teacherName" />
+        <RadarChart :radar-data="radarData" :series-data="radarSeriesData" :teacher-name="teacherName" />
         <div v-if="dimensionInsights.length" class="dimension-insights">
           <div class="insights-grid">
             <div
@@ -47,9 +76,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import RadarChart from '../RadarChart.vue'
+import { ensureSessionUserContext, type SessionUser } from '../../utils/sessionAuth'
 
 interface DimensionInsight {
   key: string
@@ -60,6 +90,17 @@ interface DimensionInsight {
   formula_note: string
   source_description: string
   evidence: string[]
+}
+
+interface PortraitAnalysisResponse {
+  year: number
+  available_years: number[]
+  radar_dimensions: Array<{ name: string; value: number }>
+  radar_series_data: Array<{ name: string; value: number[]; series_role?: string }>
+  dimension_insights?: DimensionInsight[]
+  benchmark_data?: {
+    active_scope?: 'college' | 'university'
+  }
 }
 
 const props = defineProps<{
@@ -74,7 +115,14 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const radarData = ref<Array<{ name: string; value: number }>>([])
+const radarSeriesData = ref<Array<{ name: string; value: number[]; series_role?: string }>>([])
 const dimensionInsights = ref<DimensionInsight[]>([])
+const selectedYear = ref(new Date().getFullYear())
+const availableYears = ref<number[]>([new Date().getFullYear()])
+const benchmarkScope = ref<'college' | 'university'>('college')
+const activeScope = ref<'college' | 'university'>('college')
+const currentUser = ref<SessionUser | null>(null)
+const isSystemAdmin = computed(() => currentUser.value?.role_code === 'admin')
 
 const getLevelType = (level: string) => {
   if (level === '优势维度') return 'success'
@@ -82,13 +130,35 @@ const getLevelType = (level: string) => {
   return 'warning'
 }
 
-const loadRadar = async () => {
+const ensureCurrentUser = async () => {
+  if (!currentUser.value) {
+    currentUser.value = await ensureSessionUserContext()
+  }
+}
+
+const loadPortraitAnalysis = async () => {
   if (!props.teacherId) return
+  await ensureCurrentUser()
   loading.value = true
   try {
-    const { data } = await axios.get(`/api/achievements/radar/${props.teacherId}/`)
+    const { data } = await axios.get<PortraitAnalysisResponse>('/api/achievements/portrait/analysis/', {
+      params: {
+        user_id: props.teacherId,
+        year: selectedYear.value,
+        scope: isSystemAdmin.value ? benchmarkScope.value : 'college',
+      },
+    })
     radarData.value = data?.radar_dimensions ?? []
+    radarSeriesData.value = data?.radar_series_data ?? []
     dimensionInsights.value = data?.dimension_insights ?? []
+    selectedYear.value = Number(data?.year || selectedYear.value)
+    availableYears.value = (data?.available_years || [])
+      .map(item => Number(item))
+      .filter(item => Number.isFinite(item))
+    if (!availableYears.value.length) {
+      availableYears.value = [selectedYear.value]
+    }
+    activeScope.value = data?.benchmark_data?.active_scope === 'university' ? 'university' : 'college'
   } finally {
     loading.value = false
   }
@@ -96,11 +166,21 @@ const loadRadar = async () => {
 
 watch(
   () => [props.modelValue, props.teacherId] as const,
-  ([visible, teacherId]) => {
+  async ([visible, teacherId]) => {
     if (!visible || !teacherId) return
-    void loadRadar()
+    selectedYear.value = new Date().getFullYear()
+    benchmarkScope.value = 'college'
+    await loadPortraitAnalysis()
   },
   { immediate: true },
+)
+
+watch(
+  () => props.teacherId,
+  async teacherId => {
+    if (!props.modelValue || !teacherId) return
+    await loadPortraitAnalysis()
+  },
 )
 </script>
 
@@ -119,6 +199,22 @@ watch(
 .dialog-head p {
   margin: 6px 0 0;
   color: var(--text-tertiary);
+}
+
+.dialog-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.control-item {
+  flex-shrink: 0;
+}
+
+.year-select {
+  width: 120px;
 }
 
 .dialog-body {
@@ -180,5 +276,16 @@ watch(
   background: rgba(64, 158, 255, 0.08);
   border-color: rgba(64, 158, 255, 0.2);
   color: #409eff;
+}
+
+@media (max-width: 900px) {
+  .dialog-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-controls {
+    justify-content: flex-start;
+  }
 }
 </style>

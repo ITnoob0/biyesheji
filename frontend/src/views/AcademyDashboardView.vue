@@ -143,6 +143,11 @@ const yearFilterOptions = computed(() => [
     value: String(item),
   })),
 ])
+const teacherTitleOptions = computed(() => {
+  const defaults = ['教授', '副教授', '讲师']
+  const merged = [...defaults, ...(filterOptions.value.teacher_titles || [])]
+  return Array.from(new Set(merged.filter(Boolean)))
+})
 const statistics = computed(() => activeData.value?.statistics ?? [])
 const topTeachers = computed(() => activeData.value?.top_active_teachers ?? [])
 const recentRecords = computed(() => activeData.value?.recent_scope_records ?? [])
@@ -505,7 +510,7 @@ onUnmounted(() => {
             </el-select>
 
             <el-select v-model="activeState.teacher_title" clearable placeholder="职称" @change="loadSectionData">
-              <el-option v-for="item in filterOptions.teacher_titles" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in teacherTitleOptions" :key="item" :label="item" :value="item" />
             </el-select>
 
             <el-select

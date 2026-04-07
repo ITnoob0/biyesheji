@@ -11,6 +11,45 @@ export type StatisticItem = {
   helper?: string
 }
 
+export type RadarDimensionPoint = {
+  key?: string
+  name: string
+  value: number
+}
+
+export type RadarSeriesItem = {
+  name: string
+  value: number[]
+  series_role?: 'teacher' | 'benchmark' | string
+}
+
+export type BenchmarkAverageData = {
+  scope: 'college' | 'university'
+  college_id: string
+  label: string
+  dimension_scores: Record<string, number>
+  total_score: number
+  sample_size: number
+}
+
+export type PeerBenchmarkPayload = {
+  benchmark_mode: string
+  benchmark_label: string
+  department: string
+  active_scope: 'college' | 'university'
+  requested_scope: 'college' | 'university'
+  college_average_data: BenchmarkAverageData
+  university_average_data?: BenchmarkAverageData
+  college_comparison_data?: Array<{
+    college_id: string
+    label: string
+    total_score: number
+    sample_size: number
+    dimension_scores: Record<string, number>
+  }>
+  scope_warning?: string
+}
+
 export type TeacherDetail = {
   id: number
   username: string
@@ -242,7 +281,7 @@ export type PortraitReportResponse = {
 
 export type DashboardStatsResponse = {
   statistics?: StatisticItem[]
-  radar_data?: Array<{ name: string; value: number }>
+  radar_data?: RadarDimensionPoint[]
   dimension_insights?: DimensionInsight[]
   weight_spec?: WeightSpecItem[]
   calculation_summary?: CalculationSummary
@@ -257,12 +296,24 @@ export type DashboardStatsResponse = {
 }
 
 export type RadarResponse = {
-  radar_dimensions?: Array<{ name: string; value: number }>
+  radar_dimensions?: RadarDimensionPoint[]
   dimension_sources?: DimensionSource[]
   dimension_insights?: DimensionInsight[]
   weight_spec?: WeightSpecItem[]
   calculation_summary?: CalculationSummary
   data_meta?: PortraitDataMeta
+}
+
+export type PortraitAnalysisResponse = {
+  teacher_id: number
+  year: number
+  available_years: number[]
+  data_source: 'runtime' | 'snapshot' | string
+  snapshot_boundary: SnapshotBoundary
+  stage_comparison: StageComparison
+  radar_dimensions: RadarDimensionPoint[]
+  radar_series_data: RadarSeriesItem[]
+  benchmark_data: PeerBenchmarkPayload
 }
 
 export const buildProfileHighlights = (teacherInfo: TeacherDetail): string[] => {

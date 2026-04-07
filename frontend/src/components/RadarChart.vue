@@ -1,9 +1,9 @@
 <template>
-  <div v-if="radarData && radarData.length > 0" class="radar-shell">
+  <div v-if="indicators.length > 0" class="radar-shell">
     <div ref="radarRef" class="radar-canvas"></div>
     <div class="radar-caption">
       <span class="caption-title">{{ teacherName || '当前教师' }}画像维度</span>
-      <span class="caption-subtitle">六个维度共同描绘科研能力结构，不同区域越饱满代表画像越完整。</span>
+      <span class="caption-subtitle">多维雷达图支持同侪基准叠加，快速识别当前教师与基准的优势差值。</span>
     </div>
   </div>
   <div v-else class="empty-placeholder">
@@ -12,18 +12,41 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { observeElementsResize } from '../utils/resizeObserver'
 
+type RadarDimension = { name: string; value: number }
+type RadarSeries = {
+  name: string
+  value: number[]
+  series_role?: 'teacher' | 'benchmark' | string
+}
+
 const props = defineProps<{
-  radarData: { name: string; value: number }[]
+  radarData: RadarDimension[]
+  seriesData?: RadarSeries[]
   teacherName?: string
 }>()
 
 const radarRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+
+const indicators = computed(() => props.radarData || [])
+
+const resolvedSeriesData = computed<RadarSeries[]>(() => {
+  if (props.seriesData && props.seriesData.length > 0) {
+    return props.seriesData
+  }
+  return [
+    {
+      name: props.teacherName || '当前教师',
+      value: indicators.value.map(item => Number(item.value || 0)),
+      series_role: 'teacher',
+    },
+  ]
+})
 
 const handleResize = () => {
   chart?.resize()
@@ -37,7 +60,7 @@ const ensureResizeObserver = () => {
 }
 
 const renderRadar = async () => {
-  if (!props.radarData || props.radarData.length === 0) {
+  if (indicators.value.length === 0) {
     chart?.clear()
     return
   }
@@ -50,24 +73,53 @@ const renderRadar = async () => {
   }
   ensureResizeObserver()
 
+  const normalizedSeries = resolvedSeriesData.value.map(item => {
+    const normalized = indicators.value.map((_, index) => Number(item.value?.[index] || 0))
+    return {
+      ...item,
+      value: normalized,
+    }
+  })
+  const teacherSeries =
+    normalizedSeries.find(item => item.series_role === 'teacher') || normalizedSeries[0] || null
+  const benchmarkSeries =
+    normalizedSeries.find(item => item.series_role === 'benchmark') || normalizedSeries[1] || null
+
   chart.setOption({
     tooltip: {
       trigger: 'item',
-      formatter: (params: any) => {
-        const values = props.radarData
-          .map((item, index) => `${item.name}: ${params.value[index]}`)
-          .join('<br/>')
-        return `<b>${props.teacherName || '当前教师'}</b><br/>${values}`
+      confine: true,
+      className: 'portrait-radar-tooltip',
+      formatter: () => {
+        if (!teacherSeries) {
+          return '<b>暂无数据</b>'
+        }
+
+        const benchmarkLabel = benchmarkSeries?.name || '本院平均'
+        const lines = indicators.value.map((item, index) => {
+          const teacherValue = Number(teacherSeries.value[index] || 0)
+          const benchmarkValue = Number(benchmarkSeries?.value?.[index] || 0)
+          const delta = teacherValue - benchmarkValue
+          const trendLabel = delta >= 0 ? '领先' : '落后'
+          const deltaLabel = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`
+          return [
+            `${item.name}：${teacherValue.toFixed(1)}分`,
+            `${benchmarkLabel}：${benchmarkValue.toFixed(1)}分`,
+            `对比差值：${deltaLabel}分（${trendLabel}）`,
+          ].join('<br/>')
+        })
+
+        return `<b>${teacherSeries.name}</b><br/>${lines.join('<br/><br/>')}`
       },
     },
     radar: {
-      indicator: props.radarData.map(item => ({ name: item.name, max: 100 })),
+      indicator: indicators.value.map(item => ({ name: item.name, max: 100 })),
       radius: '62%',
       center: ['50%', '50%'],
       shape: 'polygon',
       splitNumber: 5,
       axisName: {
-        color: '#334155',
+        color: '#5b6880',
         fontSize: 13,
         fontWeight: 600,
       },
@@ -86,31 +138,33 @@ const renderRadar = async () => {
     series: [
       {
         type: 'radar',
-        data: [
-          {
-            value: props.radarData.map(item => item.value),
-            name: props.teacherName || '当前教师',
-            symbol: 'circle',
-            symbolSize: 8,
+        data: normalizedSeries.map(item => {
+          const isBenchmark = item.series_role === 'benchmark'
+          return {
+            value: item.value,
+            name: item.name,
+            symbol: isBenchmark ? 'none' : 'circle',
+            symbolSize: isBenchmark ? 0 : 6,
             lineStyle: {
-              width: 3,
-              color: '#2563eb',
+              width: isBenchmark ? 2 : 3,
+              type: isBenchmark ? 'dashed' : 'solid',
+              color: isBenchmark ? '#8b95a7' : '#2563eb',
             },
             itemStyle: {
-              color: '#2563eb',
+              color: isBenchmark ? '#8b95a7' : '#2563eb',
             },
             areaStyle: {
-              color: 'rgba(37, 99, 235, 0.24)',
+              color: isBenchmark ? 'rgba(128, 128, 128, 0.2)' : 'rgba(37, 99, 235, 0.24)',
             },
-          },
-        ],
+          }
+        }),
       },
     ],
   })
 }
 
 watch(
-  () => props.radarData,
+  () => [props.radarData, props.seriesData],
   () => {
     void renderRadar()
   },
@@ -140,6 +194,7 @@ onBeforeUnmount(() => {
 .radar-canvas {
   width: 100%;
   height: 380px;
+  view-transition-name: portrait-radar-canvas;
 }
 
 .radar-caption {
@@ -149,12 +204,12 @@ onBeforeUnmount(() => {
 }
 
 .caption-title {
-  color: #0f172a;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .caption-subtitle {
-  color: #64748b;
+  color: var(--text-tertiary);
   line-height: 1.6;
 }
 
@@ -165,5 +220,11 @@ onBeforeUnmount(() => {
   height: 400px;
   background: #fdfdfd;
   border-radius: 8px;
+}
+
+:global(::view-transition-old(portrait-radar-canvas)),
+:global(::view-transition-new(portrait-radar-canvas)) {
+  animation-duration: 280ms;
+  animation-timing-function: ease;
 }
 </style>

@@ -4,6 +4,34 @@
       <template #header>
         <div class="section-head workspace-section-head">
           <span>阶段对比</span>
+          <div class="panel-controls">
+            <el-select
+              :model-value="selectedYear"
+              placeholder="选择年份"
+              size="small"
+              class="year-select"
+              @change="handleYearChange"
+            >
+              <el-option
+                v-for="year in yearOptions"
+                :key="year"
+                :label="`${year} 年`"
+                :value="year"
+              />
+            </el-select>
+            <el-radio-group
+              v-if="isSystemAdmin"
+              :model-value="benchmarkScope"
+              size="small"
+              @change="handleScopeChange"
+            >
+              <el-radio-button label="college">本院平均</el-radio-button>
+              <el-radio-button label="university">全校平均</el-radio-button>
+            </el-radio-group>
+            <el-tag v-if="isSystemAdmin" size="small" effect="plain">
+              当前叠加：{{ activeBenchmarkScope === 'university' ? '全校平均' : '本院平均' }}
+            </el-tag>
+          </div>
         </div>
       </template>
 
@@ -68,6 +96,16 @@ import type { DimensionInsight, StageComparison } from './portrait'
 const props = defineProps<{
   stageComparison: StageComparison | null
   dimensionInsights: DimensionInsight[]
+  selectedYear: number
+  availableYears: number[]
+  benchmarkScope: 'college' | 'university'
+  activeBenchmarkScope: 'college' | 'university'
+  isSystemAdmin: boolean
+}>()
+
+const emit = defineEmits<{
+  (event: 'update-year', year: number): void
+  (event: 'update-benchmark-scope', scope: 'college' | 'university'): void
 }>()
 
 const dimensionCatalog = [
@@ -106,6 +144,32 @@ const comparisonDimensions = computed(() => {
     }
   })
 })
+
+const yearOptions = computed(() => {
+  const normalized = (props.availableYears || [])
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item))
+  if (!normalized.length && Number.isFinite(props.selectedYear)) {
+    return [props.selectedYear]
+  }
+  return Array.from(new Set(normalized)).sort((a, b) => b - a)
+})
+
+const handleYearChange = (value: number | string) => {
+  const year = Number(value)
+  if (!Number.isFinite(year) || year === props.selectedYear) {
+    return
+  }
+  emit('update-year', year)
+}
+
+const handleScopeChange = (value: string | number | boolean) => {
+  const scope = String(value) === 'university' ? 'university' : 'college'
+  if (scope === props.benchmarkScope) {
+    return
+  }
+  emit('update-benchmark-scope', scope)
+}
 
 const formatSigned = (value?: number | null): string => {
   if (value === null || value === undefined) {
@@ -154,6 +218,18 @@ const resolveDeltaClass = (value?: number | null): string => {
 .delta-list {
   display: grid;
   gap: 14px;
+}
+
+.panel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.year-select {
+  width: 132px;
 }
 
 .panel-intro strong,
@@ -235,6 +311,11 @@ const resolveDeltaClass = (value?: number | null): string => {
 }
 
 @media (max-width: 768px) {
+  .panel-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .compare-summary-grid,
   .delta-list {
     grid-template-columns: 1fr;

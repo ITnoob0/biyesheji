@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import timedelta
+import logging
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -58,10 +59,14 @@ from .models import (
     TeachingAchievement,
 )
 from .portrait_analysis import (
+    calculate_benchmark_scores,
+    calculate_college_comparison_scores,
     build_dimension_trend,
     build_portrait_explanation,
     build_portrait_report,
     build_recent_structure,
+    invalidate_benchmark_score_cache,
+    resolve_portrait_payload,
     build_snapshot_boundary,
     build_stage_comparison,
     export_portrait_report_markdown,
@@ -85,6 +90,8 @@ from .serializers import (
 )
 from .visibility import APPROVED_STATUS, approved_queryset
 
+logger = logging.getLogger(__name__)
+
 
 def parse_bool_query_param(value: str) -> bool | None:
     normalized = (value or '').strip().lower()
@@ -93,6 +100,56 @@ def parse_bool_query_param(value: str) -> bool | None:
     if normalized in {'0', 'false', 'no'}:
         return False
     return None
+
+
+def parse_int_query_param(value: str, *, minimum: int | None = None) -> int | None:
+    raw = (value or '').strip()
+    if not raw:
+        return None
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if minimum is not None and parsed < minimum:
+        return None
+    return parsed
+
+
+def build_portrait_dimension_insights_for_year(*, user, selected_year: int, portrait_payload: dict) -> list[dict]:
+    source = portrait_payload.get('source')
+    current_year = timezone.now().year
+    if source != 'snapshot':
+        metrics = (
+            TeacherScoringEngine.collect_metrics(user)
+            if selected_year >= current_year
+            else TeacherScoringEngine.collect_metrics(user, year=selected_year)
+        )
+        return TeacherScoringEngine.build_dimension_insights(metrics)
+
+    dimension_scores = portrait_payload.get('dimension_scores') or {}
+    insights = []
+    for key, label in TeacherScoringEngine.DIMENSION_LABELS.items():
+        value = round(float(dimension_scores.get(key, 0.0)), 1)
+        if value >= 75:
+            level = '优势维度'
+        elif value >= 45:
+            level = '稳定维度'
+        else:
+            level = '成长维度'
+
+        insights.append(
+            {
+                'key': key,
+                'name': label,
+                'value': value,
+                'weight': round(TeacherScoringEngine.WEIGHTS.get(key, 0) * 100, 1),
+                'level': level,
+                'formula_note': TeacherScoringEngine.DIMENSION_FORMULAS.get(key, ''),
+                'source_description': f'{selected_year} 年历史快照维度固化结果。',
+                'evidence': [f'{selected_year} 年快照', f'维度分值 {value} 分'],
+            }
+        )
+    return insights
 
 
 def normalize_operation_value(value):
@@ -252,62 +309,53 @@ def get_portrait_data_meta(user):
     }
 
 
-def _build_average_score(users) -> tuple[float, int]:
-    user_list = list(users)
-    if not user_list:
-        return 0.0, 0
-    score_list = [TeacherScoringEngine.get_comprehensive_radar_data(item)['total_score'] for item in user_list]
-    if not score_list:
-        return 0.0, 0
-    return round(sum(score_list) / len(score_list), 1), len(score_list)
-
-
-def build_peer_benchmark_payload(*, target_user, request_user):
-    user_model = get_user_model()
-    teacher_queryset = user_model.objects.filter(is_superuser=False, is_staff=False, is_active=True)
-
+def build_peer_benchmark_payload(*, target_user, request_user, year: int | None = None, scope: str = 'college'):
     department_name = (target_user.department or '').strip()
-    department_teachers = teacher_queryset.filter(department=department_name) if department_name else teacher_queryset.none()
-    department_average_score, department_sample_size = _build_average_score(department_teachers)
+    normalized_scope = scope if scope in {'college', 'university'} else 'college'
+    forced_scope = normalized_scope
+    scope_warning = None
 
-    if not is_admin_user(request_user):
-        return {
-            'benchmark_mode': 'college_average',
-            'benchmark_label': '本学院平均',
-            'department': department_name,
-            'department_average_total_score': department_average_score,
-            'department_sample_size': department_sample_size,
-        }
+    if normalized_scope == 'university' and not request_user.is_superuser:
+        forced_scope = 'college'
+        scope_warning = 'non_system_admin_scope_downgraded'
+        logger.warning(
+            'Portrait benchmark scope downgraded to college. request_user_id=%s requested_scope=%s',
+            getattr(request_user, 'id', None),
+            normalized_scope,
+        )
 
-    school_average_score, school_sample_size = _build_average_score(teacher_queryset)
-    department_averages = []
-    department_candidates = (
-        teacher_queryset.exclude(department='')
-        .order_by()
-        .values_list('department', flat=True)
-        .distinct()
+    college_average_data = calculate_benchmark_scores(
+        scope='college',
+        college_id=department_name,
+        year=year,
     )
-    for department in department_candidates:
-        scope = teacher_queryset.filter(department=department)
-        avg_score, sample_size = _build_average_score(scope)
-        department_averages.append(
+    response_payload = {
+        'benchmark_mode': 'college_average_only',
+        'benchmark_label': '本学院平均',
+        'department': department_name,
+        'active_scope': forced_scope,
+        'requested_scope': normalized_scope,
+        'college_average_data': college_average_data,
+    }
+    if scope_warning:
+        response_payload['scope_warning'] = scope_warning
+
+    if request_user.is_superuser:
+        university_average_data = calculate_benchmark_scores(
+            scope='university',
+            year=year,
+        )
+        college_comparison_data = calculate_college_comparison_scores(year=year)
+        response_payload.update(
             {
-                'department': department,
-                'average_total_score': avg_score,
-                'sample_size': sample_size,
+                'benchmark_mode': 'college_and_university_available',
+                'benchmark_label': '本学院平均 + 全校平均',
+                'university_average_data': university_average_data,
+                'college_comparison_data': college_comparison_data,
             }
         )
 
-    return {
-        'benchmark_mode': 'school_and_college_average',
-        'benchmark_label': '全校平均 + 各学院平均',
-        'department': department_name,
-        'department_average_total_score': department_average_score,
-        'department_sample_size': department_sample_size,
-        'school_average_total_score': school_average_score,
-        'school_sample_size': school_sample_size,
-        'department_averages': department_averages,
-    }
+    return response_payload
 
 
 def build_recent_achievements(user, limit: int = 6):
@@ -585,6 +633,103 @@ class TeacherRadarView(APIView):
         )
 
 
+class TeacherPortraitAnalysisView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = get_requested_teacher(request)
+        if user is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='教师账户不存在。',
+                code='teacher_not_found',
+                request=request,
+                next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
+            )
+
+        current_year = timezone.now().year
+        selected_year = parse_int_query_param(request.query_params.get('year', ''), minimum=1900) or current_year
+        requested_scope = (request.query_params.get('scope', 'college') or 'college').strip().lower()
+        normalized_scope = requested_scope if requested_scope in {'college', 'university'} else 'college'
+
+        year_for_benchmark = selected_year if selected_year < current_year else None
+        benchmark_payload = build_peer_benchmark_payload(
+            target_user=user,
+            request_user=request.user,
+            year=year_for_benchmark,
+            scope=normalized_scope,
+        )
+        portrait_payload = resolve_portrait_payload(user, year=selected_year)
+        dimension_insights = build_portrait_dimension_insights_for_year(
+            user=user,
+            selected_year=selected_year,
+            portrait_payload=portrait_payload,
+        )
+        snapshot_boundary = build_snapshot_boundary(
+            user,
+            generation_trigger='analysis_request',
+            year=selected_year,
+        )
+        stage_comparison = build_stage_comparison(user, year=selected_year)
+
+        dimension_keys = list(TeacherScoringEngine.DIMENSION_LABELS.keys())
+        radar_dimensions = [
+            {
+                'key': key,
+                'name': TeacherScoringEngine.DIMENSION_LABELS[key],
+                'value': float((portrait_payload.get('dimension_scores') or {}).get(key, 0.0)),
+            }
+            for key in dimension_keys
+        ]
+
+        benchmark_series_label = '本院平均'
+        benchmark_dimension_scores = (
+            benchmark_payload.get('college_average_data', {}) or {}
+        ).get('dimension_scores', {}) or {}
+        if benchmark_payload.get('active_scope') == 'university' and request.user.is_superuser:
+            benchmark_series_label = '全校平均'
+            benchmark_dimension_scores = (
+                benchmark_payload.get('university_average_data', {}) or {}
+            ).get('dimension_scores', {}) or benchmark_dimension_scores
+
+        radar_series_data = [
+            {
+                'name': '当前教师',
+                'value': [item['value'] for item in radar_dimensions],
+                'series_role': 'teacher',
+            },
+            {
+                'name': benchmark_series_label,
+                'value': [float(benchmark_dimension_scores.get(key, 0.0)) for key in dimension_keys],
+                'series_role': 'benchmark',
+            },
+        ]
+
+        available_years = sorted(
+            {
+                *snapshot_boundary.get('anchor_years', []),
+                selected_year,
+                current_year,
+            },
+            reverse=True,
+        )
+
+        return Response(
+            {
+                'teacher_id': user.id,
+                'year': selected_year,
+                'available_years': available_years,
+                'data_source': portrait_payload.get('source', 'runtime'),
+                'snapshot_boundary': snapshot_boundary,
+                'stage_comparison': stage_comparison,
+                'radar_dimensions': radar_dimensions,
+                'radar_series_data': radar_series_data,
+                'dimension_insights': dimension_insights,
+                'benchmark_data': benchmark_payload,
+            }
+        )
+
+
 class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     search_fields: tuple[str, ...] = ()
@@ -823,6 +968,7 @@ class TeacherOwnedAchievementViewSet(viewsets.ModelViewSet):
 
         instance.status = APPROVED_STATUS
         instance.save(update_fields=['status'])
+        invalidate_benchmark_score_cache()
         self.log_operation(
             instance=instance,
             action='APPROVE',

@@ -493,3 +493,12 @@ export interface PaperCleanupResponse {
   updated_ids: number[]
   action: string
 }
+
+export interface PortraitSnapshot {
+  id?: number
+  user: number
+  year: number
+  dimension_scores: Record<string, number>
+  total_score: number
+  created_at: string
+}

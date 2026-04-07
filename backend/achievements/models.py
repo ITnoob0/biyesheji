@@ -21,6 +21,32 @@ class TeacherProfile(models.Model):
         return f'{self.user.username}-教师画像'
 
 
+class PortraitSnapshot(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='portrait_snapshots',
+        verbose_name='教师账号',
+    )
+    year = models.IntegerField(verbose_name='快照年份')
+    dimension_scores = models.JSONField(default=dict, verbose_name='维度得分')
+    total_score = models.FloatField(default=0.0, verbose_name='综合得分')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('user', 'year'), name='uniq_portrait_snapshot_user_year'),
+        ]
+        indexes = [
+            models.Index(fields=('user', 'year')),
+            models.Index(fields=('year',)),
+        ]
+        ordering = ('-year', '-id')
+
+    def __str__(self) -> str:
+        return f'{self.user_id}-{self.year} 画像快照'
+
+
 class BaseAchievement(models.Model):
     REVIEW_STATUS_CHOICES = (
         ('DRAFT', '草稿'),

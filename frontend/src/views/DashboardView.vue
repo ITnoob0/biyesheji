@@ -88,7 +88,7 @@
         <div class="radar-evaluation-layout">
           <div class="radar-visual-column">
             <div class="radar-visual-panel">
-              <RadarChart :radarData="radarData" :teacherName="teacherInfo.name" />
+              <RadarChart :radarData="radarData" :seriesData="radarSeriesData" :teacherName="teacherInfo.name" />
             </div>
           </div>
 
@@ -278,6 +278,13 @@
       v-if="showDeepAnalysisPanel"
       :stage-comparison="stageComparison"
       :dimension-insights="dimensionInsights"
+      :selected-year="portraitAnalysisYear"
+      :available-years="portraitAnalysisAvailableYears"
+      :benchmark-scope="portraitBenchmarkScopeSelection"
+      :active-benchmark-scope="portraitBenchmarkActiveScope"
+      :is-system-admin="isSystemAdminRole"
+      @update-year="handlePortraitAnalysisYearChange"
+      @update-benchmark-scope="handlePortraitBenchmarkScopeChange"
     />
 
     <section v-if="showRepresentativeGrid" class="bottom-grid bottom-grid--single">
@@ -349,7 +356,9 @@ import {
   type PaperRecord,
   type PortraitDataMeta,
   type PortraitExplanation,
+  type PortraitAnalysisResponse,
   type PortraitReportResponse,
+  type RadarSeriesItem,
   type RadarResponse,
   type RecentStructurePoint,
   type SnapshotBoundary,
@@ -379,6 +388,11 @@ const currentUser = ref<SessionUser | null>(null)
 const userId = ref<number>(0)
 const statistics = ref<StatisticItem[]>([])
 const radarData = ref<Array<{ name: string; value: number }>>([])
+const radarSeriesData = ref<RadarSeriesItem[]>([])
+const portraitAnalysisYear = ref<number>(new Date().getFullYear())
+const portraitAnalysisAvailableYears = ref<number[]>([])
+const portraitBenchmarkScopeSelection = ref<'college' | 'university'>('college')
+const portraitBenchmarkActiveScope = ref<'college' | 'university'>('college')
 const dimensionSources = ref<DimensionSource[]>([])
 const dimensionInsights = ref<DimensionInsight[]>([])
 const papers = ref<PaperRecord[]>([])
@@ -472,6 +486,7 @@ const achievementMixSummary = computed(
 )
 
 const activeSection = computed(() => props.sectionMode)
+const isSystemAdminRole = computed(() => currentUser.value?.role_code === 'admin')
 const showHeroSection = computed(() => activeSection.value === 'overview')
 const showMetricGrid = computed(() => activeSection.value === 'overview')
 const showPortraitGrid = computed(() => ['overview', 'dimensions'].includes(activeSection.value))
@@ -540,8 +555,6 @@ const loadDashboardData = async () => {
   dimensionTrend.value = response.data.dimension_trend ?? []
   recentStructure.value = response.data.recent_structure ?? []
   portraitExplanation.value = response.data.portrait_explanation ?? null
-  stageComparison.value = response.data.stage_comparison ?? null
-  snapshotBoundary.value = response.data.snapshot_boundary ?? null
   dimensionInsights.value = response.data.dimension_insights ?? []
   weightSpec.value = response.data.weight_spec ?? []
   calculationSummary.value = response.data.calculation_summary ?? null
@@ -556,16 +569,58 @@ const loadAllAchievements = async () => {
 
 const loadRadarData = async () => {
   const response = await axios.get<RadarResponse>(`/api/achievements/radar/${userId.value}/`)
-  radarData.value = response.data.radar_dimensions ?? []
   dimensionSources.value = response.data.dimension_sources ?? []
   dimensionInsights.value = response.data.dimension_insights ?? dimensionInsights.value
   weightSpec.value = response.data.weight_spec ?? weightSpec.value
   calculationSummary.value = response.data.calculation_summary ?? calculationSummary.value
 }
 
+const loadPortraitAnalysis = async () => {
+  const params: Record<string, string | number> = {
+    year: portraitAnalysisYear.value,
+    scope: isSystemAdminRole.value ? portraitBenchmarkScopeSelection.value : 'college',
+  }
+  if (currentUser.value?.is_admin) {
+    params.user_id = userId.value
+  }
+
+  const response = await axios.get<PortraitAnalysisResponse>('/api/achievements/portrait/analysis/', {
+    params,
+  })
+  const payload = response.data
+  portraitAnalysisYear.value = Number(payload.year || portraitAnalysisYear.value)
+  portraitAnalysisAvailableYears.value = (payload.available_years || [])
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item))
+  stageComparison.value = payload.stage_comparison ?? null
+  snapshotBoundary.value = payload.snapshot_boundary ?? null
+  radarData.value = payload.radar_dimensions ?? []
+  radarSeriesData.value = payload.radar_series_data ?? []
+
+  const activeScope = payload.benchmark_data?.active_scope
+  portraitBenchmarkActiveScope.value = activeScope === 'university' ? 'university' : 'college'
+  if (!isSystemAdminRole.value) {
+    portraitBenchmarkScopeSelection.value = 'college'
+  }
+}
+
 const loadPortraitReport = async () => {
   const response = await axios.get<PortraitReportResponse>(`/api/achievements/portrait-report/${userId.value}/`)
   portraitReport.value = response.data
+}
+
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (callback: () => void | Promise<void>) => { finished: Promise<void> }
+}
+
+const runRadarViewTransition = async (task: () => Promise<void>): Promise<void> => {
+  const transitionDocument = document as ViewTransitionDocument
+  if (typeof transitionDocument.startViewTransition === 'function') {
+    const transition = transitionDocument.startViewTransition(() => task())
+    await transition.finished
+    return
+  }
+  await task()
 }
 
 const loadPapers = async () => {
@@ -575,6 +630,25 @@ const loadPapers = async () => {
       : { include_claimed: 1 },
   })
   papers.value = response.data ?? []
+}
+
+const handlePortraitAnalysisYearChange = async (year: number) => {
+  if (!Number.isFinite(year) || year === portraitAnalysisYear.value) {
+    return
+  }
+  portraitAnalysisYear.value = year
+  await runRadarViewTransition(loadPortraitAnalysis)
+}
+
+const handlePortraitBenchmarkScopeChange = async (scope: 'college' | 'university') => {
+  if (!isSystemAdminRole.value) {
+    return
+  }
+  if (scope === portraitBenchmarkScopeSelection.value) {
+    return
+  }
+  portraitBenchmarkScopeSelection.value = scope
+  await runRadarViewTransition(loadPortraitAnalysis)
 }
 
 const ensureChartInstance = (
@@ -623,12 +697,15 @@ const renderStructureChart = () => {
 const refreshPortrait = async () => {
   const sessionUser = await ensureUser()
   if (!sessionUser) return
+  portraitAnalysisYear.value = new Date().getFullYear()
+  portraitBenchmarkScopeSelection.value = isSystemAdminRole.value ? portraitBenchmarkScopeSelection.value : 'college'
 
   try {
     await Promise.all([
       loadTeacherDetail(),
       loadDashboardData(),
       loadRadarData(),
+      loadPortraitAnalysis(),
       loadPapers(),
       loadPortraitReport(),
       loadAllAchievements(),

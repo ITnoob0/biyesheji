@@ -15,6 +15,7 @@ from .views import (
     PaperViewSet,
     ProjectViewSet,
     TeacherAllAchievementsView,
+    TeacherPortraitAnalysisView,
     TeacherDashboardStatsView,
     TeacherPortraitReportView,
     TeacherRadarView,
@@ -31,6 +32,7 @@ router.register(r'academic-services', AcademicServiceViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('dashboard-stats/', TeacherDashboardStatsView.as_view(), name='dashboard_stats'),
+    path('portrait/analysis/', TeacherPortraitAnalysisView.as_view(), name='teacher_portrait_analysis'),
     path('all-achievements/<int:user_id>/', TeacherAllAchievementsView.as_view(), name='teacher_all_achievements'),
     path('radar/<int:user_id>/', TeacherRadarView.as_view(), name='teacher_radar'),
     path('portrait-report/<int:user_id>/', TeacherPortraitReportView.as_view(), name='teacher_portrait_report'),
