@@ -9,6 +9,7 @@ export type {
   BibtexPreviewStatus,
   BibtexPreviewSummary,
   CoAuthorDetail,
+  CoAuthorRecordInput,
   IpFormState,
   IpMutationPayload,
   IpRecord,

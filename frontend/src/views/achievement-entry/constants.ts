@@ -1,4 +1,4 @@
-import type { AchievementQueryState, TabName } from '../../types/achievements'
+import type { AchievementQueryState, CoAuthorRecordInput, TabName } from '../../types/achievements'
 
 export const achievementEndpointMap: Record<TabName, string> = {
   papers: '/api/achievements/papers/',
@@ -92,10 +92,51 @@ export const normalizeAchievementList = <T>(data: unknown): T[] =>
   Array.isArray(data) ? (data as T[]) : []
 
 export const parseCoauthorInput = (raw: string): string[] =>
-  raw
+  parseCoauthorRankInput(raw).map(item => item.name)
+
+export const parseCoauthorRankInput = (raw: string): CoAuthorRecordInput[] => {
+  const normalizedRecords: CoAuthorRecordInput[] = []
+  const seenNames = new Set<string>()
+  const usedRanks = new Set<number>()
+  const chunks = raw
     .split(/[\n,，、;；]+/)
     .map(item => item.trim())
     .filter(Boolean)
+
+  for (const chunk of chunks) {
+    const isCorresponding = /[*＊]\s*$/.test(chunk)
+    const normalizedChunk = chunk.replace(/[*＊]\s*$/, '').trim()
+    const [nameRaw, rankRaw] = normalizedChunk.split(/[#＃:：]/).map(part => (part || '').trim())
+    const name = nameRaw || ''
+    if (!name || seenNames.has(name)) continue
+
+    let authorRank: number | null = null
+    if (rankRaw) {
+      const parsed = Number(rankRaw)
+      if (Number.isFinite(parsed) && parsed >= 1) {
+        authorRank = Math.floor(parsed)
+      }
+    }
+    if (authorRank !== null && usedRanks.has(authorRank)) {
+      authorRank = null
+    }
+    if (authorRank !== null) {
+      usedRanks.add(authorRank)
+    }
+    seenNames.add(name)
+    normalizedRecords.push({
+      name,
+      user_id: null,
+      is_internal: false,
+      order: authorRank,
+      author_rank: authorRank,
+      is_corresponding: isCorresponding,
+    })
+    if (normalizedRecords.length >= 20) break
+  }
+
+  return normalizedRecords
+}
 
 export const paperRepresentativeOptions = [
   { label: '全部记录', value: 'ALL' },

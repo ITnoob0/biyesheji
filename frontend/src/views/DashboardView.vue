@@ -570,7 +570,9 @@ const loadPortraitReport = async () => {
 
 const loadPapers = async () => {
   const response = await axios.get<PaperRecord[]>('/api/achievements/papers/', {
-    params: currentUser.value?.is_admin ? { teacher_id: userId.value } : undefined,
+    params: currentUser.value?.is_admin
+      ? { teacher_id: userId.value, include_claimed: 1 }
+      : { include_claimed: 1 },
   })
   papers.value = response.data ?? []
 }

@@ -20,9 +20,21 @@ export interface BibtexIssueDetail {
 export interface CoAuthorDetail {
   id: number
   name: string
+  author_rank: number | null
+  is_corresponding: boolean
   organization: string
   is_internal: boolean
   internal_teacher: number | null
+  user_id?: number | null
+}
+
+export interface CoAuthorRecordInput {
+  name: string
+  user_id?: number | null
+  is_internal?: boolean
+  order?: number | null
+  author_rank?: number | null
+  is_corresponding?: boolean
 }
 
 export interface MetadataAlertDetail {
@@ -56,6 +68,7 @@ export interface PaperRecord extends TeacherOwnedAchievementRecord {
   source_url: string
   citation_count: number
   is_first_author: boolean
+  is_corresponding_author: boolean
   is_representative: boolean
   doi: string
   publication_year: number | null
@@ -110,9 +123,10 @@ export interface PaperFormState {
   source_url: string
   citation_count: number
   is_first_author: boolean
+  is_corresponding_author: boolean
   is_representative: boolean
   doi: string
-  coauthorInput: string
+  coauthor_records: CoAuthorRecordInput[]
 }
 
 export interface ProjectFormState {
@@ -161,9 +175,11 @@ export interface PaperMutationPayload {
   source_url: string
   citation_count: number
   is_first_author: boolean
+  is_corresponding_author: boolean
   is_representative: boolean
   doi: string
   coauthors: string[]
+  coauthor_records?: CoAuthorRecordInput[]
 }
 
 export interface ProjectMutationPayload {

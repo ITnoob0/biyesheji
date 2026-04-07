@@ -1,11 +1,22 @@
 from unittest.mock import patch
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import AcademicService, IntellectualProperty, Paper, PaperOperationLog, Project, TeachingAchievement
+from .models import (
+    AcademicService,
+    AchievementClaim,
+    IntellectualProperty,
+    Paper,
+    PaperOperationLog,
+    Project,
+    TeachingAchievement,
+)
 
 
 class AchievementEntryApiTests(APITestCase):
@@ -1863,3 +1874,313 @@ class AchievementReviewFlowApiTests(APITestCase):
             self.assertEqual(valid_response.status_code, status.HTTP_200_OK)
             instance.refresh_from_db()
             self.assertEqual(instance.status, 'REJECTED')
+
+
+class PaperClaimOrderConfirmationApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.teacher_a = user_model.objects.create_user(
+            id=904001,
+            username='904001',
+            password='teacher123456',
+            real_name='TeacherA',
+            department='人工智能学院',
+            title='副教授',
+        )
+        self.teacher_b = user_model.objects.create_user(
+            id=904002,
+            username='904002',
+            password='teacher123456',
+            real_name='TeacherB',
+            department='人工智能学院',
+            title='讲师',
+        )
+        self.teacher_c = user_model.objects.create_user(
+            id=904003,
+            username='904003',
+            password='teacher123456',
+            real_name='TeacherC',
+            department='人工智能学院',
+            title='讲师',
+        )
+
+    def _create_paper(self, actor, payload):
+        self.client.force_authenticate(user=actor)
+        response = self.client.post('/api/achievements/papers/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return Paper.objects.get(id=response.data['id'])
+
+    def test_case_1_standard_claim_flow(self):
+        paper = self._create_paper(
+            self.teacher_a,
+            {
+                'title': 'Standard claim paper',
+                'abstract': 'Long enough abstract for standard internal claim workflow testing.',
+                'date_acquired': '2025-08-01',
+                'paper_type': 'JOURNAL',
+                'journal_name': 'Claim Journal',
+                'is_first_author': True,
+                'is_corresponding_author': False,
+                'coauthor_records': [
+                    {'name': self.teacher_b.real_name, 'user_id': self.teacher_b.id, 'order': 2, 'is_corresponding': False}
+                ],
+            },
+        )
+        claim = AchievementClaim.objects.get(achievement=paper, target_user=self.teacher_b)
+        self.assertEqual(claim.status, 'PENDING')
+        self.assertEqual(claim.proposed_order, 2)
+
+        self.client.force_authenticate(user=self.teacher_b)
+        accept_response = self.client.post(
+            f'/api/claims/{claim.id}/accept/',
+            {'actual_order': 2, 'actual_is_corresponding': False},
+            format='json',
+        )
+        self.assertEqual(accept_response.status_code, status.HTTP_200_OK)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'ACCEPTED')
+        self.assertEqual(claim.actual_order, 2)
+        self.assertFalse(claim.confirmed_is_corresponding)
+        self.assertEqual(paper.coauthors.get(internal_teacher=self.teacher_b).author_rank, 2)
+
+    def test_case_2_student_first_teacher_corresponding(self):
+        paper = self._create_paper(
+            self.teacher_a,
+            {
+                'title': 'Student first author case',
+                'abstract': 'Long enough abstract for student first and teacher corresponding author scenario.',
+                'date_acquired': '2025-08-02',
+                'paper_type': 'JOURNAL',
+                'journal_name': 'Corresponding Journal',
+                'is_first_author': False,
+                'is_corresponding_author': True,
+                'coauthor_records': [
+                    {'name': 'StudentOne', 'order': 1, 'is_corresponding': False},
+                    {'name': self.teacher_b.real_name, 'user_id': self.teacher_b.id, 'order': 3, 'is_corresponding': False},
+                ],
+            },
+        )
+        claim = AchievementClaim.objects.get(achievement=paper, target_user=self.teacher_b)
+        self.assertEqual(claim.status, 'PENDING')
+        self.assertEqual(claim.proposed_order, 3)
+        self.assertFalse(claim.proposed_is_corresponding)
+
+        paper.status = 'APPROVED'
+        paper.save(update_fields=['status'])
+        self.client.force_authenticate(user=self.teacher_a)
+        all_response = self.client.get(f'/api/achievements/all-achievements/{self.teacher_a.id}/')
+        self.assertEqual(all_response.status_code, status.HTTP_200_OK)
+        target = next(item for item in all_response.data['records'] if item['id'] == paper.id)
+        self.assertIn('通讯作者', target['author_rank_label'])
+
+    def test_case_3_claim_accept_with_order_correction_to_conflict(self):
+        paper = self._create_paper(
+            self.teacher_a,
+            {
+                'title': 'Conflict claim paper',
+                'abstract': 'Long enough abstract for conflict scenario where claim target corrects order and corresponding.',
+                'date_acquired': '2025-08-03',
+                'paper_type': 'JOURNAL',
+                'journal_name': 'Conflict Journal',
+                'coauthor_records': [
+                    {'name': self.teacher_c.real_name, 'user_id': self.teacher_c.id, 'order': 3, 'is_corresponding': False}
+                ],
+            },
+        )
+        claim = AchievementClaim.objects.get(achievement=paper, target_user=self.teacher_c)
+
+        self.client.force_authenticate(user=self.teacher_c)
+        response = self.client.post(
+            f'/api/achievements/claims/{claim.id}/accept/',
+            {'actual_order': 2, 'actual_is_corresponding': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'CONFLICT')
+        self.assertEqual(claim.actual_order, 2)
+        self.assertTrue(claim.confirmed_is_corresponding)
+        coauthor = paper.coauthors.get(internal_teacher=self.teacher_c)
+        self.assertEqual(coauthor.author_rank, 2)
+        self.assertTrue(coauthor.is_corresponding)
+
+    def test_case_4_second_author_teacher_records_and_first_author_claims(self):
+        paper = self._create_paper(
+            self.teacher_b,
+            {
+                'title': 'Second author uploads for first author',
+                'abstract': 'Long enough abstract for second-author teacher submission and first-author teacher claim confirmation.',
+                'date_acquired': '2025-08-04',
+                'paper_type': 'JOURNAL',
+                'journal_name': 'Shared Journal',
+                'is_first_author': False,
+                'is_corresponding_author': False,
+                'coauthor_records': [
+                    {'name': self.teacher_a.real_name, 'user_id': self.teacher_a.id, 'order': 1, 'is_corresponding': False},
+                    {'name': self.teacher_b.real_name, 'user_id': self.teacher_b.id, 'order': 2, 'is_corresponding': False},
+                ],
+            },
+        )
+        claim = AchievementClaim.objects.get(achievement=paper, target_user=self.teacher_a)
+        self.assertEqual(claim.status, 'PENDING')
+        self.assertEqual(claim.proposed_order, 1)
+
+        paper.status = 'APPROVED'
+        paper.save(update_fields=['status'])
+
+        self.client.force_authenticate(user=self.teacher_b)
+        owner_all_response = self.client.get(f'/api/achievements/all-achievements/{self.teacher_b.id}/')
+        self.assertEqual(owner_all_response.status_code, status.HTTP_200_OK)
+        owner_target = next(item for item in owner_all_response.data['records'] if item['id'] == paper.id)
+        self.assertEqual(owner_target['author_rank_label'], '第2作者')
+
+        self.client.force_authenticate(user=self.teacher_a)
+        accept_response = self.client.post(
+            f'/api/achievements/claims/{claim.id}/accept/',
+            {'actual_order': 1, 'actual_is_corresponding': False},
+            format='json',
+        )
+        self.assertEqual(accept_response.status_code, status.HTTP_200_OK)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'ACCEPTED')
+
+        a_all_response = self.client.get(f'/api/achievements/all-achievements/{self.teacher_a.id}/')
+        self.assertEqual(a_all_response.status_code, status.HTTP_200_OK)
+        a_target = next(item for item in a_all_response.data['records'] if item['id'] == paper.id)
+        self.assertEqual(a_target['author_rank_label'], '第1作者')
+
+
+class AchievementClaimFlowApiTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.teacher_a = user_model.objects.create_user(
+            id=902001,
+            username='902001',
+            password='teacher123456',
+            real_name='张老师',
+            department='人工智能学院',
+            title='副教授',
+        )
+        self.teacher_b = user_model.objects.create_user(
+            id=902002,
+            username='902002',
+            password='teacher123456',
+            real_name='李晨',
+            department='人工智能学院',
+            title='讲师',
+        )
+        self.teacher_c = user_model.objects.create_user(
+            id=902003,
+            username='902003',
+            password='teacher123456',
+            real_name='王刚',
+            department='计算机学院',
+            title='讲师',
+        )
+        self.college_admin = user_model.objects.create_user(
+            id=902004,
+            username='college-admin-claim',
+            password='Admin123456',
+            real_name='学院管理员认领',
+            department='人工智能学院',
+            title='学院管理员',
+            is_staff=True,
+        )
+
+    def _create_approved_paper(self):
+        return Paper.objects.create(
+            teacher=self.teacher_a,
+            title='跨学院协同论文',
+            abstract='这是一个足够长的摘要，用于验证校内合著者成果认领机制在审批通过后的画像聚合效果。',
+            date_acquired='2025-04-18',
+            paper_type='JOURNAL',
+            journal_name='测试期刊',
+            citation_count=12,
+            is_first_author=True,
+            status='APPROVED',
+        )
+
+    def test_create_paper_auto_generates_pending_claim_for_internal_coauthor(self):
+        self.client.force_authenticate(user=self.teacher_a)
+        response = self.client.post(
+            '/api/achievements/papers/',
+            {
+                'title': '自动识别认领论文',
+                'abstract': '这是一个足够长的摘要，用于验证论文录入后会按合著者姓名自动生成认领邀请。',
+                'date_acquired': '2025-04-01',
+                'paper_type': 'JOURNAL',
+                'journal_name': '测试期刊',
+                'coauthors': ['李晨', '外部合作者'],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        claim = AchievementClaim.objects.filter(target_user=self.teacher_b).first()
+        self.assertIsNotNone(claim)
+        self.assertEqual(claim.status, 'PENDING')
+        self.assertEqual(claim.initiator_id, self.teacher_a.id)
+
+    def test_accept_claim_updates_status_and_all_achievements_contains_claimed_paper(self):
+        paper = self._create_approved_paper()
+        AchievementClaim.objects.create(
+            achievement=paper,
+            initiator=self.teacher_a,
+            target_user=self.teacher_b,
+            status='PENDING',
+        )
+
+        self.client.force_authenticate(user=self.teacher_b)
+        pending_response = self.client.get('/api/achievements/claims/pending/')
+        self.assertEqual(pending_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(pending_response.data['records']), 1)
+
+        claim_id = pending_response.data['records'][0]['id']
+        accept_response = self.client.post(f'/api/achievements/claims/{claim_id}/accept/', format='json')
+        self.assertEqual(accept_response.status_code, status.HTTP_200_OK)
+
+        all_response = self.client.get(f'/api/achievements/all-achievements/{self.teacher_b.id}/')
+        self.assertEqual(all_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(any(item['title'] == paper.title for item in all_response.data['records']))
+
+        dashboard_response = self.client.get('/api/achievements/dashboard-stats/')
+        self.assertEqual(dashboard_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(dashboard_response.data['achievement_overview']['paper_count'], 1)
+
+    def test_reject_claim_marks_status_rejected(self):
+        paper = self._create_approved_paper()
+        claim = AchievementClaim.objects.create(
+            achievement=paper,
+            initiator=self.teacher_a,
+            target_user=self.teacher_b,
+            status='PENDING',
+        )
+
+        self.client.force_authenticate(user=self.teacher_b)
+        response = self.client.post(f'/api/achievements/claims/{claim.id}/reject/', format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        claim.refresh_from_db()
+        self.assertEqual(claim.status, 'REJECTED')
+
+    def test_college_admin_unclaimed_tracking_is_scoped_to_own_college(self):
+        paper = self._create_approved_paper()
+        claim_in_college = AchievementClaim.objects.create(
+            achievement=paper,
+            initiator=self.teacher_a,
+            target_user=self.teacher_b,
+            status='PENDING',
+        )
+        claim_other_college = AchievementClaim.objects.create(
+            achievement=paper,
+            initiator=self.teacher_a,
+            target_user=self.teacher_c,
+            status='PENDING',
+        )
+        old_time = timezone.now() - timedelta(days=8)
+        AchievementClaim.objects.filter(id__in=[claim_in_college.id, claim_other_college.id]).update(created_at=old_time)
+
+        self.client.force_authenticate(user=self.college_admin)
+        response = self.client.get('/api/achievements/claims/college-unclaimed/', {'days_threshold': 7})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['records']), 1)
+        self.assertEqual(response.data['records'][0]['target_user_name'], '李晨')

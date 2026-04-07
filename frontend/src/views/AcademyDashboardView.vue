@@ -28,6 +28,21 @@ interface SectionFilterState {
   year: string | undefined
 }
 
+interface CollegeUnclaimedRecord {
+  id: number
+  achievement_title: string
+  target_user_name: string
+  initiator_name: string
+  created_at: string
+  pending_days: number
+}
+
+interface CollegeUnclaimedResponse {
+  days_threshold: number
+  record_count: number
+  records: CollegeUnclaimedRecord[]
+}
+
 type YearQuickFilter = 'recent_1' | 'recent_3' | 'recent_5'
 
 const YEAR_QUICK_FILTER_OPTIONS: Array<{ label: string; value: YearQuickFilter }> = [
@@ -48,10 +63,14 @@ const props = withDefaults(
 const router = useRouter()
 const checkedUser = ref<SessionUser | null>(null)
 const loading = ref(false)
+const unclaimedLoading = ref(false)
+const unclaimedReminding = ref(false)
 const radarPreviewVisible = ref(false)
 const achievementPreviewVisible = ref(false)
 const previewTeacherId = ref<number | null>(null)
 const previewTeacherName = ref('')
+const unclaimedDaysThreshold = ref(7)
+const collegeUnclaimedRecords = ref<CollegeUnclaimedRecord[]>([])
 const overviewData = ref<AcademyOverviewResponse | null>(null)
 const comparisonData = ref<AcademyOverviewResponse | null>(null)
 const drilldownData = ref<AcademyOverviewResponse | null>(null)
@@ -280,6 +299,7 @@ const loadSectionData = async () => {
       params: buildRequestParams(),
     })
     applyPayload(data)
+    await loadCollegeUnclaimedClaims()
     await renderCharts()
   } catch (error: any) {
     if (error?.response?.status === 403) {
@@ -290,6 +310,42 @@ const loadSectionData = async () => {
     ElMessage.error('学院看板加载失败，请检查后端接口状态。')
   } finally {
     loading.value = false
+  }
+}
+
+const loadCollegeUnclaimedClaims = async () => {
+  if (!(isCollegeAdmin.value && activeSection.value === 'overview')) {
+    collegeUnclaimedRecords.value = []
+    return
+  }
+  unclaimedLoading.value = true
+  try {
+    const { data } = await axios.get<CollegeUnclaimedResponse>('/api/achievements/claims/college-unclaimed/', {
+      params: { days_threshold: unclaimedDaysThreshold.value },
+    })
+    collegeUnclaimedRecords.value = data.records ?? []
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '未认领成果追踪加载失败')
+  } finally {
+    unclaimedLoading.value = false
+  }
+}
+
+const remindCollegeUnclaimedClaims = async () => {
+  if (!(isCollegeAdmin.value && activeSection.value === 'overview')) {
+    return
+  }
+  unclaimedReminding.value = true
+  try {
+    const { data } = await axios.post('/api/achievements/claims/college-unclaimed/remind/', {
+      days_threshold: unclaimedDaysThreshold.value,
+    })
+    ElMessage.success(data.detail || '已发送系统提醒')
+    await loadCollegeUnclaimedClaims()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '系统提醒发送失败')
+  } finally {
+    unclaimedReminding.value = false
   }
 }
 
@@ -646,6 +702,45 @@ onUnmounted(() => {
             </div>
           </el-card>
         </section>
+
+        <section class="single-row">
+          <el-card class="rank-card workspace-surface-card" shadow="never">
+            <template #header>
+              <div class="section-head workspace-section-head">
+                <span>异常 / 未认领数据追踪</span>
+                <div class="filter-header-actions">
+                  <el-select v-model="unclaimedDaysThreshold" class="unclaimed-threshold" @change="loadCollegeUnclaimedClaims">
+                    <el-option :value="7" label="超过 7 天" />
+                    <el-option :value="14" label="超过 14 天" />
+                    <el-option :value="30" label="超过 30 天" />
+                  </el-select>
+                  <el-button
+                    type="warning"
+                    plain
+                    :loading="unclaimedReminding"
+                    @click="remindCollegeUnclaimedClaims"
+                  >
+                    一键发送系统提醒
+                  </el-button>
+                </div>
+              </div>
+            </template>
+
+            <el-table
+              :data="collegeUnclaimedRecords"
+              :loading="unclaimedLoading"
+              empty-text="当前没有长期未认领成果"
+            >
+              <el-table-column prop="achievement_title" label="成果题目" min-width="220" align="center" header-align="center" />
+              <el-table-column prop="target_user_name" label="被邀请教师" min-width="120" align="center" header-align="center" />
+              <el-table-column prop="initiator_name" label="录入者" min-width="120" align="center" header-align="center" />
+              <el-table-column label="邀请时间" width="130" align="center" header-align="center">
+                <template #default="{ row }">{{ row.created_at.slice(0, 10) }}</template>
+              </el-table-column>
+              <el-table-column prop="pending_days" label="待认领天数" width="120" align="center" header-align="center" />
+            </el-table>
+          </el-card>
+        </section>
       </template>
 
       <template v-if="activeSection === 'teacher-analysis' && isCollegeAdmin">
@@ -836,6 +931,10 @@ h1 {
 .table-actions {
   justify-content: center;
   white-space: nowrap;
+}
+
+.unclaimed-threshold {
+  width: 130px;
 }
 
 @media (max-width: 1320px) {

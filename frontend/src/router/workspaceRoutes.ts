@@ -2,6 +2,7 @@
 import AcademyDashboardView from '../views/AcademyDashboardView.vue'
 import AchievementEntryView from '../views/AchievementEntryView.vue'
 import AchievementReviewView from '../views/AchievementReviewView.vue'
+import AchievementClaimView from '../views/personal-center/AchievementClaimView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import ProjectGuideManagementView from '../views/ProjectGuideManagementView.vue'
 import ProjectRecommendationView from '../views/ProjectRecommendationView.vue'
@@ -72,7 +73,19 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           order: 30,
           moduleKey: 'personal-center',
           requiresAuth: true,
-          menuRoles: ['teacher', 'college_admin'],
+          menuRoles: ['teacher'],
+        },
+      },
+      {
+        path: 'achievement-claims',
+        name: 'teacher-profile-editor-achievement-claims',
+        component: AchievementClaimView,
+        meta: {
+          title: '成果认领',
+          order: 35,
+          moduleKey: 'personal-center',
+          requiresAuth: true,
+          menuRoles: ['teacher'],
         },
       },
       {

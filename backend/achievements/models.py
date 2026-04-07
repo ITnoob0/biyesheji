@@ -66,7 +66,8 @@ class Paper(BaseAchievement):
     pages = models.CharField(max_length=50, blank=True, verbose_name='页码范围')
     source_url = models.URLField(blank=True, verbose_name='来源链接')
     citation_count = models.IntegerField(default=0)
-    is_first_author = models.BooleanField(default=True, verbose_name='是否第一作者/通讯作者')
+    is_first_author = models.BooleanField(default=True, verbose_name='是否第一作者')
+    is_corresponding_author = models.BooleanField(default=False, verbose_name='是否通讯作者')
     is_representative = models.BooleanField(default=False, verbose_name='是否代表作')
     doi = models.CharField(max_length=200, blank=True)
     abstract = models.TextField(blank=True)
@@ -98,6 +99,8 @@ class CoAuthor(models.Model):
         related_name='coauthors',
     )
     name = models.CharField(max_length=200)
+    author_rank = models.PositiveIntegerField(null=True, blank=True, verbose_name='作者位次')
+    is_corresponding = models.BooleanField(default=False, verbose_name='是否通讯作者')
     organization = models.CharField(max_length=300, blank=True)
     is_internal = models.BooleanField(default=False, verbose_name='是否本校教师')
     internal_teacher = models.ForeignKey(
@@ -111,6 +114,90 @@ class CoAuthor(models.Model):
 
     def __str__(self) -> str:
         return f'{self.name} ({self.paper.title})'
+
+    @property
+    def user(self):
+        """Compatibility alias for business terms that call this relation `user`."""
+        return self.internal_teacher
+
+    @user.setter
+    def user(self, value):
+        self.internal_teacher = value
+
+
+class AchievementClaim(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', '待认领'),
+        ('ACCEPTED', '已认领'),
+        ('REJECTED', '已拒绝'),
+        ('CONFLICT', '存在争议'),
+    )
+
+    achievement = models.ForeignKey(
+        Paper,
+        on_delete=models.CASCADE,
+        related_name='claims',
+        verbose_name='关联成果',
+    )
+    initiator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='initiated_achievement_claims',
+        verbose_name='录入者',
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='achievement_claims',
+        verbose_name='被邀请认领教师',
+    )
+    coauthor = models.ForeignKey(
+        CoAuthor,
+        on_delete=models.SET_NULL,
+        related_name='claims',
+        null=True,
+        blank=True,
+        verbose_name='关联合作者记录',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING', verbose_name='认领状态')
+    proposed_author_rank = models.PositiveIntegerField(null=True, blank=True, verbose_name='发起位次')
+    proposed_is_corresponding = models.BooleanField(default=False, verbose_name='发起通讯作者标记')
+    confirmed_author_rank = models.PositiveIntegerField(null=True, blank=True, verbose_name='确认位次')
+    confirmed_is_corresponding = models.BooleanField(default=False, verbose_name='确认通讯作者标记')
+    confirmation_note = models.TextField(blank=True, verbose_name='认领备注')
+    rank_confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name='位次确认时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='邀请时间')
+
+    class Meta:
+        ordering = ('-created_at', '-id')
+        constraints = [
+            models.UniqueConstraint(fields=('achievement', 'target_user'), name='uniq_claim_achievement_target'),
+        ]
+        indexes = [
+            models.Index(fields=('status', 'created_at')),
+            models.Index(fields=('target_user', 'status')),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.achievement.title} -> {self.target_user_id} ({self.status})'
+
+    @property
+    def proposed_order(self):
+        """Compatibility alias used by business docs/tests."""
+        return self.proposed_author_rank
+
+    @proposed_order.setter
+    def proposed_order(self, value):
+        self.proposed_author_rank = value
+
+    @property
+    def actual_order(self):
+        """Compatibility alias used by claim accept API naming."""
+        return self.confirmed_author_rank
+
+    @actual_order.setter
+    def actual_order(self, value):
+        self.confirmed_author_rank = value
 
 
 class Project(BaseAchievement):

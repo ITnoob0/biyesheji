@@ -1,9 +1,11 @@
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
 from .governance import build_paper_metadata_alert_details, build_paper_metadata_alerts
 from .models import (
     AcademicService,
+    AchievementClaim,
     AchievementOperationLog,
     CoAuthor,
     IntellectualProperty,
@@ -16,9 +18,19 @@ from .models import (
 
 
 class CoAuthorDetailSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source='internal_teacher_id', read_only=True)
+
     class Meta:
         model = CoAuthor
-        fields = ('id', 'name', 'organization', 'is_internal', 'internal_teacher')
+        fields = ('id', 'name', 'author_rank', 'is_corresponding', 'organization', 'is_internal', 'internal_teacher', 'user_id')
+
+
+class CoAuthorInputSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    user_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    order = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    author_rank = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    is_corresponding = serializers.BooleanField(required=False)
 
 
 class TeacherOwnedAchievementSerializer(serializers.ModelSerializer):
@@ -59,6 +71,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
         required=False,
         default=list,
     )
+    coauthor_records = CoAuthorInputSerializer(many=True, write_only=True, required=False)
     coauthor_details = CoAuthorDetailSerializer(source='coauthors', many=True, read_only=True)
     keywords = serializers.SerializerMethodField()
     paper_type_display = serializers.CharField(source='get_paper_type_display', read_only=True)
@@ -85,6 +98,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'source_url',
             'citation_count',
             'is_first_author',
+            'is_corresponding_author',
             'is_representative',
             'doi',
             'publication_year',
@@ -92,6 +106,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'status',
             'status_label',
             'coauthors',
+            'coauthor_records',
             'coauthor_details',
             'keywords',
             'metadata_alerts',
@@ -124,6 +139,55 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
                 normalized.append(name)
         return normalized[:20]
 
+    def validate_coauthor_records(self, value):
+        normalized: list[dict] = []
+        seen_keys: set[str] = set()
+        used_ranks: set[int] = set()
+        user_model = get_user_model()
+        for item in value:
+            user_id = item.get('user_id')
+            order = item.get('order')
+            author_rank = item.get('author_rank')
+            if order is not None:
+                author_rank = order
+            name = (item.get('name') or '').strip()
+
+            resolved_user = None
+            if user_id:
+                resolved_user = (
+                    user_model.objects.filter(
+                        id=user_id,
+                        is_active=True,
+                        is_staff=False,
+                        is_superuser=False,
+                    )
+                    .only('id', 'real_name', 'username')
+                    .first()
+                )
+                if resolved_user:
+                    name = name or (resolved_user.real_name or resolved_user.username)
+
+            if not name:
+                continue
+            dedupe_key = f'u:{resolved_user.id}' if resolved_user else f'n:{name}'
+            if dedupe_key in seen_keys:
+                continue
+            is_corresponding = bool(item.get('is_corresponding', False))
+            if author_rank is not None:
+                if author_rank in used_ranks:
+                    raise serializers.ValidationError('合作者位次不能重复。')
+                used_ranks.add(author_rank)
+            seen_keys.add(dedupe_key)
+            normalized.append(
+                {
+                    'name': name,
+                    'user_id': resolved_user.id if resolved_user else None,
+                    'author_rank': author_rank,
+                    'is_corresponding': is_corresponding,
+                }
+            )
+        return normalized[:20]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         request = self.context.get('request')
@@ -145,19 +209,24 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
 
     def create(self, validated_data):
         coauthor_names = validated_data.pop('coauthors', [])
+        coauthor_records = validated_data.pop('coauthor_records', None)
         paper = Paper.objects.create(**validated_data)
-        self._replace_coauthors(paper, coauthor_names)
+        self._replace_coauthors(paper, self._resolve_coauthor_records(coauthor_names, coauthor_records))
         return paper
 
     def update(self, instance, validated_data):
         coauthor_names = validated_data.pop('coauthors', None)
+        coauthor_records = validated_data.pop('coauthor_records', None)
         if instance.status in {'APPROVED', 'REJECTED'}:
             validated_data['status'] = 'PENDING_REVIEW'
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        if coauthor_names is not None:
-            self._replace_coauthors(instance, coauthor_names)
+        if coauthor_names is not None or coauthor_records is not None:
+            self._replace_coauthors(
+                instance,
+                self._resolve_coauthor_records(coauthor_names or [], coauthor_records),
+            )
         return instance
 
     def get_keywords(self, obj):
@@ -173,10 +242,22 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
     def get_metadata_alert_details(self, obj):
         return build_paper_metadata_alert_details(obj)
 
-    def _replace_coauthors(self, paper, coauthor_names):
+    def _resolve_coauthor_records(self, coauthor_names: list[str], coauthor_records: list[dict] | None):
+        if coauthor_records:
+            return coauthor_records
+        return [{'name': name, 'user_id': None, 'author_rank': None, 'is_corresponding': False} for name in coauthor_names]
+
+    def _replace_coauthors(self, paper, coauthor_records):
         paper.coauthors.all().delete()
-        for name in coauthor_names:
-            CoAuthor.objects.create(paper=paper, name=name)
+        for item in coauthor_records:
+            CoAuthor.objects.create(
+                paper=paper,
+                name=item.get('name', '').strip(),
+                internal_teacher_id=item.get('user_id'),
+                author_rank=item.get('author_rank'),
+                is_corresponding=bool(item.get('is_corresponding', False)),
+                is_internal=bool(item.get('user_id')),
+            )
 
 
 class ProjectSerializer(TeacherOwnedAchievementSerializer):
@@ -395,3 +476,86 @@ class AchievementReviewActionSerializer(serializers.Serializer):
 
 class AchievementRejectSerializer(AchievementReviewActionSerializer):
     reason = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+
+
+class AchievementClaimSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source='get_status_display', read_only=True)
+    achievement_id = serializers.IntegerField(source='achievement.id', read_only=True)
+    achievement_title = serializers.CharField(source='achievement.title', read_only=True)
+    achievement_abstract = serializers.CharField(source='achievement.abstract', read_only=True)
+    achievement_date_acquired = serializers.DateField(source='achievement.date_acquired', read_only=True)
+    achievement_journal = serializers.CharField(source='achievement.journal_name', read_only=True)
+    achievement_status = serializers.CharField(source='achievement.status', read_only=True)
+    initiator_name = serializers.SerializerMethodField()
+    target_user_name = serializers.SerializerMethodField()
+    pending_days = serializers.SerializerMethodField()
+    coauthor_name = serializers.SerializerMethodField()
+    proposed_order = serializers.IntegerField(source='proposed_author_rank', read_only=True)
+    actual_order = serializers.IntegerField(source='confirmed_author_rank', read_only=True)
+    actual_is_corresponding = serializers.BooleanField(source='confirmed_is_corresponding', read_only=True)
+
+    def get_initiator_name(self, obj):
+        return obj.initiator.real_name or obj.initiator.username
+
+    def get_target_user_name(self, obj):
+        return obj.target_user.real_name or obj.target_user.username
+
+    def get_pending_days(self, obj):
+        delta = timezone.now() - obj.created_at
+        return max(delta.days, 0)
+
+    def get_coauthor_name(self, obj):
+        if obj.coauthor_id:
+            return obj.coauthor.name
+        return ''
+
+    class Meta:
+        model = AchievementClaim
+        fields = (
+            'id',
+            'achievement',
+            'achievement_id',
+            'achievement_title',
+            'achievement_abstract',
+            'achievement_date_acquired',
+            'achievement_journal',
+            'achievement_status',
+            'initiator',
+            'initiator_name',
+            'target_user',
+            'target_user_name',
+            'status',
+            'status_label',
+            'coauthor',
+            'coauthor_name',
+            'proposed_order',
+            'proposed_author_rank',
+            'proposed_is_corresponding',
+            'actual_order',
+            'confirmed_author_rank',
+            'actual_is_corresponding',
+            'confirmed_is_corresponding',
+            'confirmation_note',
+            'rank_confirmed_at',
+            'pending_days',
+            'created_at',
+        )
+        read_only_fields = fields
+
+
+class AchievementClaimAcceptSerializer(serializers.Serializer):
+    actual_order = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    actual_is_corresponding = serializers.BooleanField(required=False)
+    confirmed_author_rank = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    confirmed_is_corresponding = serializers.BooleanField(required=False)
+    confirmation_note = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+
+    def validate_confirmation_note(self, value):
+        return value.strip()
+
+
+class AchievementClaimRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+
+    def validate_reason(self, value):
+        return value.strip()

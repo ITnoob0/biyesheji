@@ -1,7 +1,7 @@
-from django.db.models import Count, Q, Sum
-from django.db.models.functions import ExtractYear
+from django.db.models import Sum
 
-from .models import AcademicService, CoAuthor, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
+from .models import AcademicService, CoAuthor, IntellectualProperty, PaperKeyword, Project, TeachingAchievement
+from .services import build_teacher_related_paper_queryset
 from .visibility import APPROVED_STATUS
 
 
@@ -80,7 +80,7 @@ class TeacherScoringEngine:
 
     @classmethod
     def collect_metrics(cls, teacher_user, year: int | None = None):
-        papers = Paper.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
+        papers = build_teacher_related_paper_queryset(teacher_user, approved_only=True, include_claimed=True)
         projects = Project.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
         intellectual_properties = IntellectualProperty.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
         teaching_achievements = TeachingAchievement.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
@@ -102,24 +102,9 @@ class TeacherScoringEngine:
         teaching_count = teaching_achievements.count()
         service_count = academic_services.count()
 
-        keyword_count = PaperKeyword.objects.filter(paper__teacher=teacher_user, paper__status=APPROVED_STATUS).count()
-        collaborator_count = CoAuthor.objects.filter(paper__teacher=teacher_user, paper__status=APPROVED_STATUS).values('name').distinct().count()
-        if year is not None:
-            keyword_count = PaperKeyword.objects.filter(
-                paper__teacher=teacher_user,
-                paper__status=APPROVED_STATUS,
-                paper__date_acquired__year=year,
-            ).count()
-            collaborator_count = (
-                CoAuthor.objects.filter(
-                    paper__teacher=teacher_user,
-                    paper__status=APPROVED_STATUS,
-                    paper__date_acquired__year=year,
-                )
-                .values('name')
-                .distinct()
-                .count()
-            )
+        paper_ids = list(papers.values_list('id', flat=True))
+        keyword_count = PaperKeyword.objects.filter(paper_id__in=paper_ids).count()
+        collaborator_count = CoAuthor.objects.filter(paper_id__in=paper_ids).values('name').distinct().count()
 
         return {
             'paper_count': paper_count,
@@ -138,121 +123,7 @@ class TeacherScoringEngine:
     @classmethod
     def collect_metrics_series(cls, teacher_user, years: list[int]) -> dict[int, dict]:
         normalized_years = [year for year in years if isinstance(year, int)]
-        year_metrics = {
-            year: {
-                'paper_count': 0,
-                'citation_total': 0,
-                'project_count': 0,
-                'funding_total': 0.0,
-                'ip_count': 0,
-                'transformed_ip_count': 0,
-                'teaching_count': 0,
-                'service_count': 0,
-                'keyword_count': 0,
-                'collaborator_count': 0,
-                'total_achievements': 0,
-            }
-            for year in normalized_years
-        }
-        if not normalized_years:
-            return year_metrics
-
-        paper_years = (
-            Paper.objects.filter(teacher=teacher_user, status=APPROVED_STATUS, date_acquired__year__in=normalized_years)
-            .annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(paper_count=Count('id'), citation_total=Sum('citation_count'))
-        )
-        for item in paper_years:
-            year_metrics[item['year']]['paper_count'] = item['paper_count']
-            year_metrics[item['year']]['citation_total'] = item['citation_total'] or 0
-
-        project_years = (
-            Project.objects.filter(teacher=teacher_user, status=APPROVED_STATUS, date_acquired__year__in=normalized_years)
-            .annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(project_count=Count('id'), funding_total=Sum('funding_amount'))
-        )
-        for item in project_years:
-            year_metrics[item['year']]['project_count'] = item['project_count']
-            year_metrics[item['year']]['funding_total'] = float(item['funding_total'] or 0)
-
-        ip_years = (
-            IntellectualProperty.objects.filter(
-                teacher=teacher_user,
-                status=APPROVED_STATUS,
-                date_acquired__year__in=normalized_years,
-            )
-            .annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(ip_count=Count('id'), transformed_ip_count=Count('id', filter=Q(is_transformed=True)))
-        )
-        for item in ip_years:
-            year_metrics[item['year']]['ip_count'] = item['ip_count']
-            year_metrics[item['year']]['transformed_ip_count'] = item['transformed_ip_count']
-
-        teaching_years = (
-            TeachingAchievement.objects.filter(
-                teacher=teacher_user,
-                status=APPROVED_STATUS,
-                date_acquired__year__in=normalized_years,
-            )
-            .annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(teaching_count=Count('id'))
-        )
-        for item in teaching_years:
-            year_metrics[item['year']]['teaching_count'] = item['teaching_count']
-
-        service_years = (
-            AcademicService.objects.filter(
-                teacher=teacher_user,
-                status=APPROVED_STATUS,
-                date_acquired__year__in=normalized_years,
-            )
-            .annotate(year=ExtractYear('date_acquired'))
-            .values('year')
-            .annotate(service_count=Count('id'))
-        )
-        for item in service_years:
-            year_metrics[item['year']]['service_count'] = item['service_count']
-
-        keyword_years = (
-            PaperKeyword.objects.filter(
-                paper__teacher=teacher_user,
-                paper__status=APPROVED_STATUS,
-                paper__date_acquired__year__in=normalized_years,
-            )
-            .annotate(year=ExtractYear('paper__date_acquired'))
-            .values('year')
-            .annotate(keyword_count=Count('id'))
-        )
-        for item in keyword_years:
-            year_metrics[item['year']]['keyword_count'] = item['keyword_count']
-
-        collaborator_years = (
-            CoAuthor.objects.filter(
-                paper__teacher=teacher_user,
-                paper__status=APPROVED_STATUS,
-                paper__date_acquired__year__in=normalized_years,
-            )
-            .annotate(year=ExtractYear('paper__date_acquired'))
-            .values('year')
-            .annotate(collaborator_count=Count('name', distinct=True))
-        )
-        for item in collaborator_years:
-            year_metrics[item['year']]['collaborator_count'] = item['collaborator_count']
-
-        for year, metrics in year_metrics.items():
-            metrics['total_achievements'] = (
-                metrics['paper_count']
-                + metrics['project_count']
-                + metrics['ip_count']
-                + metrics['teaching_count']
-                + metrics['service_count']
-            )
-
-        return year_metrics
+        return {year: cls.collect_metrics(teacher_user, year=year) for year in normalized_years}
 
     @classmethod
     def calculate_total_score(cls, values):

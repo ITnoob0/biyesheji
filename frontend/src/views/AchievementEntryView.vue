@@ -185,18 +185,65 @@
                 <el-input v-model="paperForm.source_url" placeholder="请输入论文来源链接" />
               </el-form-item>
               <el-form-item>
-                <el-switch v-model="paperForm.is_first_author" active-text="第一作者/通讯作者" inactive-text="非第一作者" />
+                <el-switch v-model="paperForm.is_first_author" active-text="第一作者" inactive-text="非第一作者" />
+              </el-form-item>
+              <el-form-item>
+                <el-switch v-model="paperForm.is_corresponding_author" active-text="通讯作者" inactive-text="非通讯作者" />
               </el-form-item>
               <el-form-item>
                 <el-switch v-model="paperForm.is_representative" active-text="标记为代表作" inactive-text="普通论文" />
               </el-form-item>
-              <el-form-item label="合作者">
-                <el-input
-                  v-model="paperForm.coauthorInput"
-                  placeholder="多个合作者请用中文逗号、英文逗号或换行分隔"
-                  type="textarea"
-                  :rows="3"
-                />
+              <el-form-item label="作者与认领设置">
+                <div class="coauthor-form-shell">
+                  <div class="coauthor-row coauthor-row-head">
+                    <span>姓名</span>
+                    <span>是否本院教师</span>
+                    <span>本院教师搜索</span>
+                    <span>作者位次</span>
+                    <span>通讯作者</span>
+                    <span>操作</span>
+                  </div>
+                  <div v-for="(author, index) in paperForm.coauthor_records" :key="`author-${index}`" class="coauthor-row">
+                    <el-input
+                      v-model="author.name"
+                      :disabled="Boolean(author.is_internal && author.user_id)"
+                      placeholder="作者姓名"
+                    />
+                    <el-switch
+                      v-model="author.is_internal"
+                      inline-prompt
+                      active-text="是"
+                      inactive-text="否"
+                      @change="toggleInternalAuthor(author)"
+                    />
+                    <el-select
+                      v-model="author.user_id"
+                      :disabled="!author.is_internal"
+                      filterable
+                      remote
+                      reserve-keyword
+                      clearable
+                      placeholder="搜索本院教师"
+                      :remote-method="searchInternalTeachers"
+                      @focus="searchInternalTeachers('')"
+                      @change="handleInternalTeacherChange(author)"
+                    >
+                      <el-option
+                        v-for="option in internalTeacherOptions"
+                        :key="option.id"
+                        :label="option.label"
+                        :value="option.id"
+                      />
+                    </el-select>
+                    <el-input-number v-model="author.order" :min="1" :step="1" controls-position="right" />
+                    <el-switch v-model="author.is_corresponding" inline-prompt active-text="是" inactive-text="否" />
+                    <el-button text type="danger" @click="removeCoauthorRow(index)">删除</el-button>
+                  </div>
+                  <div class="coauthor-actions">
+                    <el-button plain @click="addCoauthorRow">新增作者行</el-button>
+                    <span>支持学生一作、教师通讯、共同通讯；若选择本院教师将自动生成认领邀请。</span>
+                  </div>
+                </div>
               </el-form-item>
               <div class="actions">
                 <el-button v-if="isEditing('papers')" @click="resetPaperForm">取消编辑</el-button>
@@ -775,7 +822,6 @@ import {
   paperTypeOptions,
   paperRepresentativeOptions,
   paperSortOptions,
-  parseCoauthorInput,
   projectLevelOptions,
   projectRoleOptions,
   serviceTypeOptions,
@@ -785,6 +831,7 @@ import { buildPaperDuplicateWarnings, buildPaperYearOptions } from './achievemen
 import type {
   AchievementMutationPayloadMap,
   AchievementQueryState,
+  CoAuthorRecordInput,
   IpFormState,
   IpRecord,
   BibtexImportResponse,
@@ -831,6 +878,7 @@ const canReviewAchievements = computed(() => Boolean(sessionUser.value?.is_admin
 const bibtexDialogVisible = ref(false)
 const dashboardStats = ref<DashboardStatsResponse | null>(null)
 const paperSummary = ref<PaperSummaryResponse | null>(null)
+const internalTeacherOptions = ref<Array<{ id: number; label: string }>>([])
 
 const paperFormRef = ref<FormInstance>()
 const projectFormRef = ref<FormInstance>()
@@ -875,9 +923,10 @@ const paperForm = reactive<PaperFormState>({
   source_url: '',
   citation_count: 0,
   is_first_author: true,
+  is_corresponding_author: false,
   is_representative: false,
   doi: '',
-  coauthorInput: '',
+  coauthor_records: [],
 })
 
 const projectForm = reactive<ProjectFormState>({
@@ -1056,6 +1105,90 @@ const serviceRules: FormRules = {
   organization: requiredRule('请输入服务机构'),
 }
 
+const createEmptyCoauthorRow = (): CoAuthorRecordInput => ({
+  name: '',
+  user_id: null,
+  is_internal: false,
+  order: null,
+  author_rank: null,
+  is_corresponding: false,
+})
+
+const addCoauthorRow = (): void => {
+  paperForm.coauthor_records.push(createEmptyCoauthorRow())
+}
+
+const removeCoauthorRow = (index: number): void => {
+  paperForm.coauthor_records.splice(index, 1)
+}
+
+const toggleInternalAuthor = (author: CoAuthorRecordInput): void => {
+  if (!author.is_internal) {
+    author.user_id = null
+  }
+}
+
+const handleInternalTeacherChange = (author: CoAuthorRecordInput): void => {
+  if (!author.user_id) {
+    return
+  }
+  const option = internalTeacherOptions.value.find(item => item.id === author.user_id)
+  if (option) {
+    author.name = option.label
+  }
+}
+
+const searchInternalTeachers = async (keyword: string): Promise<void> => {
+  try {
+    const { data } = await axios.get('/api/achievements/claims/author-candidates/', {
+      params: keyword ? { q: keyword } : {},
+    })
+    const records = Array.isArray(data?.records) ? data.records : []
+    internalTeacherOptions.value = records.map((item: any) => ({
+      id: Number(item.id),
+      label: item.real_name || item.username || String(item.id),
+    }))
+  } catch {
+    internalTeacherOptions.value = []
+  }
+}
+
+const normalizeCoauthorRecords = (): CoAuthorRecordInput[] => {
+  const normalized: CoAuthorRecordInput[] = []
+  const usedNames = new Set<string>()
+  const usedUserIds = new Set<number>()
+  const usedOrders = new Set<number>()
+
+  for (const item of paperForm.coauthor_records) {
+    const name = (item.name || '').trim()
+    if (!name) continue
+
+    const userId = item.is_internal && item.user_id ? Number(item.user_id) : null
+    if (userId && usedUserIds.has(userId)) continue
+    if (!userId && usedNames.has(name)) continue
+
+    const orderValue = item.order ? Number(item.order) : null
+    if (orderValue && usedOrders.has(orderValue)) {
+      ElMessage.warning(`作者位次 ${orderValue} 重复，请调整后再提交。`)
+      return []
+    }
+
+    if (userId) usedUserIds.add(userId)
+    if (!userId) usedNames.add(name)
+    if (orderValue) usedOrders.add(orderValue)
+
+    normalized.push({
+      name,
+      user_id: userId,
+      is_internal: Boolean(userId),
+      order: orderValue,
+      author_rank: orderValue,
+      is_corresponding: Boolean(item.is_corresponding),
+    })
+  }
+  return normalized
+}
+
 const fetchRecords = async (tab: TabName): Promise<void> => {
   loadingMap[tab] = true
   try {
@@ -1123,8 +1256,9 @@ const resetPaperForm = (): void => {
   paperForm.source_url = ''
   paperForm.citation_count = 0
   paperForm.is_first_author = true
+  paperForm.is_corresponding_author = false
   paperForm.is_representative = false
-  paperForm.coauthorInput = ''
+  paperForm.coauthor_records = []
   editingMap.papers = null
 }
 
@@ -1185,9 +1319,17 @@ const populatePaperForm = (record: PaperRecord): void => {
   paperForm.source_url = record.source_url
   paperForm.citation_count = record.citation_count
   paperForm.is_first_author = record.is_first_author
+  paperForm.is_corresponding_author = record.is_corresponding_author
   paperForm.is_representative = record.is_representative
   paperForm.doi = record.doi
-  paperForm.coauthorInput = record.coauthor_details.map(item => item.name).join('，')
+  paperForm.coauthor_records = record.coauthor_details.map(item => ({
+    name: item.name,
+    user_id: item.user_id || item.internal_teacher || null,
+    is_internal: Boolean(item.user_id || item.internal_teacher),
+    order: item.author_rank,
+    author_rank: item.author_rank,
+    is_corresponding: Boolean(item.is_corresponding),
+  }))
 }
 
 const populateProjectForm = (record: ProjectRecord): void => {
@@ -1290,6 +1432,11 @@ const submitPaper = async (): Promise<void> => {
   const valid = await paperFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  const normalizedCoauthors = normalizeCoauthorRecords()
+  if (paperForm.coauthor_records.length > 0 && normalizedCoauthors.length === 0) {
+    return
+  }
+
   if (paperDuplicateWarnings.value.length) {
     try {
       await ElMessageBox.confirm(paperDuplicateWarnings.value.join('\n'), '重复录入提示', {
@@ -1317,9 +1464,11 @@ const submitPaper = async (): Promise<void> => {
       source_url: paperForm.source_url,
       citation_count: paperForm.citation_count,
       is_first_author: paperForm.is_first_author,
+      is_corresponding_author: paperForm.is_corresponding_author,
       is_representative: paperForm.is_representative,
       doi: paperForm.doi,
-      coauthors: parseCoauthorInput(paperForm.coauthorInput),
+      coauthors: normalizedCoauthors.map(item => item.name),
+      coauthor_records: normalizedCoauthors,
     },
     resetPaperForm,
   )
@@ -1915,6 +2064,35 @@ h1 {
   display: block;
 }
 
+.coauthor-form-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.coauthor-row {
+  display: grid;
+  grid-template-columns: 1.6fr 0.9fr 1.4fr 1fr 0.9fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.coauthor-row-head {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.coauthor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.coauthor-actions span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 .distribution-strip + :deep(.el-table .el-table__row td),
 .distribution-strip + :deep(.el-table .el-table__header-wrapper th) {
   padding-top: 8px;
@@ -1938,7 +2116,8 @@ h1 {
   .entry-grid,
   .entry-stack,
   .double-grid,
-  .triple-grid {
+  .triple-grid,
+  .coauthor-row {
     grid-template-columns: 1fr;
     display: grid;
   }

@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
@@ -46,6 +48,7 @@ from .import_serializers import (
 )
 from .models import (
     AcademicService,
+    AchievementClaim,
     AchievementOperationLog,
     IntellectualProperty,
     Paper,
@@ -64,8 +67,12 @@ from .portrait_analysis import (
     export_portrait_report_markdown,
 )
 from .scoring_engine import TeacherScoringEngine
+from .services import build_teacher_related_paper_queryset, sync_paper_claim_invitations
 from .serializers import (
     AcademicServiceSerializer,
+    AchievementClaimAcceptSerializer,
+    AchievementClaimRejectSerializer,
+    AchievementClaimSerializer,
     AchievementOperationLogSerializer,
     AchievementRejectSerializer,
     IntellectualPropertySerializer,
@@ -218,7 +225,16 @@ def get_requested_teacher(request, user_id: int | None = None):
 
 def get_portrait_data_meta(user):
     created_candidates = []
-    for model in (Paper, Project, IntellectualProperty, TeachingAchievement, AcademicService):
+    latest_related_paper_created_at = (
+        build_teacher_related_paper_queryset(user, approved_only=True, include_claimed=True)
+        .order_by('-created_at')
+        .values_list('created_at', flat=True)
+        .first()
+    )
+    if latest_related_paper_created_at:
+        created_candidates.append(latest_related_paper_created_at)
+
+    for model in (Project, IntellectualProperty, TeachingAchievement, AcademicService):
         latest = (
             approved_queryset(model.objects.filter(teacher=user))
             .order_by('-created_at')
@@ -233,6 +249,64 @@ def get_portrait_data_meta(user):
         'updated_at': latest_created_at.isoformat() if latest_created_at else None,
         'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；图谱分析继续保留 Neo4j 可选、MySQL 回退链路。',
         'acceptance_scope': '本能力纳入当前阶段验收。',
+    }
+
+
+def _build_average_score(users) -> tuple[float, int]:
+    user_list = list(users)
+    if not user_list:
+        return 0.0, 0
+    score_list = [TeacherScoringEngine.get_comprehensive_radar_data(item)['total_score'] for item in user_list]
+    if not score_list:
+        return 0.0, 0
+    return round(sum(score_list) / len(score_list), 1), len(score_list)
+
+
+def build_peer_benchmark_payload(*, target_user, request_user):
+    user_model = get_user_model()
+    teacher_queryset = user_model.objects.filter(is_superuser=False, is_staff=False, is_active=True)
+
+    department_name = (target_user.department or '').strip()
+    department_teachers = teacher_queryset.filter(department=department_name) if department_name else teacher_queryset.none()
+    department_average_score, department_sample_size = _build_average_score(department_teachers)
+
+    if not is_admin_user(request_user):
+        return {
+            'benchmark_mode': 'college_average',
+            'benchmark_label': '本学院平均',
+            'department': department_name,
+            'department_average_total_score': department_average_score,
+            'department_sample_size': department_sample_size,
+        }
+
+    school_average_score, school_sample_size = _build_average_score(teacher_queryset)
+    department_averages = []
+    department_candidates = (
+        teacher_queryset.exclude(department='')
+        .order_by()
+        .values_list('department', flat=True)
+        .distinct()
+    )
+    for department in department_candidates:
+        scope = teacher_queryset.filter(department=department)
+        avg_score, sample_size = _build_average_score(scope)
+        department_averages.append(
+            {
+                'department': department,
+                'average_total_score': avg_score,
+                'sample_size': sample_size,
+            }
+        )
+
+    return {
+        'benchmark_mode': 'school_and_college_average',
+        'benchmark_label': '全校平均 + 各学院平均',
+        'department': department_name,
+        'department_average_total_score': department_average_score,
+        'department_sample_size': department_sample_size,
+        'school_average_total_score': school_average_score,
+        'school_sample_size': school_sample_size,
+        'department_averages': department_averages,
     }
 
 
@@ -310,8 +384,65 @@ def build_recent_achievements(user, limit: int = 6):
 def build_all_achievements(user):
     achievement_records = []
 
-    for paper in approved_queryset(Paper.objects.filter(teacher=user)).order_by('-date_acquired', '-created_at'):
+    def format_author_rank_label(*, rank: int | None, is_corresponding: bool) -> str:
+        parts = []
+        if rank:
+            parts.append(f'第{rank}作者')
+        if is_corresponding:
+            parts.append('通讯作者')
+        return ' / '.join(parts) if parts else '合作作者'
+
+    paper_queryset = build_teacher_related_paper_queryset(user, approved_only=True, include_claimed=True).order_by(
+        '-date_acquired',
+        '-created_at',
+    )
+    paper_list = list(paper_queryset)
+    accepted_claim_map = {
+        item.achievement_id: item
+        for item in AchievementClaim.objects.filter(
+            target_user=user,
+            status__in=['ACCEPTED', 'CONFLICT'],
+            achievement_id__in=[paper.id for paper in paper_list],
+        ).order_by('-id')
+    }
+    for paper in paper_list:
         is_representative = bool(paper.is_representative)
+        is_owner = paper.teacher_id == user.id
+        accepted_claim = accepted_claim_map.get(paper.id)
+        claimed_rank = accepted_claim.confirmed_author_rank if accepted_claim else None
+        claimed_is_corresponding = (
+            bool(accepted_claim.confirmed_is_corresponding)
+            if accepted_claim is not None
+            else False
+        )
+        if claimed_rank is None and accepted_claim is not None:
+            claimed_rank = accepted_claim.proposed_author_rank
+        if accepted_claim is not None and accepted_claim.confirmed_author_rank is None:
+            claimed_is_corresponding = bool(accepted_claim.proposed_is_corresponding)
+
+        if is_owner:
+            owner_relation = paper.coauthors.filter(internal_teacher_id=user.id).order_by('id').first()
+            owner_rank = 1 if paper.is_first_author else (owner_relation.author_rank if owner_relation else None)
+            owner_is_corresponding = bool(paper.is_corresponding_author or (owner_relation and owner_relation.is_corresponding))
+
+            if owner_rank == 1 and owner_is_corresponding:
+                author_rank_label = '第一作者 / 通讯作者'
+                author_rank_category = 'lead'
+            elif owner_rank == 1:
+                author_rank_label = '第一作者'
+                author_rank_category = 'lead'
+            elif owner_rank:
+                author_rank_label = format_author_rank_label(rank=owner_rank, is_corresponding=owner_is_corresponding)
+                author_rank_category = 'lead' if owner_is_corresponding else 'participating'
+            elif owner_is_corresponding:
+                author_rank_label = '通讯作者'
+                author_rank_category = 'lead'
+            else:
+                author_rank_label = '合作作者'
+                author_rank_category = 'participating'
+        else:
+            author_rank_label = format_author_rank_label(rank=claimed_rank, is_corresponding=claimed_is_corresponding)
+            author_rank_category = 'lead' if (claimed_rank == 1 or claimed_is_corresponding) else 'participating'
         achievement_records.append(
             {
                 'id': paper.id,
@@ -322,8 +453,8 @@ def build_all_achievements(user):
                 'detail': f'{paper.get_paper_type_display()} / {paper.journal_name}',
                 'highlight': '代表作' if is_representative else f'引用 {paper.citation_count} 次',
                 'is_representative': is_representative,
-                'author_rank_category': 'lead' if paper.is_first_author else 'participating',
-                'author_rank_label': '第一作者/通讯作者' if paper.is_first_author else '合作作者',
+                'author_rank_category': author_rank_category,
+                'author_rank_label': author_rank_label,
             }
         )
 
@@ -773,7 +904,37 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'journal_name', 'doi')
 
     def get_queryset(self):
-        queryset = super().get_queryset().annotate(metadata_alert_count=metadata_alert_count_expression())
+        include_claimed = parse_bool_query_param(self.request.query_params.get('include_claimed', '')) is True
+        if include_claimed:
+            target_teacher = None
+            teacher_id = self.request.query_params.get('teacher_id', '').strip()
+            if is_admin_user(self.request.user):
+                if teacher_id.isdigit():
+                    user_model = get_user_model()
+                    candidate = user_model.objects.filter(id=int(teacher_id)).first()
+                    if candidate and can_access_teacher_scope(self.request.user, candidate):
+                        target_teacher = candidate
+                if target_teacher is None:
+                    queryset = self.queryset.none()
+                else:
+                    related_paper_ids = build_teacher_related_paper_queryset(
+                        target_teacher,
+                        approved_only=False,
+                        include_claimed=True,
+                    ).values_list('id', flat=True)
+                    queryset = self.queryset.filter(id__in=related_paper_ids)
+            else:
+                target_teacher = self.request.user
+                related_paper_ids = build_teacher_related_paper_queryset(
+                    target_teacher,
+                    approved_only=False,
+                    include_claimed=True,
+                ).values_list('id', flat=True)
+                queryset = self.queryset.filter(id__in=related_paper_ids)
+        else:
+            queryset = super().get_queryset()
+
+        queryset = queryset.annotate(metadata_alert_count=metadata_alert_count_expression())
 
         paper_type = self.request.query_params.get('paper_type', '').strip()
         if paper_type:
@@ -832,6 +993,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     def perform_create(self, serializer):
         paper = serializer.save(teacher=self.request.user, status='PENDING_REVIEW')
+        sync_paper_claim_invitations(paper)
         self._extract_keywords(paper)
         log_paper_operation(
             paper=paper,
@@ -872,6 +1034,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         before = snapshot_paper_fields(serializer.instance)
         generic_before_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, serializer.instance)
         paper = serializer.save()
+        sync_paper_claim_invitations(paper)
         self._extract_keywords(paper)
         if paper.status != 'PENDING_REVIEW':
             paper.status = 'PENDING_REVIEW'
@@ -1029,6 +1192,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             try:
                 with transaction.atomic():
                     paper = paper_serializer.save(teacher=request.user, status='PENDING_REVIEW')
+                    sync_paper_claim_invitations(paper)
                     self._extract_keywords(paper)
                     log_paper_operation(
                         paper=paper,
@@ -1412,6 +1576,7 @@ class TeacherDashboardStatsView(APIView):
                 'recent_structure': build_recent_structure(user),
                 'stage_comparison': build_stage_comparison(user),
                 'snapshot_boundary': build_snapshot_boundary(user),
+                'peer_benchmark': build_peer_benchmark_payload(target_user=user, request_user=request.user),
                 'portrait_explanation': build_portrait_explanation(),
                 'data_meta': get_portrait_data_meta(user),
             }
@@ -1468,5 +1633,291 @@ class TeacherPortraitReportView(APIView):
         report_payload = build_portrait_report(user)
         report_payload['data_meta'] = get_portrait_data_meta(user)
         return Response(report_payload)
+
+
+class AchievementClaimPendingCountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if is_admin_user(request.user):
+            return Response({'pending_count': 0})
+        pending_count = AchievementClaim.objects.filter(target_user=request.user, status='PENDING').count()
+        return Response({'pending_count': pending_count})
+
+
+class AchievementClaimPendingListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if is_admin_user(request.user):
+            return Response({'records': []})
+        queryset = (
+            AchievementClaim.objects.select_related('achievement', 'initiator', 'target_user', 'coauthor')
+            .filter(target_user=request.user, status='PENDING')
+            .order_by('-created_at', '-id')
+        )
+        serializer = AchievementClaimSerializer(queryset, many=True)
+        return Response({'records': serializer.data})
+
+
+class AchievementClaimAuthorCandidateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_model = get_user_model()
+        keyword = request.query_params.get('q', '').strip()
+        queryset = user_model.objects.filter(
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        )
+
+        # 认领邀请用于“本院教师搜索”，默认收口为当前用户所在学院。
+        if request.user.department:
+            queryset = queryset.filter(department=request.user.department)
+        else:
+            queryset = queryset.none()
+
+        queryset = queryset.exclude(id=request.user.id)
+        if keyword:
+            queryset = queryset.filter(Q(real_name__icontains=keyword) | Q(username__icontains=keyword))
+
+        records = [
+            {
+                'id': item.id,
+                'username': item.username,
+                'real_name': item.real_name,
+                'department': item.department,
+            }
+            for item in queryset.order_by('id')[:30]
+        ]
+        return Response({'records': records})
+
+
+class AchievementClaimActionView(APIView):
+    permission_classes = [IsAuthenticated]
+    action_serializer_class = None
+
+    def get_serializer(self, *args, **kwargs):
+        if self.action_serializer_class is None:
+            return None
+        return self.action_serializer_class(*args, **kwargs)
+
+    def handle_claim(self, request, claim):
+        raise NotImplementedError
+
+    def post(self, request, claim_id: int):
+        if self.action_serializer_class is None:
+            return api_error_response(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message='认领动作未配置。',
+                code='achievement_claim_action_not_configured',
+                request=request,
+            )
+        if is_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='管理员账号不可执行教师认领动作。',
+                code='achievement_claim_action_forbidden',
+                request=request,
+            )
+
+        claim = (
+            AchievementClaim.objects.select_related('achievement', 'initiator', 'target_user', 'coauthor')
+            .filter(id=claim_id, target_user=request.user)
+            .first()
+        )
+        if claim is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message='认领邀请不存在。',
+                code='achievement_claim_not_found',
+                request=request,
+            )
+        if claim.status != 'PENDING':
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message='当前认领邀请已处理，无需重复操作。',
+                code='achievement_claim_already_handled',
+                request=request,
+            )
+
+        action_serializer = self.get_serializer(data=request.data)
+        action_serializer.is_valid(raise_exception=True)
+        self.handle_claim(request, claim, action_serializer.validated_data)
+        serializer = AchievementClaimSerializer(claim)
+        return Response(serializer.data)
+
+
+class AchievementClaimAcceptView(AchievementClaimActionView):
+    action_serializer_class = AchievementClaimAcceptSerializer
+
+    def handle_claim(self, request, claim, validated_data):
+        actual_order = validated_data.get('actual_order')
+        if actual_order is None:
+            actual_order = validated_data.get('confirmed_author_rank')
+        if actual_order is None:
+            actual_order = claim.proposed_author_rank
+
+        actual_is_corresponding = validated_data.get('actual_is_corresponding')
+        if actual_is_corresponding is None:
+            actual_is_corresponding = validated_data.get('confirmed_is_corresponding')
+        if actual_is_corresponding is None:
+            actual_is_corresponding = bool(claim.proposed_is_corresponding)
+        confirmation_note = validated_data.get('confirmation_note', '')
+        has_conflict = (
+            claim.proposed_author_rank != actual_order
+            or bool(claim.proposed_is_corresponding) != bool(actual_is_corresponding)
+        )
+        resolved_status = 'CONFLICT' if has_conflict else 'ACCEPTED'
+
+        with transaction.atomic():
+            claim.status = resolved_status
+            claim.confirmed_author_rank = actual_order
+            claim.confirmed_is_corresponding = bool(actual_is_corresponding)
+            claim.confirmation_note = confirmation_note
+            claim.rank_confirmed_at = timezone.now()
+            claim.save(
+                update_fields=[
+                    'status',
+                    'confirmed_author_rank',
+                    'confirmed_is_corresponding',
+                    'confirmation_note',
+                    'rank_confirmed_at',
+                ]
+            )
+
+            if claim.coauthor_id:
+                coauthor_changed_fields = []
+                if claim.coauthor.author_rank != actual_order:
+                    claim.coauthor.author_rank = actual_order
+                    coauthor_changed_fields.append('author_rank')
+                if bool(claim.coauthor.is_corresponding) != bool(actual_is_corresponding):
+                    claim.coauthor.is_corresponding = bool(actual_is_corresponding)
+                    coauthor_changed_fields.append('is_corresponding')
+                if coauthor_changed_fields:
+                    claim.coauthor.save(update_fields=coauthor_changed_fields)
+
+            if has_conflict:
+                target_name = request.user.real_name or request.user.username
+                note = (
+                    f'{target_name} 在认领时修正署名信息：位次 {claim.proposed_author_rank or "未填"} -> '
+                    f'{actual_order or "未填"}，通讯作者 { "是" if claim.proposed_is_corresponding else "否" } -> '
+                    f'{ "是" if actual_is_corresponding else "否" }。'
+                )
+                if confirmation_note:
+                    note = f'{note} 备注：{confirmation_note}'
+
+                AchievementOperationLog.objects.create(
+                    teacher=claim.initiator,
+                    operator=request.user,
+                    achievement_type='papers',
+                    achievement_id=claim.achievement_id,
+                    action='UPDATE',
+                    source='system',
+                    summary='合著者认领时修正了署名信息',
+                    changed_fields=['作者位次', '通讯作者标记'],
+                    title_snapshot=claim.achievement.title,
+                    detail_snapshot=claim.achievement.journal_name,
+                    snapshot_payload={
+                        'target_user': target_name,
+                        'proposed_order': claim.proposed_author_rank,
+                        'actual_order': actual_order,
+                        'proposed_is_corresponding': bool(claim.proposed_is_corresponding),
+                        'actual_is_corresponding': bool(actual_is_corresponding),
+                    },
+                    review_comment=note,
+                )
+
+
+class AchievementClaimRejectView(AchievementClaimActionView):
+    action_serializer_class = AchievementClaimRejectSerializer
+
+    def handle_claim(self, request, claim, validated_data):
+        reason = validated_data.get('reason', '').strip() or '认领人拒绝认领该成果。'
+        claim.status = 'REJECTED'
+        claim.confirmation_note = reason
+        claim.rank_confirmed_at = timezone.now()
+        claim.save(update_fields=['status', 'confirmation_note', 'rank_confirmed_at'])
+
+
+class CollegeUnclaimedClaimView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _build_queryset(self, request):
+        if not is_college_admin_user(request.user):
+            return None
+        days_threshold_raw = request.query_params.get('days_threshold', '7').strip()
+        try:
+            days_threshold = max(int(days_threshold_raw), 1)
+        except (TypeError, ValueError):
+            days_threshold = 7
+        cutoff = timezone.now() - timedelta(days=days_threshold)
+        queryset = (
+            AchievementClaim.objects.select_related('achievement', 'initiator', 'target_user', 'coauthor')
+            .filter(
+                status='PENDING',
+                target_user__department=request.user.department,
+                target_user__is_staff=False,
+                target_user__is_superuser=False,
+                created_at__lt=cutoff,
+            )
+            .order_by('created_at', 'id')
+        )
+        return queryset, days_threshold
+
+    def get(self, request):
+        result = self._build_queryset(request)
+        if result is None:
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='仅学院管理员可查看本院未认领数据追踪。',
+                code='college_unclaimed_claim_forbidden',
+                request=request,
+            )
+        queryset, days_threshold = result
+        serializer = AchievementClaimSerializer(queryset[:100], many=True)
+        return Response(
+            {
+                'days_threshold': days_threshold,
+                'record_count': queryset.count(),
+                'records': serializer.data,
+            }
+        )
+
+
+class CollegeUnclaimedClaimRemindView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not is_college_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message='仅学院管理员可发送本院认领提醒。',
+                code='college_unclaimed_claim_remind_forbidden',
+                request=request,
+            )
+
+        days_threshold_raw = str(request.data.get('days_threshold', '7')).strip()
+        try:
+            days_threshold = max(int(days_threshold_raw), 1)
+        except (TypeError, ValueError):
+            days_threshold = 7
+        cutoff = timezone.now() - timedelta(days=days_threshold)
+        queryset = AchievementClaim.objects.filter(
+            status='PENDING',
+            target_user__department=request.user.department,
+            target_user__is_staff=False,
+            target_user__is_superuser=False,
+            created_at__lt=cutoff,
+        )
+        reminded_count = queryset.count()
+        return Response(
+            {
+                'detail': f'已向本院 {reminded_count} 条长期未认领成果发送系统提醒。',
+                'days_threshold': days_threshold,
+                'reminded_count': reminded_count,
+            }
+        )
 
 
