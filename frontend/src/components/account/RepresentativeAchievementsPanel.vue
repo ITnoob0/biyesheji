@@ -12,10 +12,13 @@ const props = defineProps<{
 const router = useRouter()
 
 const summaryItems = computed(() => [
-  { label: '总成果', value: `${props.achievementOverview.total_achievements} 项` },
-  { label: '论文', value: `${props.achievementOverview.paper_count} 项` },
-  { label: '项目', value: `${props.achievementOverview.project_count} 项` },
-  { label: '总引用', value: `${props.achievementOverview.total_citations} 次` },
+  { label: '核心科研积分', value: `${props.achievementOverview.total_score ?? 0} 分` },
+  { label: '学术产出', value: `${props.achievementOverview.paper_score ?? 0} 分 / ${props.achievementOverview.paper_count} 项` },
+  { label: '科研项目', value: `${props.achievementOverview.project_score ?? 0} 分 / ${props.achievementOverview.project_count} 项` },
+  {
+    label: '平台科普',
+    value: `${props.achievementOverview.academic_service_score ?? 0} 分 / ${props.achievementOverview.academic_service_count} 项`,
+  },
 ])
 </script>
 
@@ -120,36 +123,19 @@ const summaryItems = computed(() => [
 
 .achievement-detail,
 .achievement-meta {
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   color: var(--text-secondary);
-  line-height: 1.8;
+  line-height: 1.7;
 }
 
-.achievement-head :deep(.el-tag) {
-  border-color: var(--border-color-soft);
-  background: var(--surface-2);
-  color: var(--text-secondary);
+.achievement-meta {
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 768px) {
-  .card-header,
-  .achievement-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .achievement-head strong {
-    font-size: 20px;
   }
 }
 </style>

@@ -224,13 +224,13 @@ const buildReportLines = (payload: PortraitPdfPayload): ReportLine[] => {
   if (calculationSummary) {
     lines.push(
       {
-        text: '综合评分',
+        text: '科研积分总分',
         font: `700 30px ${FONT_FAMILY}`,
         color: '#0f172a',
         marginTop: 28,
       },
       {
-        text: `总分 ${calculationSummary.total_score} 分；优势维度 ${calculationSummary.strongest_dimension.name}；待补维度 ${calculationSummary.weakest_dimension.name}`,
+        text: `总分 ${calculationSummary.total_score} 分；积分最高维度 ${calculationSummary.strongest_dimension.name}；待补维度 ${calculationSummary.weakest_dimension.name}`,
         font: `400 24px ${FONT_FAMILY}`,
         color: '#334155',
         marginTop: 12,
@@ -239,7 +239,7 @@ const buildReportLines = (payload: PortraitPdfPayload): ReportLine[] => {
   }
 
   lines.push({
-    text: '权重与形成逻辑',
+    text: '维度积分结构',
     font: `700 30px ${FONT_FAMILY}`,
     color: '#0f172a',
     marginTop: 28,
@@ -248,13 +248,13 @@ const buildReportLines = (payload: PortraitPdfPayload): ReportLine[] => {
   weightSpec.forEach(item => {
     lines.push(
       {
-        text: `${item.name}（权重 ${item.weight}%）`,
+        text: `${item.name}（原始积分 ${item.raw_score ?? 0} 分）`,
         font: `700 24px ${FONT_FAMILY}`,
         color: '#1e293b',
         marginTop: 14,
       },
       {
-        text: `当前得分 ${item.current_value}，公式：${item.formula_short}`,
+        text: `雷达展示分 ${item.current_value}，说明：${item.formula_short}`,
         font: `400 22px ${FONT_FAMILY}`,
         color: '#475569',
         marginTop: 8,
@@ -266,7 +266,7 @@ const buildReportLines = (payload: PortraitPdfPayload): ReportLine[] => {
         marginTop: 6,
       },
       {
-        text: item.rationale,
+        text: item.aggregation_note || item.rationale,
         font: `400 22px ${FONT_FAMILY}`,
         color: '#475569',
         marginTop: 6,

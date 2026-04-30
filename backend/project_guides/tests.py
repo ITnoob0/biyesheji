@@ -36,7 +36,6 @@ class ProjectGuideApiTests(APITestCase):
             discipline='教育数据智能',
             title='副教授',
             research_interests='科研画像, 智能推荐, 教育评价',
-            h_index=8,
         )
 
         paper = Paper.objects.create(
@@ -46,7 +45,6 @@ class ProjectGuideApiTests(APITestCase):
             date_acquired='2025-03-12',
             paper_type='JOURNAL',
             journal_name='现代教育技术',
-            citation_count=5,
             doi='10.1000/guide-rec-100004',
             status='APPROVED',
         )
@@ -239,7 +237,6 @@ class ProjectGuideApiTests(APITestCase):
             discipline='智能推荐',
             title='讲师',
             research_interests='推荐系统, 教育评价',
-            h_index=4,
         )
 
         ProjectGuide.objects.create(
@@ -804,7 +801,6 @@ class ProjectRecommendationThreeRoleFlowTests(APITestCase):
             discipline='人工智能',
             title='副教授',
             research_interests='知识图谱, 智能推荐',
-            h_index=12,
         )
         TeacherProfile.objects.create(
             user=self.teacher_ai_2,
@@ -812,7 +808,6 @@ class ProjectRecommendationThreeRoleFlowTests(APITestCase):
             discipline='人工智能',
             title='讲师',
             research_interests='智能推荐',
-            h_index=5,
         )
         TeacherProfile.objects.create(
             user=self.teacher_cs_1,
@@ -820,7 +815,6 @@ class ProjectRecommendationThreeRoleFlowTests(APITestCase):
             discipline='计算机科学',
             title='副教授',
             research_interests='计算机视觉',
-            h_index=9,
         )
 
         self.academy_ai = Academy.objects.create(name='人工智能学院')
@@ -885,7 +879,6 @@ class ProjectRecommendationThreeRoleFlowTests(APITestCase):
                 date_acquired='2025-06-01',
                 paper_type='JOURNAL',
                 journal_name='科研管理研究',
-                citation_count=3,
                 doi=f'10.1000/rec-flow-{title_suffix.lower()}',
                 status='APPROVED',
             )

@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import Max
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status
@@ -13,20 +15,28 @@ from .access import (
     ensure_admin_user,
     ensure_manageable_teacher,
     ensure_self_or_admin_user,
+    ensure_teacher_user,
     is_college_admin_user,
+    is_same_college_user,
     is_system_admin_user,
 )
-from .models import UserNotification
+from .models import College, TeacherTitleChangeRequest, UserNotification
 from .serializers import (
+    CollegeSerializer,
     DEFAULT_TEACHER_PASSWORD,
     CurrentUserSerializer,
     CurrentUserUpdateSerializer,
     CurrentUserAvatarUploadSerializer,
-    ForgotPasswordResetSerializer,
+    ForgotPasswordCodeSerializer,
+    ForgotPasswordConfirmSerializer,
     PasswordChangeSerializer,
     TeacherAccountSerializer,
     TeacherBulkActionSerializer,
     TeacherCreateSerializer,
+    TeacherTitleChangeRequestCreateSerializer,
+    TeacherTitleChangeRequestRejectSerializer,
+    TeacherTitleChangeRequestReviewSerializer,
+    TeacherTitleChangeRequestSerializer,
     UserNotificationSerializer,
     TeacherManagementSummarySerializer,
     TeacherUpdateSerializer,
@@ -34,6 +44,9 @@ from .serializers import (
 from .services import (
     build_teacher_management_summary,
     build_bulk_import_template_xlsx,
+    bulk_create_user_notifications,
+    create_user_notification,
+    ensure_password_change_notification,
     get_user_security_notice,
     log_account_lifecycle_event,
     parse_bulk_account_import_file,
@@ -41,6 +54,7 @@ from .services import (
     set_user_password,
     store_user_avatar_upload,
 )
+from .title_catalog import get_teacher_professional_title_options
 
 
 class CurrentUserView(APIView):
@@ -51,10 +65,225 @@ class CurrentUserView(APIView):
         return Response(serializer.data)
 
     def patch(self, request):
-        serializer = CurrentUserUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer = CurrentUserUpdateSerializer(request.user, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(CurrentUserSerializer(request.user).data)
+
+
+class CurrentUserTitleChangeRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_teacher_user(request.user)
+        queryset = TeacherTitleChangeRequest.objects.filter(teacher=request.user).order_by("-created_at", "-id")
+        serializer = TeacherTitleChangeRequestSerializer(queryset, many=True)
+        return Response({"records": serializer.data})
+
+    def post(self, request):
+        ensure_teacher_user(request.user)
+        serializer = TeacherTitleChangeRequestCreateSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        request_record = serializer.save()
+
+        college_admins = get_user_model().objects.filter(
+            is_active=True,
+            is_staff=True,
+            is_superuser=False,
+            department=request.user.department,
+        ).order_by("id")
+        requester_name = request.user.real_name or request.user.username
+        bulk_create_user_notifications(
+            recipients=college_admins,
+            sender=request.user,
+            category=UserNotification.CATEGORY_TITLE_CHANGE_REQUEST,
+            title="收到教师职称变更申请",
+            content_builder=lambda recipient: (
+                f"教师 {requester_name}（工号 {request.user.username}）申请职称变更："
+                f"{request_record.current_title or '未设置'} -> {request_record.requested_title}。"
+            ),
+            action_path="/teachers",
+            action_query_builder=lambda recipient: {
+                "source": "title_change_request",
+                "focus": str(request.user.id),
+            },
+            payload_builder=lambda recipient: {
+                "request_id": request_record.id,
+                "teacher_id": request.user.id,
+                "teacher_name": requester_name,
+                "requested_title": request_record.requested_title,
+            },
+        )
+
+        return Response(
+            {
+                "detail": "职称变更申请已提交，待学院管理员审核通过后生效。",
+                "request": TeacherTitleChangeRequestSerializer(request_record).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TeacherTitleChangeRequestListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_admin_user(request.user)
+        status_filter = (request.query_params.get("status", "") or "").strip().upper()
+        queryset = TeacherTitleChangeRequest.objects.select_related("teacher", "reviewer")
+
+        if is_system_admin_user(request.user):
+            queryset = queryset.filter(teacher__is_staff=False, teacher__is_superuser=False)
+        else:
+            queryset = queryset.filter(
+                teacher__is_staff=False,
+                teacher__is_superuser=False,
+                teacher__department=request.user.department,
+            )
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        serializer = TeacherTitleChangeRequestSerializer(queryset.order_by("-created_at", "-id"), many=True)
+        return Response({"records": serializer.data})
+
+
+class TeacherTitleChangeRequestApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id: int):
+        ensure_admin_user(request.user)
+        serializer = TeacherTitleChangeRequestReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_request = TeacherTitleChangeRequest.objects.select_related("teacher").filter(id=request_id).first()
+        if target_request is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="职称变更申请不存在。",
+                code="title_change_request_not_found",
+                request=request,
+                next_step="请刷新申请列表后重试。",
+            )
+
+        if not is_system_admin_user(request.user):
+            if not is_same_college_user(request.user, target_request.teacher):
+                return api_error_response(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="学院管理员仅可审核本学院教师的职称申请。",
+                    code="title_change_request_scope_forbidden",
+                    request=request,
+                    next_step="请返回列表并选择本学院教师申请。",
+                )
+
+        if target_request.status != TeacherTitleChangeRequest.STATUS_PENDING:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="该申请已处理，无法重复审核。",
+                code="title_change_request_already_processed",
+                request=request,
+                next_step="请刷新申请列表后重试。",
+            )
+
+        with transaction.atomic():
+            target_request.teacher.title = target_request.requested_title
+            target_request.teacher.save(update_fields=["title"])
+            target_request.status = TeacherTitleChangeRequest.STATUS_APPROVED
+            target_request.reviewer = request.user
+            target_request.review_comment = (serializer.validated_data.get("review_comment") or "").strip()
+            target_request.reviewed_at = timezone.now()
+            target_request.save(update_fields=["status", "reviewer", "review_comment", "reviewed_at"])
+
+            profile = getattr(target_request.teacher, "profile", None)
+            if profile is not None:
+                profile.title = target_request.requested_title
+                profile.save(update_fields=["title"])
+
+        create_user_notification(
+            recipient=target_request.teacher,
+            sender=request.user,
+            category=UserNotification.CATEGORY_TITLE_CHANGE_REQUEST,
+            title="你的职称变更申请已通过",
+            content=(
+                f"学院管理员已通过你的职称变更申请："
+                f"{target_request.current_title or '未设置'} -> {target_request.requested_title}。"
+            ),
+            action_path="/profile",
+            action_query={"section": "public-profile"},
+            payload={"request_id": target_request.id, "status": target_request.status},
+        )
+
+        return Response(
+            {
+                "detail": "职称变更申请已通过并生效。",
+                "request": TeacherTitleChangeRequestSerializer(target_request).data,
+            }
+        )
+
+
+class TeacherTitleChangeRequestRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id: int):
+        ensure_admin_user(request.user)
+        serializer = TeacherTitleChangeRequestRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_request = TeacherTitleChangeRequest.objects.select_related("teacher").filter(id=request_id).first()
+        if target_request is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="职称变更申请不存在。",
+                code="title_change_request_not_found",
+                request=request,
+                next_step="请刷新申请列表后重试。",
+            )
+
+        if not is_system_admin_user(request.user):
+            if not is_same_college_user(request.user, target_request.teacher):
+                return api_error_response(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    message="学院管理员仅可审核本学院教师的职称申请。",
+                    code="title_change_request_scope_forbidden",
+                    request=request,
+                    next_step="请返回列表并选择本学院教师申请。",
+                )
+
+        if target_request.status != TeacherTitleChangeRequest.STATUS_PENDING:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="该申请已处理，无法重复审核。",
+                code="title_change_request_already_processed",
+                request=request,
+                next_step="请刷新申请列表后重试。",
+            )
+
+        target_request.status = TeacherTitleChangeRequest.STATUS_REJECTED
+        target_request.reviewer = request.user
+        target_request.review_comment = serializer.validated_data["review_comment"].strip()
+        target_request.reviewed_at = timezone.now()
+        target_request.save(update_fields=["status", "reviewer", "review_comment", "reviewed_at"])
+
+        create_user_notification(
+            recipient=target_request.teacher,
+            sender=request.user,
+            category=UserNotification.CATEGORY_TITLE_CHANGE_REQUEST,
+            title="你的职称变更申请未通过",
+            content=(
+                f"学院管理员驳回了你的职称变更申请（目标：{target_request.requested_title}）。"
+                f"驳回意见：{target_request.review_comment}"
+            ),
+            action_path="/profile",
+            action_query={"section": "public-profile"},
+            payload={"request_id": target_request.id, "status": target_request.status},
+        )
+
+        return Response(
+            {
+                "detail": "已驳回该职称变更申请。",
+                "request": TeacherTitleChangeRequestSerializer(target_request).data,
+            }
+        )
 
 
 class CurrentUserPasswordChangeView(APIView):
@@ -98,6 +327,72 @@ class CurrentUserAvatarUploadView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CollegeListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ensure_admin_user(request.user)
+        queryset = College.objects.filter(is_active=True).order_by("sort_order", "id")
+        serializer = CollegeSerializer(queryset, many=True)
+        return Response({"records": serializer.data})
+
+    def post(self, request):
+        if not is_system_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="仅系统管理员可以新增学院。",
+                code="college_manage_forbidden",
+                request=request,
+                next_step="请使用系统管理员账号进入学院管理页面。",
+            )
+
+        serializer = CollegeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        sort_order = serializer.validated_data.get("sort_order")
+        if not sort_order:
+            sort_order = (College.objects.aggregate(max_order=Max("sort_order"))["max_order"] or 0) + 1
+        college = serializer.save(sort_order=sort_order, is_active=True)
+        return Response(CollegeSerializer(college).data, status=status.HTTP_201_CREATED)
+
+
+class CollegeDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, college_id: int):
+        if not is_system_admin_user(request.user):
+            return api_error_response(
+                status_code=status.HTTP_403_FORBIDDEN,
+                message="仅系统管理员可以删除学院。",
+                code="college_manage_forbidden",
+                request=request,
+                next_step="请使用系统管理员账号进入学院管理页面。",
+            )
+
+        college = College.objects.filter(id=college_id).first()
+        if college is None:
+            return api_error_response(
+                status_code=status.HTTP_404_NOT_FOUND,
+                message="学院不存在。",
+                code="college_not_found",
+                request=request,
+                next_step="请刷新学院管理列表后重试。",
+            )
+
+        user_model = get_user_model()
+        account_count = user_model.objects.filter(department=college.name, is_superuser=False).count()
+        if account_count:
+            return api_error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"该学院下已有 {account_count} 个账号，不能直接删除。",
+                code="college_in_use",
+                request=request,
+                next_step="请先将该学院下的学院管理员和教师账号迁移到其他学院，或停用相关账号后再处理。",
+            )
+
+        college.delete()
+        return Response({"detail": "学院已删除。"})
 
 
 class TeacherListCreateView(APIView):
@@ -149,6 +444,13 @@ class TeacherManagementSummaryView(APIView):
         return Response(serializer.data)
 
 
+class TeacherTitleOptionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"options": get_teacher_professional_title_options()})
+
+
 class TeacherRegistrationView(APIView):
     permission_classes = [AllowAny]
 
@@ -162,16 +464,33 @@ class TeacherRegistrationView(APIView):
         )
 
 
+class ForgotPasswordCodeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.save()
+        return Response(
+            {
+                "detail": "验证码已生成并输出到后端运行终端，请查看终端后输入验证码。",
+                **payload,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class ForgotPasswordResetView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = ForgotPasswordResetSerializer(data=request.data)
+        serializer = ForgotPasswordConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        user = serializer.save()
         return Response(
             {
-                "detail": "密码重置申请已提交，请等待本学院管理员处理后再登录。",
+                "detail": "密码已重置成功，请使用新密码登录。",
+                "security_notice": get_user_security_notice(user),
             },
             status=status.HTTP_200_OK,
         )
@@ -221,6 +540,8 @@ class TeacherBulkImportView(APIView):
             employee_id = (row.get("employee_id") or "").strip()
             real_name = (row.get("real_name") or "").strip()
             department = (row.get("department") or "").strip()
+            email = (row.get("email") or "").strip()
+            contact_phone = (row.get("contact_phone") or "").strip()
             row_number = row.get("row_number")
 
             if not employee_id or not real_name:
@@ -271,6 +592,10 @@ class TeacherBulkImportView(APIView):
                     "department": department,
                     "title": "讲师",
                 }
+
+            if payload.get("role_code") == "teacher":
+                payload["email"] = email
+                payload["contact_phone"] = contact_phone
 
             serializer = TeacherCreateSerializer(data=payload, context={"request": request})
             if not serializer.is_valid():
@@ -379,7 +704,7 @@ class TeacherDetailView(APIView):
         serializer_class = (
             TeacherUpdateSerializer if (request.user.is_staff or request.user.is_superuser) else CurrentUserUpdateSerializer
         )
-        serializer = serializer_class(teacher, data=request.data, partial=True)
+        serializer = serializer_class(teacher, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         original_is_active = teacher.is_active
         serializer.save()
@@ -435,6 +760,11 @@ class TeacherResetPasswordView(APIView):
                     next_step="请返回教师管理列表并选择本学院教师账户。",
                 )
         set_user_password(teacher, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
+        ensure_password_change_notification(
+            teacher,
+            temporary_password=DEFAULT_TEACHER_PASSWORD,
+            created_by_admin=True,
+        )
         log_account_lifecycle_event(
             actor=request.user,
             target=teacher,
@@ -515,6 +845,11 @@ class TeacherBulkActionView(APIView):
                 )
             elif action == "reset_password":
                 set_user_password(teacher, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
+                ensure_password_change_notification(
+                    teacher,
+                    temporary_password=DEFAULT_TEACHER_PASSWORD,
+                    created_by_admin=True,
+                )
                 log_account_lifecycle_event(
                     actor=request.user,
                     target=teacher,

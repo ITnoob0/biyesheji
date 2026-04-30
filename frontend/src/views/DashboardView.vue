@@ -13,8 +13,7 @@
             <div class="hero-tags">
               <el-tag effect="dark" type="primary">工号 {{ userId }}</el-tag>
               <el-tag effect="plain">{{ teacherInfo.discipline || '待补充学科方向' }}</el-tag>
-              <el-tag effect="plain">H-index {{ teacherInfo.hIndex }}</el-tag>
-              <el-tag effect="plain">总成果 {{ achievementOverview.total_achievements }} 项</el-tag>
+              <el-tag effect="plain">核心科研积分 {{ achievementOverview.total_score ?? 0 }} 分</el-tag>
             </div>
           </div>
         </div>
@@ -48,6 +47,38 @@
       />
     </section>
 
+    <section v-if="ruleVersionScope" class="rule-version-bar workspace-content-shell">
+      <div class="rule-version-main">
+        <div>
+          <span class="rule-version-label">积分规则口径</span>
+          <p>{{ ruleVersionScope.score_scope_note }}</p>
+        </div>
+        <el-select
+          v-model="selectedRuleVersionId"
+          class="rule-version-select"
+          size="small"
+          @change="handleRuleVersionChange"
+        >
+          <el-option label="全部规则版本累计" value="all" />
+          <el-option
+            v-for="version in ruleVersionOptions"
+            :key="version.id"
+            :label="`${version.name}（${version.score_total ?? 0} 分）`"
+            :value="version.id"
+          />
+        </el-select>
+      </div>
+      <div class="rule-version-tags">
+        <el-tag v-if="ruleVersionScope.active_version" size="small" type="success" effect="plain">
+          当前启用：{{ ruleVersionScope.active_version.name }}
+        </el-tag>
+        <el-tag size="small" effect="plain">
+          {{ ruleVersionScope.is_all_versions ? '全部版本' : '单版本查看' }}
+        </el-tag>
+        <span>{{ ruleVersionScope.freeze_note }}</span>
+      </div>
+    </section>
+
     <section v-if="showMetricGrid" class="metric-grid">
       <el-card v-for="item in statistics" :key="item.title" class="metric-card workspace-surface-card" shadow="hover">
         <div class="metric-top">
@@ -77,7 +108,7 @@
       >
         <template #header>
           <div class="section-head workspace-section-head">
-            <span>综合能力雷达评估</span>
+            <span>科研积分结构雷达</span>
             <div class="radar-card-actions">
               <el-button link type="primary" @click="openRecommendationPage">查看推荐理由</el-button>
               <el-button link type="warning" @click="openAssistantDemo">问答说明</el-button>
@@ -107,11 +138,17 @@
                     {{ item.level }}
                   </el-tag>
                 </div>
-                <p class="dimension-score-text">评分 {{ item.value }} 分 · 权重 {{ item.weight }}%</p>
-                <p v-if="resolveDimensionFormula(item.key)" class="dimension-formula-text">
-                  计算方式：{{ resolveDimensionFormula(item.key) }}
-                </p>
-                <p>{{ item.formula_note }}</p>
+                <p class="dimension-score-text">雷达展示分 {{ item.value }} 分 · 原始积分 {{ item.raw_score ?? 0 }} 分</p>
+                <div class="dimension-rule-box">
+                  <div class="dimension-rule-row">
+                    <span class="dimension-rule-label">纳入大类</span>
+                    <span class="dimension-rule-text">{{ item.source_description }}</span>
+                  </div>
+                  <div class="dimension-rule-row">
+                    <span class="dimension-rule-label">转换公式</span>
+                    <span class="dimension-rule-text">{{ item.formula_note }}</span>
+                  </div>
+                </div>
                 <div class="interest-tags dimension-evidence-tags">
                   <el-tag v-for="evidence in item.evidence" :key="evidence" size="small" effect="plain" type="info">
                     {{ evidence }}
@@ -141,7 +178,7 @@
             <span>近年成果结构</span>
           </div>
         </template>
-        <p class="chart-note workspace-chart-note">按论文、项目、知识产权、教学成果和学术服务拆解近年成果结构，更容易观察画像重心的变化。</p>
+        <p class="chart-note workspace-chart-note">按学术产出、科研项目、奖励转化和平台科普拆解近年成果结构，更容易观察画像重心的变化。</p>
         <div ref="structureChartRef" class="trend-chart"></div>
       </el-card>
     </section>
@@ -175,7 +212,7 @@
       <el-card v-if="showTrendTimelineCard" class="trend-card workspace-surface-card" shadow="never">
         <template #header>
           <div class="section-head workspace-section-head">
-            <span>科研产出时间轴</span>
+            <span>学术产出时间轴</span>
           </div>
         </template>
         <div ref="trendChartRef" class="trend-chart"></div>
@@ -203,7 +240,7 @@
             <el-tag v-for="item in themeFocusSummary.topKeywords" :key="item.name" type="warning" effect="plain">
               {{ item.name }} × {{ item.count }}
             </el-tag>
-            <span v-if="!themeFocusSummary.topKeywords.length" class="muted">暂无关键词演化数据，补充论文摘要后会逐步形成。</span>
+            <span v-if="!themeFocusSummary.topKeywords.length" class="muted">暂无关键词演化数据，补充学术产出关键词后会逐步形成。</span>
           </div>
         </div>
 
@@ -211,7 +248,7 @@
           <div v-for="item in keywordEvolution" :key="item.year" class="keyword-year-item">
             <div class="keyword-year-head">
               <strong>{{ item.year }} 年</strong>
-              <span>{{ item.paperCount }} 篇论文参与</span>
+              <span>{{ item.paperCount }} 项学术产出参与</span>
             </div>
             <div class="interest-tags">
               <el-tag v-for="keyword in item.keywords" :key="`${item.year}-${keyword.name}`" size="small" effect="plain" type="success">
@@ -229,7 +266,7 @@
         <template #header>
           <div class="section-head workspace-section-head">
             <span>画像标签</span>
-            <el-tag type="warning" effect="plain">{{ achievementOverview.total_achievements }} 项成果联动</el-tag>
+            <el-tag type="warning" effect="plain">{{ achievementOverview.total_score ?? 0 }} 分成果联动</el-tag>
           </div>
         </template>
 
@@ -239,7 +276,7 @@
             <el-tag v-for="keyword in topKeywords" :key="keyword" type="warning" effect="plain">
               {{ keyword }}
             </el-tag>
-            <span v-if="!topKeywords.length" class="muted">暂无关键词，录入论文后会自动补充。</span>
+            <span v-if="!topKeywords.length" class="muted">暂无关键词，录入学术产出关键词后会自动补充。</span>
           </div>
         </div>
 
@@ -255,7 +292,7 @@
 
         <div class="insight-mini-grid">
           <div class="mini-stat">
-            <span class="mini-label">论文类型分布</span>
+            <span class="mini-label">学术产出结构</span>
             <strong>{{ paperTypeSummary }}</strong>
           </div>
           <div class="mini-stat">
@@ -263,8 +300,8 @@
             <strong>{{ latestActiveYear }}</strong>
           </div>
           <div class="mini-stat">
-            <span class="mini-label">多成果总量</span>
-            <strong>{{ achievementOverview.total_achievements }} 项</strong>
+            <span class="mini-label">核心科研积分</span>
+            <strong>{{ achievementOverview.total_score ?? 0 }} 分</strong>
           </div>
           <div class="mini-stat">
             <span class="mini-label">多成果结构</span>
@@ -329,6 +366,7 @@ import {
   parseCrossModuleLink,
 } from '../utils/crossModuleLinking'
 import { openFloatingAssistant } from '../utils/assistantLauncher'
+import type { RuleAchievementRecord } from '../types/ruleAchievements'
 import type { TeacherAccountResponse } from '../types/users'
 import { buildDimensionTrendNarrative, buildKeywordEvolution, buildThemeFocusSummary } from './dashboard/portraitInsights.js'
 import { buildApiErrorNotice } from '../utils/apiFeedback.js'
@@ -339,7 +377,6 @@ import {
   buildAchievementStructureOption,
   buildDimensionTrendOption,
   buildLatestActiveYear,
-  buildPaperTypeSummary,
   buildPortraitUpdatedLabel,
   buildProfileHighlights,
   buildTopCollaborators,
@@ -361,6 +398,8 @@ import {
   type RadarSeriesItem,
   type RadarResponse,
   type RecentStructurePoint,
+  type RuleVersionOption,
+  type RuleVersionScope,
   type SnapshotBoundary,
   type StageComparison,
   type StatisticItem,
@@ -406,14 +445,14 @@ const snapshotBoundary = ref<SnapshotBoundary | null>(null)
 const calculationSummary = ref<CalculationSummary | null>(null)
 const weightSpec = ref<WeightSpecItem[]>([])
 const portraitReport = ref<PortraitReportResponse | null>(null)
+const ruleVersionScope = ref<RuleVersionScope | null>(null)
+const selectedRuleVersionId = ref<string | number>('all')
 const reportExporting = ref(false)
 const achievementOverview = ref<AchievementOverview>({
   paper_count: 0,
   project_count: 0,
   intellectual_property_count: 0,
-  teaching_achievement_count: 0,
   academic_service_count: 0,
-  total_citations: 0,
   total_achievements: 0,
 })
 const teacherInfo = ref<TeacherDetail>({
@@ -427,8 +466,6 @@ const teacherInfo = ref<TeacherDetail>({
   research_interests: '',
   research_direction: [],
   bio: '',
-  h_index: 0,
-  hIndex: 0,
   is_admin: false,
 })
 
@@ -450,16 +487,21 @@ const portraitInitial = computed(() => {
 const profileHighlights = computed(() => buildProfileHighlights(teacherInfo.value))
 const topKeywords = computed(() => buildTopKeywords(papers.value))
 const topCollaborators = computed(() => buildTopCollaborators(papers.value))
-const paperTypeSummary = computed(() => buildPaperTypeSummary(papers.value))
+const paperTypeSummary = computed(() => {
+  const articleCount = papers.value.filter(item => item.paper_type_display.includes('论文')).length
+  const bookCount = papers.value.filter(item => item.paper_type_display.includes('著作')).length
+  const otherCount = Math.max(papers.value.length - articleCount - bookCount, 0)
+  return otherCount > 0
+    ? `论文 ${articleCount} / 著作 ${bookCount} / 其他 ${otherCount}`
+    : `论文 ${articleCount} / 著作 ${bookCount}`
+})
 const latestActiveYear = computed(() => buildLatestActiveYear(papers.value))
 const portraitUpdatedLabel = computed(() => buildPortraitUpdatedLabel(portraitDataMeta.value))
 const keywordEvolution = computed(() => buildKeywordEvolution(papers.value))
 const themeFocusSummary = computed(() => buildThemeFocusSummary(papers.value))
 const dimensionTrendNarrative = computed(() => buildDimensionTrendNarrative(dimensionTrend.value))
 const linkContext = computed(() => parseCrossModuleLink(route.query))
-const dimensionFormulaMap = computed<Record<string, string>>(() =>
-  Object.fromEntries(weightSpec.value.map(item => [item.key, item.formula_short])),
-)
+const ruleVersionOptions = computed<RuleVersionOption[]>(() => ruleVersionScope.value?.available_versions ?? [])
 
 const linkContextTitle = computed(() => {
   if (linkContext.value?.source === 'achievement') {
@@ -482,7 +524,7 @@ const linkContextDescription = computed(
 
 const achievementMixSummary = computed(
   () =>
-    `项目 ${achievementOverview.value.project_count} / 知产 ${achievementOverview.value.intellectual_property_count} / 教学 ${achievementOverview.value.teaching_achievement_count} / 服务 ${achievementOverview.value.academic_service_count}`,
+    `项目 ${achievementOverview.value.project_score ?? 0} 分 / 获奖转化 ${achievementOverview.value.intellectual_property_score ?? 0} 分 / 平台科普 ${achievementOverview.value.academic_service_score ?? 0} 分`,
 )
 
 const activeSection = computed(() => props.sectionMode)
@@ -512,8 +554,21 @@ const achievementEvidenceId = (type: string, id: number) => `portrait-achievemen
 const isActiveAchievementEvidence = (type: string, id: number) =>
   linkContext.value?.recordType === type && linkContext.value?.recordId === id
 
-const resolveDimensionFormula = (dimensionKey: string): string =>
-  dimensionFormulaMap.value[dimensionKey] || ''
+const buildRuleVersionParams = (): Record<string, string | number> => {
+  if (selectedRuleVersionId.value === 'all') {
+    return {}
+  }
+  return { rule_version: selectedRuleVersionId.value }
+}
+
+const syncRuleVersionScope = (scope?: RuleVersionScope) => {
+  if (!scope) return
+  ruleVersionScope.value = scope
+  const nextValue = scope.is_all_versions || !scope.selected_rule_version_id ? 'all' : scope.selected_rule_version_id
+  if (String(selectedRuleVersionId.value) !== String(nextValue)) {
+    selectedRuleVersionId.value = nextValue
+  }
+}
 
 const ensureUser = async (): Promise<SessionUser | null> => {
   const sessionUser = await ensureSessionUserContext()
@@ -533,7 +588,6 @@ const loadTeacherDetail = async () => {
     teacherInfo.value = {
       ...response.data,
       name: response.data.real_name || response.data.username,
-      hIndex: response.data.h_index ?? 0,
     }
     return
   }
@@ -542,13 +596,15 @@ const loadTeacherDetail = async () => {
   teacherInfo.value = {
     ...response.data,
     name: response.data.real_name || response.data.username,
-    hIndex: response.data.h_index ?? 0,
   }
 }
 
 const loadDashboardData = async () => {
   const response = await axios.get<DashboardStatsResponse>('/api/achievements/dashboard-stats/', {
-    params: currentUser.value?.is_admin ? { user_id: userId.value } : undefined,
+    params: {
+      ...(currentUser.value?.is_admin ? { user_id: userId.value } : {}),
+      ...buildRuleVersionParams(),
+    },
   })
 
   statistics.value = response.data.statistics ?? []
@@ -560,25 +616,33 @@ const loadDashboardData = async () => {
   calculationSummary.value = response.data.calculation_summary ?? null
   portraitDataMeta.value = response.data.data_meta ?? null
   achievementOverview.value = response.data.achievement_overview ?? achievementOverview.value
+  syncRuleVersionScope(response.data.rule_version_scope)
 }
 
 const loadAllAchievements = async () => {
-  const response = await axios.get<AllAchievementResponse>(`/api/achievements/all-achievements/${userId.value}/`)
+  const response = await axios.get<AllAchievementResponse>(`/api/achievements/all-achievements/${userId.value}/`, {
+    params: buildRuleVersionParams(),
+  })
   allAchievements.value = response.data.records ?? []
+  syncRuleVersionScope(response.data.rule_version_scope)
 }
 
 const loadRadarData = async () => {
-  const response = await axios.get<RadarResponse>(`/api/achievements/radar/${userId.value}/`)
+  const response = await axios.get<RadarResponse>(`/api/achievements/radar/${userId.value}/`, {
+    params: buildRuleVersionParams(),
+  })
   dimensionSources.value = response.data.dimension_sources ?? []
   dimensionInsights.value = response.data.dimension_insights ?? dimensionInsights.value
   weightSpec.value = response.data.weight_spec ?? weightSpec.value
   calculationSummary.value = response.data.calculation_summary ?? calculationSummary.value
+  syncRuleVersionScope(response.data.rule_version_scope)
 }
 
 const loadPortraitAnalysis = async () => {
   const params: Record<string, string | number> = {
     year: portraitAnalysisYear.value,
     scope: isSystemAdminRole.value ? portraitBenchmarkScopeSelection.value : 'college',
+    ...buildRuleVersionParams(),
   }
   if (currentUser.value?.is_admin) {
     params.user_id = userId.value
@@ -596,6 +660,7 @@ const loadPortraitAnalysis = async () => {
   snapshotBoundary.value = payload.snapshot_boundary ?? null
   radarData.value = payload.radar_dimensions ?? []
   radarSeriesData.value = payload.radar_series_data ?? []
+  syncRuleVersionScope(payload.rule_version_scope)
 
   const activeScope = payload.benchmark_data?.active_scope
   portraitBenchmarkActiveScope.value = activeScope === 'university' ? 'university' : 'college'
@@ -605,8 +670,11 @@ const loadPortraitAnalysis = async () => {
 }
 
 const loadPortraitReport = async () => {
-  const response = await axios.get<PortraitReportResponse>(`/api/achievements/portrait-report/${userId.value}/`)
+  const response = await axios.get<PortraitReportResponse>(`/api/achievements/portrait-report/${userId.value}/`, {
+    params: buildRuleVersionParams(),
+  })
   portraitReport.value = response.data
+  syncRuleVersionScope(response.data.rule_version_scope)
 }
 
 type ViewTransitionDocument = Document & {
@@ -623,13 +691,34 @@ const runRadarViewTransition = async (task: () => Promise<void>): Promise<void> 
   await task()
 }
 
+const mapRuleAchievementsToPaperRecords = (records: RuleAchievementRecord[]): PaperRecord[] =>
+  records
+    .filter(record => record.category_code === 'PAPER_BOOK' && record.status === 'APPROVED')
+    .map(record => ({
+      id: record.id,
+      title: record.title,
+      date_acquired: record.date_acquired,
+      paper_type_display: record.rule_item_title || record.category_name || '学术成果',
+      journal_name: record.publication_name || record.issuing_organization || '',
+      keywords: (record.keywords_text || '')
+        .split(/[，、,\s]+/)
+        .map(item => item.trim())
+        .filter(Boolean),
+      coauthor_details: (record.coauthor_names || []).map((name, index) => ({
+        id: index + 1,
+        name,
+      })),
+    }))
+
 const loadPapers = async () => {
-  const response = await axios.get<PaperRecord[]>('/api/achievements/papers/', {
-    params: currentUser.value?.is_admin
-      ? { teacher_id: userId.value, include_claimed: 1 }
-      : { include_claimed: 1 },
+  const response = await axios.get<RuleAchievementRecord[]>('/api/achievements/rule-achievements/', {
+    params: {
+      ...(currentUser.value?.is_admin ? { teacher_id: userId.value } : {}),
+      status: 'APPROVED',
+      ...buildRuleVersionParams(),
+    },
   })
-  papers.value = response.data ?? []
+  papers.value = mapRuleAchievementsToPaperRecords(response.data ?? [])
 }
 
 const handlePortraitAnalysisYearChange = async (year: number) => {
@@ -649,6 +738,23 @@ const handlePortraitBenchmarkScopeChange = async (scope: 'college' | 'university
   }
   portraitBenchmarkScopeSelection.value = scope
   await runRadarViewTransition(loadPortraitAnalysis)
+}
+
+const handleRuleVersionChange = async () => {
+  portraitReport.value = null
+  await runRadarViewTransition(async () => {
+    await Promise.all([
+      loadDashboardData(),
+      loadRadarData(),
+      loadPortraitAnalysis(),
+      loadPapers(),
+      loadPortraitReport(),
+      loadAllAchievements(),
+    ])
+  })
+  renderTrendChart()
+  renderDimensionTrendChart()
+  renderStructureChart()
 }
 
 const ensureChartInstance = (
@@ -996,6 +1102,41 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 
+.rule-version-bar {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color-soft);
+  border-radius: 14px;
+  background: var(--surface-1);
+}
+
+.rule-version-main,
+.rule-version-tags {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rule-version-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.rule-version-main p,
+.rule-version-tags span {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.rule-version-select {
+  width: min(320px, 100%);
+}
+
 .metric-card,
 .insight-card,
 .radar-card,
@@ -1206,9 +1347,14 @@ onUnmounted(() => {
 
 .dimension-evidence-tags :deep(.el-tag) {
   width: 100%;
+  height: auto;
+  min-height: 26px;
   justify-content: center;
   margin: 0;
-  white-space: nowrap;
+  padding: 4px 8px;
+  white-space: normal;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .dimension-insight-item {
@@ -1264,6 +1410,45 @@ onUnmounted(() => {
 
 .dimension-formula-text {
   color: var(--text-secondary);
+}
+
+.dimension-rule-box {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 16%, var(--border-color-soft));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand-primary) 5%, var(--surface-1));
+}
+
+.dimension-rule-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.dimension-rule-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.dimension-rule-text {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: break-word;
 }
 
 .chart-note {
@@ -1404,6 +1589,14 @@ onUnmounted(() => {
 
   .dimension-evidence-tags {
     grid-template-columns: 1fr;
+  }
+
+  .dimension-rule-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dimension-rule-label {
+    width: fit-content;
   }
 }
 </style>

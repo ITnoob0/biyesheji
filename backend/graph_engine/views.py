@@ -4,7 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from achievements.models import AcademicService, IntellectualProperty, Paper, Project, TeachingAchievement
+from achievements.models import AcademicService, IntellectualProperty, Project
+from achievements.services import build_teacher_related_paper_queryset
 from achievements.visibility import APPROVED_STATUS
 from users.access import GRAPH_SCOPE_MESSAGE, ensure_self_or_admin_user
 from .analysis import build_graph_analysis
@@ -17,7 +18,6 @@ NODE_TYPE_META = {
     'Keyword': {'category': 3, 'symbol_size': 24, 'label': '关键词'},
     'Project': {'category': 4, 'symbol_size': 34, 'label': '科研项目'},
     'IntellectualProperty': {'category': 5, 'symbol_size': 32, 'label': '知识产权'},
-    'TeachingAchievement': {'category': 6, 'symbol_size': 32, 'label': '教学成果'},
     'AcademicService': {'category': 7, 'symbol_size': 30, 'label': '学术服务'},
 }
 
@@ -27,7 +27,6 @@ RELATION_META = {
     'co-author': ('合作', '合作学者与论文之间的合作关系。'),
     'undertakes_project': ('承担项目', '教师与科研项目之间的承担关系。'),
     'owns_ip': ('知识产权', '教师与知识产权成果之间的归属关系。'),
-    'has_teaching_achievement': ('教学成果', '教师与教学成果之间的关联关系。'),
     'provides_service': ('学术服务', '教师与学术服务事项之间的参与关系。'),
 }
 
@@ -58,7 +57,7 @@ class AcademicGraphTopologyView(APIView):
             'node_count': node_count,
             'link_count': link_count,
             'notice': notice,
-            'source_scope_note': '当前图谱覆盖教师、论文、合作学者、关键词，以及项目、知识产权、教学成果和学术服务等轻量关系节点。',
+            'source_scope_note': '当前图谱覆盖教师、论文、合作学者、关键词，以及项目、知识产权和学术服务等轻量关系节点。',
             'degradation_note': (
                 '当前图谱已按 MySQL 回退链路提供主体展示与轻量分析，不执行复杂图计算。'
                 if fallback_used
@@ -175,15 +174,13 @@ class AcademicGraphTopologyView(APIView):
                 OPTIONAL MATCH (e:ExternalScholar)-[:CO_AUTHORED]->(p)
                 OPTIONAL MATCH (t)-[:UNDERTAKES_PROJECT]->(pr:Project)
                 OPTIONAL MATCH (t)-[:OWNS_IP]->(ip:IntellectualProperty)
-                OPTIONAL MATCH (t)-[:HAS_TEACHING_ACHIEVEMENT]->(ta:TeachingAchievement)
-                OPTIONAL MATCH (t)-[:PROVIDES_SERVICE]->(svc:AcademicService)
+                                OPTIONAL MATCH (t)-[:PROVIDES_SERVICE]->(svc:AcademicService)
                 RETURN t,
                        collect(DISTINCT p) AS papers,
                        collect(DISTINCT k) AS keywords,
                        collect(DISTINCT e) AS scholars,
                        collect(DISTINCT pr) AS projects,
                        collect(DISTINCT ip) AS ips,
-                       collect(DISTINCT ta) AS teachings,
                        collect(DISTINCT svc) AS services,
                        collect(DISTINCT {p_id: p.paper_id, k_name: k.name}) AS p_k_links,
                        collect(DISTINCT {p_id: p.paper_id, e_name: e.name}) AS p_e_links
@@ -303,25 +300,6 @@ class AcademicGraphTopologyView(APIView):
                     )
                     links.append(self._make_link(teacher_id, ip_id, 'owns_ip'))
 
-                for teaching in record['teachings']:
-                    if not teaching:
-                        continue
-                    teaching_id = f"teaching_{teaching['teaching_id']}"
-                    add_node(
-                        self._make_node(
-                            teaching_id,
-                            teaching.get('title', '未命名教学成果'),
-                            'TeachingAchievement',
-                            detail_lines=[
-                                f"成果类型：{teaching.get('achievement_type', '未知')}",
-                                f"级别：{teaching.get('level', '未知')}",
-                            ],
-                            entityId=int(teaching['teaching_id']) if teaching.get('teaching_id') else None,
-                            recordType='teaching_achievement',
-                        )
-                    )
-                    links.append(self._make_link(teacher_id, teaching_id, 'has_teaching_achievement'))
-
                 for service in record['services']:
                     if not service:
                         continue
@@ -373,23 +351,22 @@ class AcademicGraphTopologyView(APIView):
             )
 
         papers = list(
-            Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS)
+            build_teacher_related_paper_queryset(teacher, approved_only=True)
             .prefetch_related('coauthors', 'paperkeyword_set__keyword')
             .order_by('-date_acquired', '-created_at')
         )
         projects = list(Project.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
         ips = list(IntellectualProperty.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
-        teachings = list(TeachingAchievement.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
         services = list(AcademicService.objects.filter(teacher=teacher, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at'))
 
-        if not any([papers, projects, ips, teachings, services]):
+        if not any([papers, projects, ips, services]):
             return self._finalize_response(
                 teacher,
                 [],
                 [],
                 source='mysql',
                 fallback_used=True,
-                notice='当前教师暂无可构成图谱的成果数据，请先录入论文、项目、知识产权、教学成果或学术服务。',
+                notice='当前教师暂无可构成图谱的成果数据，请先录入论文、项目、知识产权或学术服务。',
             )
 
         nodes = []
@@ -491,23 +468,6 @@ class AcademicGraphTopologyView(APIView):
                 )
             )
             links.append(self._make_link(teacher_node_id, ip_node_id, 'owns_ip'))
-
-        for teaching in teachings:
-            teaching_node_id = f'teaching_{teaching.id}'
-            add_node(
-                self._make_node(
-                    teaching_node_id,
-                    teaching.title,
-                    'TeachingAchievement',
-                    detail_lines=[
-                        f'成果类型：{teaching.get_achievement_type_display()}',
-                        f'级别：{teaching.level}',
-                    ],
-                    entityId=teaching.id,
-                    recordType='teaching_achievement',
-                )
-            )
-            links.append(self._make_link(teacher_node_id, teaching_node_id, 'has_teaching_achievement'))
 
         for service in services:
             service_node_id = f'service_{service.id}'

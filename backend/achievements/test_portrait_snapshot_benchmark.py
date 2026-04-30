@@ -56,7 +56,7 @@ class PortraitSnapshotBenchmarkApiTests(APITestCase):
             title='讲师',
         )
 
-    def _create_approved_paper(self, teacher, *, title: str, date_acquired: str, citation_count: int = 4):
+    def _create_approved_paper(self, teacher, *, title: str, date_acquired: str):
         return Paper.objects.create(
             teacher=teacher,
             title=title,
@@ -64,7 +64,6 @@ class PortraitSnapshotBenchmarkApiTests(APITestCase):
             date_acquired=date_acquired,
             paper_type='JOURNAL',
             journal_name='画像测试期刊',
-            citation_count=citation_count,
             status='APPROVED',
         )
 
@@ -73,7 +72,6 @@ class PortraitSnapshotBenchmarkApiTests(APITestCase):
             self.teacher,
             title='2025 年论文',
             date_acquired='2025-05-01',
-            citation_count=8,
         )
         PortraitSnapshot.objects.create(
             user=self.teacher,
@@ -159,7 +157,6 @@ class PortraitSnapshotBenchmarkApiTests(APITestCase):
             self.teacher,
             title='2024 基线论文',
             date_acquired='2024-03-12',
-            citation_count=2,
         )
 
         self.client.force_authenticate(user=self.system_admin)
@@ -212,7 +209,6 @@ class PortraitSnapshotBenchmarkApiTests(APITestCase):
             solo_teacher,
             title='孤岛学院论文',
             date_acquired='2025-06-06',
-            citation_count=5,
         )
 
         self.client.force_authenticate(user=solo_teacher)

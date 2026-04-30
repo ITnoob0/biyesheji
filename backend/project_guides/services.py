@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project, TeachingAchievement
+from achievements.models import AcademicService, IntellectualProperty, Paper, PaperKeyword, Project
 from achievements.scoring_engine import TeacherScoringEngine
 from achievements.visibility import APPROVED_STATUS
 from users.access import COMPARE_SCOPE_MESSAGE, RECOMMENDATION_SCOPE_MESSAGE, ensure_admin_user, ensure_self_or_admin_user
@@ -55,7 +55,6 @@ class ProjectGuideRecommendationService:
         'academic_output': '基础学术产出',
         'funding_support': '经费与项目攻关',
         'ip_strength': '知识产权沉淀',
-        'talent_training': '人才培养成效',
         'academic_reputation': '学术活跃与声誉',
         'interdisciplinary': '跨学科融合度',
     }
@@ -131,13 +130,16 @@ class ProjectGuideRecommendationService:
             Paper.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
             + Project.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
             + IntellectualProperty.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
-            + TeachingAchievement.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
             + AcademicService.objects.filter(teacher=user, status=APPROVED_STATUS, date_acquired__gte=recent_cutoff).count()
         )
 
         radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
         portrait_dimensions = sorted(radar_result['radar_dimensions'], key=lambda item: item['value'], reverse=True)
         portrait_map = {item['key']: item for item in radar_result['radar_dimensions']}
+        portrait_signal_score = round(
+            sum(float(item.get('value', 0) or 0) for item in radar_result['radar_dimensions']) / max(len(radar_result['radar_dimensions']), 1),
+            1,
+        )
 
         return {
             'teacher': user,
@@ -147,6 +149,7 @@ class ProjectGuideRecommendationService:
             'recent_cutoff_label': f'{cutoff_year} 年以来',
             'activity_level': 'HIGH' if recent_activity_count >= 4 else 'MEDIUM' if recent_activity_count >= 2 else 'LOW',
             'portrait_total_score': radar_result['total_score'],
+            'portrait_signal_score': portrait_signal_score,
             'portrait_top_dimensions': portrait_dimensions[:3],
             'portrait_dimension_map': portrait_map,
         }
@@ -197,7 +200,7 @@ class ProjectGuideRecommendationService:
             append_link('funding_support', 'support', '学科方向贴合可支撑项目攻关与组织申报能力解释。')
         if teacher_pack['recent_activity_count'] >= 2:
             append_link('academic_output', 'support', '近三年成果活跃度可作为当前指南推荐的申报基础。')
-        if config.get('portrait_bonus', 0) > 0 or teacher_pack['portrait_total_score'] >= 60:
+        if config.get('portrait_bonus', 0) > 0 or teacher_pack['portrait_signal_score'] >= 60:
             strongest = teacher_pack['portrait_top_dimensions'][0] if teacher_pack['portrait_top_dimensions'] else None
             if strongest:
                 append_link(
@@ -274,12 +277,6 @@ class ProjectGuideRecommendationService:
                 IntellectualProperty.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
                 '当前推荐会参考教师已有知识产权沉淀。',
                 lambda item: f'{item.get_ip_type_display()} / 登记号 {item.registration_number}',
-            ),
-            'talent_training': (
-                'teaching_achievement',
-                TeachingAchievement.objects.filter(teacher=user, status=APPROVED_STATUS).order_by('-date_acquired', '-created_at').first(),
-                '当前推荐会参考教师已有教学与人才培养成果。',
-                lambda item: f'{item.get_achievement_type_display()} / {item.level}',
             ),
             'academic_reputation': (
                 'academic_service',
@@ -432,14 +429,14 @@ class ProjectGuideRecommendationService:
             profile_bonus_score = 6
         elif guide.rule_profile == 'ACTIVITY_FIRST' and teacher_pack['recent_activity_count'] >= 2:
             profile_bonus_score = 6
-        elif guide.rule_profile == 'PORTRAIT_FIRST' and teacher_pack['portrait_total_score'] >= 50:
+        elif guide.rule_profile == 'PORTRAIT_FIRST' and teacher_pack['portrait_signal_score'] >= 50:
             profile_bonus_score = 8
         elif guide.rule_profile == 'FOUNDATION_FIRST' and (
             teacher_pack['recent_activity_count'] >= 2 or matched_disciplines
         ):
             profile_bonus_score = 6
 
-        if config['portrait_bonus'] > 0 and teacher_pack['portrait_total_score'] >= 40:
+        if config['portrait_bonus'] > 0 and teacher_pack['portrait_signal_score'] >= 40:
             profile_bonus_score += config['portrait_bonus']
 
         if profile_bonus_score:

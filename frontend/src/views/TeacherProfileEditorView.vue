@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadRequestOptions } from 'element-plus'
@@ -15,7 +15,13 @@ import {
   resolveRoleLabel,
 } from '../utils/authPresentation.js'
 import { ensureSessionUserContext, setSessionUser, type SessionUser } from '../utils/sessionAuth'
-import type { TeacherAccountResponse } from '../types/users'
+import type {
+  TeacherAccountResponse,
+  TeacherTitleChangeRequestListResponse,
+  TeacherTitleChangeRequestRecord,
+  TeacherTitleOption,
+  TeacherTitleOptionsResponse,
+} from '../types/users'
 import type { AchievementOverview, DashboardStatsResponse, RecentAchievementRecord } from './dashboard/portrait'
 
 interface ProfileFormState {
@@ -24,13 +30,14 @@ interface ProfileFormState {
   title: string
   email: string
   contact_phone: string
+  current_password: string
   contact_visibility: 'email_only' | 'phone_only' | 'both' | 'internal_only'
   avatar_url: string
   discipline: string
   research_direction_input: string
   research_interests: string
+  title_change_reason: string
   bio: string
-  h_index: number
 }
 
 interface AvatarUploadResponse {
@@ -55,15 +62,16 @@ const currentUser = ref<SessionUser | null>(null)
 const loading = ref(false)
 const summaryLoading = ref(false)
 const avatarUploading = ref(false)
+const titleRequestLoading = ref(false)
 const profileFormRef = ref<FormInstance>()
+const titleOptions = ref<TeacherTitleOption[]>([])
+const titleChangeRequests = ref<TeacherTitleChangeRequestRecord[]>([])
 const recentAchievements = ref<RecentAchievementRecord[]>([])
 const achievementOverview = ref<AchievementOverview>({
   paper_count: 0,
   project_count: 0,
   intellectual_property_count: 0,
-  teaching_achievement_count: 0,
   academic_service_count: 0,
-  total_citations: 0,
   total_achievements: 0,
 })
 
@@ -73,19 +81,65 @@ const profileForm = reactive<ProfileFormState>({
   title: '',
   email: '',
   contact_phone: '',
+  current_password: '',
   contact_visibility: 'email_only',
   avatar_url: '',
   discipline: '',
   research_direction_input: '',
   research_interests: '',
+  title_change_reason: '',
   bio: '',
-  h_index: 0,
 })
+
+const profilePhoneValidator = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    if (!isTeacherAccount.value) {
+      callback()
+      return
+    }
+    callback(new Error('联系电话为必填项'))
+    return
+  }
+  if (!/^1\d{10}$/.test(normalized)) {
+    callback(new Error('联系电话必须为 11 位手机号'))
+    return
+  }
+  callback()
+}
+
+const profileEmailValidator = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    if (!isTeacherAccount.value) {
+      callback()
+      return
+    }
+    callback(new Error('个人邮箱为必填项'))
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    callback(new Error('请输入正确的邮箱格式'))
+    return
+  }
+  callback()
+}
+
+const profileCurrentPasswordValidator = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  if (requiresCurrentPassword.value && !String(value || '').trim()) {
+    callback(new Error('修改手机号或邮箱时需要输入当前密码'))
+    return
+  }
+  callback()
+}
 
 const rules: FormRules<ProfileFormState> = {
   real_name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  department: [{ required: true, message: '请输入所属院系', trigger: 'blur' }],
-  title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
+  department: [{ required: true, message: '所属学院不能为空', trigger: 'blur' }],
+  title: [{ required: true, message: '请选择职称', trigger: 'change' }],
+  email: [{ validator: profileEmailValidator, trigger: ['blur', 'change'] }],
+  contact_phone: [{ validator: profilePhoneValidator, trigger: ['blur', 'change'] }],
+  current_password: [{ validator: profileCurrentPasswordValidator, trigger: ['blur', 'change'] }],
 }
 
 const contactVisibilityOptions = [
@@ -116,6 +170,7 @@ const contactSummary = computed(() => [profileForm.email, profileForm.contact_ph
 const displayName = computed(() => currentUser.value?.real_name || currentUser.value?.username || '教师')
 const avatarText = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'T')
 const permissionScope = computed(() => currentUser.value?.permission_scope ?? null)
+const isTeacherAccount = computed(() => currentUser.value?.role_code === 'teacher')
 const contactVisibilityLabel = computed(() => resolveContactVisibilityLabel(profileForm.contact_visibility))
 const publicContactChannels = computed(() => {
   const channels = []
@@ -147,6 +202,20 @@ const profileCompleteness = computed(() => {
   const completed = checkpoints.filter(item => String(item || '').trim()).length
   return Math.round((completed / checkpoints.length) * 100)
 })
+const pendingTitleRequest = computed(
+  () => titleChangeRequests.value.find(item => item.status === 'PENDING') ?? null,
+)
+const originalEmail = computed(() => (currentUser.value?.email || '').trim())
+const originalContactPhone = computed(() => (currentUser.value?.contact_phone || '').trim())
+const emailChanged = computed(() => profileForm.email.trim() !== originalEmail.value)
+const contactPhoneChanged = computed(() => profileForm.contact_phone.trim() !== originalContactPhone.value)
+const requiresCurrentPassword = computed(() => isTeacherAccount.value && (emailChanged.value || contactPhoneChanged.value))
+const hasTeacherTitleChanged = computed(() => {
+  if (!isTeacherAccount.value) return false
+  const currentTitle = (currentUser.value?.title || '').trim()
+  const targetTitle = profileForm.title.trim()
+  return Boolean(targetTitle && targetTitle !== currentTitle)
+})
 
 const activeSection = computed(() => props.sectionMode)
 const isPublicProfileSection = computed(() => activeSection.value === 'public-profile')
@@ -154,19 +223,22 @@ const isSecuritySection = computed(() => activeSection.value === 'security')
 const isQuickLinksSection = computed(() => activeSection.value === 'quick-links')
 
 const hydrateProfileForm = (user: SessionUser) => {
+  const normalizedTitle = (user.title || '').trim()
+  const hasValidTitle = titleOptions.value.some(item => item.value === normalizedTitle)
   Object.assign(profileForm, {
     real_name: user.real_name || '',
     department: user.department || '',
-    title: user.title || '',
+    title: hasValidTitle ? normalizedTitle : '',
     email: user.email || '',
     contact_phone: user.contact_phone || '',
+    current_password: '',
     contact_visibility: user.contact_visibility || 'email_only',
     avatar_url: user.avatar_url || '',
     discipline: user.discipline || '',
     research_direction_input: (user.research_direction || []).join('，'),
     research_interests: user.research_interests || '',
+    title_change_reason: '',
     bio: user.bio || '',
-    h_index: user.h_index || 0,
   })
 }
 
@@ -197,6 +269,48 @@ const loadSummary = async () => {
 
 const refreshOverview = async () => {
   await loadSummary()
+}
+
+const loadTitleChangeRequests = async () => {
+  if (!isTeacherAccount.value) {
+    titleChangeRequests.value = []
+    return
+  }
+  titleRequestLoading.value = true
+  try {
+    const response = await axios.get<TeacherTitleChangeRequestListResponse>('/api/users/me/title-change-requests/')
+    titleChangeRequests.value = response.data.records ?? []
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '职称变更申请记录加载失败'))
+  } finally {
+    titleRequestLoading.value = false
+  }
+}
+
+const loadTitleOptions = async () => {
+  try {
+    const response = await axios.get<TeacherTitleOptionsResponse>('/api/users/teacher-titles/')
+    titleOptions.value = response.data.options ?? []
+  } catch (error: any) {
+    titleOptions.value = [
+      { label: '教授', value: '教授' },
+      { label: '副教授', value: '副教授' },
+      { label: '讲师', value: '讲师' },
+      { label: '助教', value: '助教' },
+      { label: '研究员', value: '研究员' },
+      { label: '副研究员', value: '副研究员' },
+      { label: '助理研究员', value: '助理研究员' },
+      { label: '研究实习员', value: '研究实习员' },
+    ]
+    ElMessage.warning(resolveApiErrorMessage(error, '职称选项加载失败，已使用本地备用选项'))
+  }
+}
+
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 const beforeAvatarUpload = (file: File) => {
@@ -242,22 +356,46 @@ const saveProfile = async () => {
 
   loading.value = true
   try {
-    const response = await axios.patch<TeacherAccountResponse>('/api/users/me/', {
+    const payload: Record<string, unknown> = {
       real_name: profileForm.real_name,
       department: profileForm.department,
-      title: profileForm.title,
-      email: profileForm.email,
-      contact_phone: profileForm.contact_phone,
+      email: profileForm.email.trim(),
+      contact_phone: profileForm.contact_phone.trim(),
       contact_visibility: profileForm.contact_visibility,
       avatar_url: profileForm.avatar_url,
       discipline: profileForm.discipline,
       research_direction: parseTagInput(profileForm.research_direction_input),
       research_interests: profileForm.research_interests,
       bio: profileForm.bio,
-      h_index: profileForm.h_index,
-    })
+    }
+
+    if (!isTeacherAccount.value) {
+      payload.title = profileForm.title
+    }
+
+    if (requiresCurrentPassword.value) {
+      payload.current_password = profileForm.current_password
+    }
+
+    if (isTeacherAccount.value && hasTeacherTitleChanged.value) {
+      if (pendingTitleRequest.value) {
+        ElMessage.warning('当前已有待审核的职称变更申请，请等待学院管理员处理后再提交。')
+      } else {
+        await axios.post('/api/users/me/title-change-requests/', {
+          requested_title: profileForm.title,
+          apply_reason: profileForm.title_change_reason,
+        })
+        profileForm.title = currentUser.value?.title || ''
+        profileForm.title_change_reason = ''
+        ElMessage.success('职称变更申请已提交，待学院管理员审核后生效。')
+      }
+    }
+
+    const response = await axios.patch<TeacherAccountResponse>('/api/users/me/', payload)
     currentUser.value = setSessionUser(response.data)
     hydrateProfileForm(currentUser.value)
+    profileFormRef.value?.clearValidate('current_password')
+    await loadTitleChangeRequests()
     ElMessage.success('个人中心资料已更新')
   } catch (error: any) {
     ElMessage.error(resolveApiErrorMessage(error, '个人中心资料保存失败'))
@@ -271,9 +409,18 @@ const handlePasswordChanged = (user: SessionUser) => {
   hydrateProfileForm(user)
 }
 
+watch(requiresCurrentPassword, required => {
+  if (!required) {
+    profileForm.current_password = ''
+    profileFormRef.value?.clearValidate('current_password')
+  }
+})
+
 onMounted(async () => {
+  await loadTitleOptions()
   const sessionUser = await ensureUser()
   if (!sessionUser) return
+  await loadTitleChangeRequests()
   await refreshOverview()
 })
 </script>
@@ -303,13 +450,12 @@ onMounted(async () => {
             <strong>{{ profileForm.real_name || displayName }}</strong>
             <p>{{ profileForm.bio || '暂未维护个人简介。' }}</p>
             <div class="preview-meta">
-              <span>{{ profileForm.department || '待补充院系' }}</span>
+            <span>{{ profileForm.department || '待补充学院' }}</span>
               <span>{{ profileForm.title || '待补充职称' }}</span>
               <span>{{ roleLabel }}</span>
             </div>
             <div class="field-tag-list compact">
               <el-tag v-if="profileForm.discipline" effect="plain">{{ profileForm.discipline }}</el-tag>
-              <el-tag v-if="profileForm.h_index > 0" effect="plain">H-index {{ profileForm.h_index }}</el-tag>
               <el-tag v-for="item in publicContactChannels" :key="item.key" type="primary" effect="plain">
                 {{ item.label }}：{{ item.value }}
               </el-tag>
@@ -320,7 +466,7 @@ onMounted(async () => {
 
         <el-form ref="profileFormRef" :model="profileForm" :rules="rules" label-position="top" class="profile-form">
           <div class="grid two-cols">
-            <el-form-item label="姓名" prop="real_name">
+            <el-form-item label="姓名" prop="real_name" required>
               <el-input v-model="profileForm.real_name" />
             </el-form-item>
             <el-form-item label="头像上传">
@@ -343,22 +489,67 @@ onMounted(async () => {
           </el-form-item>
 
           <div class="grid two-cols">
-            <el-form-item label="所属院系" prop="department">
-              <el-input v-model="profileForm.department" />
+            <el-form-item label="所属学院" prop="department" required>
+              <el-input v-model="profileForm.department" disabled />
             </el-form-item>
-            <el-form-item label="职称" prop="title">
-              <el-input v-model="profileForm.title" />
+            <el-form-item label="职称" prop="title" required>
+              <el-select v-model="profileForm.title" placeholder="请选择职称" filterable clearable :disabled="Boolean(pendingTitleRequest)">
+                <el-option
+                  v-for="item in titleOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
           </div>
 
+          <el-alert
+            v-if="pendingTitleRequest"
+            :title="`职称变更审核中：${pendingTitleRequest.current_title || '未设置'} → ${pendingTitleRequest.requested_title}`"
+            :description="`提交时间：${formatDateTime(pendingTitleRequest.created_at)}。审核通过后才会正式生效。`"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+
+          <el-form-item
+            v-if="isTeacherAccount && hasTeacherTitleChanged && !pendingTitleRequest"
+            label="职称变更说明（提交学院管理员审核）"
+          >
+            <el-input
+              v-model="profileForm.title_change_reason"
+              type="textarea"
+              :rows="3"
+              placeholder="可填写职称评定依据、时间节点等，便于学院管理员审核。"
+            />
+          </el-form-item>
+
           <div class="grid two-cols">
-            <el-form-item label="联系邮箱">
+            <el-form-item label="联系邮箱" prop="email" required>
               <el-input v-model="profileForm.email" placeholder="建议填写常用工作邮箱" />
             </el-form-item>
-            <el-form-item label="联系电话">
-              <el-input v-model="profileForm.contact_phone" placeholder="如 13800000000" />
+            <el-form-item label="联系电话" prop="contact_phone" required>
+              <el-input v-model="profileForm.contact_phone" maxlength="11" placeholder="如 13800000000" />
             </el-form-item>
           </div>
+
+          <el-alert
+            v-if="requiresCurrentPassword"
+            title="你正在修改绑定手机号或邮箱，保存前需要输入当前密码验证身份。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+
+          <el-form-item v-if="requiresCurrentPassword" label="当前密码验证" prop="current_password" required>
+            <el-input
+              v-model="profileForm.current_password"
+              type="password"
+              show-password
+              placeholder="请输入当前密码确认换绑"
+            />
+          </el-form-item>
 
           <el-form-item label="联系方式公开策略">
             <el-radio-group v-model="profileForm.contact_visibility" class="contact-visibility-group">
@@ -371,9 +562,6 @@ onMounted(async () => {
           <div class="grid two-cols">
             <el-form-item label="研究领域">
               <el-input v-model="profileForm.discipline" placeholder="例如：人工智能、数据科学" />
-            </el-form-item>
-            <el-form-item label="H-index">
-              <el-input-number v-model="profileForm.h_index" :min="0" style="width: 100%" />
             </el-form-item>
           </div>
 

@@ -108,7 +108,7 @@
             <el-input v-model="form.targetKeywordsInput" placeholder="多个关键词请用逗号、顿号或换行分隔" type="textarea" :rows="2" />
           </el-form-item>
           <el-form-item label="面向学科/院系">
-            <el-input v-model="form.targetDisciplinesInput" placeholder="如 教育数据智能、教育技术学院" type="textarea" :rows="2" />
+            <el-input v-model="form.targetDisciplinesInput" placeholder="如 教育数据智能、教育科学学院" type="textarea" :rows="2" />
           </el-form-item>
           <div class="double-grid">
             <el-form-item label="资助强度">
@@ -439,7 +439,7 @@
           <el-input v-model="editForm.targetKeywordsInput" placeholder="多个关键词请用逗号、顿号或换行分隔" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="面向学科/院系">
-          <el-input v-model="editForm.targetDisciplinesInput" placeholder="如 教育数据智能、教育技术学院" type="textarea" :rows="2" />
+          <el-input v-model="editForm.targetDisciplinesInput" placeholder="如 教育数据智能、教育科学学院" type="textarea" :rows="2" />
         </el-form-item>
         <div class="double-grid">
           <el-form-item label="资助强度">

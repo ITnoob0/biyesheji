@@ -56,6 +56,8 @@ const moduleDescriptions: Record<string, string> = {
   'project-guide-management': '管理员维护项目指南、规则配置和生命周期。',
 }
 
+moduleDescriptions['evaluation-rules'] = '统一查看核心科研能力规则，并由系统管理员维护规则版本与条目。'
+
 const normalizePath = (path: string): string => (path.startsWith('/') ? path : `/${path}`)
 
 const joinPaths = (parentPath: string, childPath?: string): string => {

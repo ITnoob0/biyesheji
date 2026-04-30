@@ -16,12 +16,17 @@ import {
 } from '../utils/authPresentation.js'
 import { ensureSessionUserContext, setSessionUser, setSessionNotice, type SessionUser } from '../utils/sessionAuth'
 import type {
+  CollegeListResponse,
   TeacherAccountResponse,
   TeacherBulkActionResponse,
   TeacherBulkImportResponse,
   TeacherCreateResponse,
   TeacherManagementSummaryResponse,
   TeacherPasswordResetResponse,
+  TeacherTitleChangeRequestListResponse,
+  TeacherTitleChangeRequestRecord,
+  TeacherTitleOption,
+  TeacherTitleOptionsResponse,
 } from '../types/users'
 
 type TeacherManagementSection = 'overview' | 'create-college-admin' | 'create-teacher'
@@ -35,10 +40,8 @@ interface CreateTeacherFormState {
   real_name: string
   department: string
   title: string
-  discipline: string
-  research_interests: string
-  bio: string
-  h_index: number
+  email: string
+  contact_phone: string
   password: string
   confirm_password: string
 }
@@ -67,11 +70,17 @@ const editDialogVisible = ref(false)
 const radarPreviewVisible = ref(false)
 const bulkImportDialogVisible = ref(false)
 const bulkImportLoading = ref(false)
+const titleRequestLoading = ref(false)
+const titleRequestActionLoadingId = ref<number | null>(null)
+const titleChangeRequests = ref<TeacherTitleChangeRequestRecord[]>([])
 const bulkImportUploadRef = ref<UploadInstance>()
 const bulkImportFileList = ref<UploadUserFile[]>([])
 const bulkImportResult = ref<TeacherBulkImportResponse | null>(null)
 const previewTeacherId = ref<number | null>(null)
 const previewTeacherName = ref('')
+const titleOptions = ref<TeacherTitleOption[]>([])
+const collegeOptions = ref<string[]>([])
+const collegeLoading = ref(false)
 const createFormRef = ref<FormInstance>()
 const editFormRef = ref<FormInstance>()
 const managementSummary = ref<TeacherManagementSummaryResponse>({
@@ -89,10 +98,8 @@ const createTeacherForm = reactive<CreateTeacherFormState>({
   real_name: '',
   department: '',
   title: '',
-  discipline: '',
-  research_interests: '',
-  bio: '',
-  h_index: 0,
+  email: '',
+  contact_phone: '',
   password: '',
   confirm_password: '',
 })
@@ -114,7 +121,6 @@ const editTeacher = reactive<TeacherRecord>({
   bio: '',
   discipline: '',
   research_interests: '',
-  h_index: 0,
   is_active: true,
   is_admin: false,
   role_code: 'teacher',
@@ -134,21 +140,6 @@ const editTeacher = reactive<TeacherRecord>({
   },
 })
 
-const createRules: FormRules<CreateTeacherFormState> = {
-  employee_id: [{ required: true, message: '请输入六位工号', trigger: 'blur' }],
-  real_name: [{ required: true, message: '请输入教师姓名', trigger: 'blur' }],
-  department: [{ required: true, message: '请输入所属学院', trigger: 'blur' }],
-  title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入登录密码', trigger: 'blur' }],
-  confirm_password: [{ required: true, message: '请再次输入登录密码', trigger: 'blur' }],
-}
-
-const editRules: FormRules = {
-  real_name: [{ required: true, message: '请输入教师姓名', trigger: 'blur' }],
-  department: [{ required: true, message: '请输入所属学院', trigger: 'blur' }],
-  title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
-}
-
 const props = withDefaults(
   defineProps<{
     sectionMode?: TeacherManagementSection
@@ -158,11 +149,52 @@ const props = withDefaults(
   },
 )
 
+const activeSection = computed(() => props.sectionMode)
+
+const phoneValidator = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    callback(new Error('请输入联系电话'))
+    return
+  }
+  if (!/^1\d{10}$/.test(normalized)) {
+    callback(new Error('联系电话必须为 11 位手机号'))
+    return
+  }
+  callback()
+}
+
+const createRules = computed<FormRules<CreateTeacherFormState>>(() => {
+  const rules: FormRules<CreateTeacherFormState> = {
+    employee_id: [{ required: true, message: '请输入六位工号', trigger: 'blur' }],
+    real_name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+    department: [{ required: true, message: '请选择所属学院', trigger: 'change' }],
+    password: [{ required: true, message: '请输入登录密码', trigger: 'blur' }],
+    confirm_password: [{ required: true, message: '请再次输入登录密码', trigger: 'blur' }],
+  }
+
+  if (activeSection.value === 'create-teacher') {
+    rules.title = [{ required: true, message: '请选择教师职称', trigger: 'change' }]
+    rules.email = [
+      { required: true, message: '请输入个人邮箱', trigger: 'blur' },
+      { type: 'email', message: '请输入正确的邮箱格式', trigger: ['blur', 'change'] },
+    ]
+    rules.contact_phone = [{ validator: phoneValidator, trigger: ['blur', 'change'] }]
+  }
+
+  return rules
+})
+
+const editRules: FormRules = {
+  real_name: [{ required: true, message: '请输入教师姓名', trigger: 'blur' }],
+  department: [{ required: true, message: '请选择所属学院', trigger: 'change' }],
+  title: [{ required: true, message: '请输入职称', trigger: 'blur' }],
+}
+
 const checkedAdmin = computed(() => Boolean(currentUser.value?.is_admin))
 const isSystemAdmin = computed(() => currentUser.value?.role_code === 'admin')
 const isCollegeAdmin = computed(() => currentUser.value?.role_code === 'college_admin')
 const canManageTeacherAccounts = computed(() => isSystemAdmin.value || isCollegeAdmin.value)
-const activeSection = computed(() => props.sectionMode)
 const showSummaryGrid = computed(() => activeSection.value === 'overview' && isSystemAdmin.value)
 const showCreateCard = computed(() => activeSection.value !== 'overview')
 const showListCard = computed(() => activeSection.value === 'overview')
@@ -176,9 +208,9 @@ const createButtonText = computed(() =>
 )
 const createRuleNotice = computed(() => {
   if (activeSection.value === 'create-college-admin') {
-    return '规则：工号必须是 6 位数字，工号会直接作为学院管理员登录账号；系统管理员创建后的密码会被视为临时密码。'
+    return '规则：工号必须是 6 位数字，工号会直接作为学院管理员登录账号；职称默认固定为“学院管理员”，创建后的密码会被视为临时密码。'
   }
-  return '规则：工号必须是 6 位数字，工号会直接作为教师登录账号；学院管理员仅可创建本学院教师，创建后的密码会被视为临时密码。'
+  return '规则：工号必须是 6 位数字，工号会直接作为教师登录账号；教师职称必须从下拉选项中选择，并且必须填写个人邮箱和联系电话。'
 })
 const createDepartmentLabel = computed(() => (activeSection.value === 'create-college-admin' ? '所属学院' : '所属学院（固定为本学院）'))
 const createResultTitle = computed(() => (activeSection.value === 'create-college-admin' ? '最新创建的学院管理员账号' : '最新创建的教师账号'))
@@ -187,6 +219,11 @@ const createResultSubtitle = computed(() =>
 )
 const focusTeacherId = computed(() => Number(route.query.focus || 0))
 const hasSelection = computed(() => selectedTeacherIds.value.length > 0)
+const toResearchDirection = (source: string) =>
+  source
+    .split(/[，,、]/)
+    .map(item => item.trim())
+    .filter(Boolean)
 const filteredTeachers = computed(() =>
   teachers.value.filter(teacher => {
     const keyword = keywordFilter.value.trim()
@@ -214,12 +251,9 @@ const filteredTeachers = computed(() =>
     return true
   }),
 )
-
-const toResearchDirection = (source: string) =>
-  source
-    .split(/[，,、]/)
-    .map(item => item.trim())
-    .filter(Boolean)
+const pendingTitleChangeRequests = computed(() =>
+  titleChangeRequests.value.filter(item => item.status === 'PENDING'),
+)
 
 const resetCreateForm = () => {
   Object.assign(createTeacherForm, {
@@ -227,10 +261,8 @@ const resetCreateForm = () => {
     real_name: '',
     department: '',
     title: '',
-    discipline: '',
-    research_interests: '',
-    bio: '',
-    h_index: 0,
+    email: '',
+    contact_phone: '',
     password: '',
     confirm_password: '',
   })
@@ -288,6 +320,103 @@ const loadManagementSummary = async () => {
   }
 }
 
+const loadTitleOptions = async () => {
+  try {
+    const response = await axios.get<TeacherTitleOptionsResponse>('/api/users/teacher-titles/')
+    titleOptions.value = response.data.options ?? []
+  } catch (error: any) {
+    titleOptions.value = [
+      { label: '教授', value: '教授' },
+      { label: '副教授', value: '副教授' },
+      { label: '讲师', value: '讲师' },
+      { label: '助教', value: '助教' },
+      { label: '研究员', value: '研究员' },
+      { label: '副研究员', value: '副研究员' },
+      { label: '助理研究员', value: '助理研究员' },
+      { label: '研究实习员', value: '研究实习员' },
+    ]
+    ElMessage.warning(resolveApiErrorMessage(error, '职称选项加载失败，已使用本地备用选项'))
+  }
+}
+
+const loadColleges = async () => {
+  collegeLoading.value = true
+  try {
+    const response = await axios.get<CollegeListResponse>('/api/users/colleges/')
+    collegeOptions.value = (response.data.records ?? [])
+      .filter(item => item.is_active)
+      .map(item => item.name)
+    if (isCollegeAdmin.value) {
+      createTeacherForm.department = currentUser.value?.department || ''
+    }
+  } catch (error: any) {
+    const fallbackDepartment = currentUser.value?.department || ''
+    collegeOptions.value = fallbackDepartment ? [fallbackDepartment] : []
+    ElMessage.error(resolveApiErrorMessage(error, '学院目录加载失败'))
+  } finally {
+    collegeLoading.value = false
+  }
+}
+
+const loadTitleChangeRequests = async () => {
+  if (!isCollegeAdmin.value) {
+    titleChangeRequests.value = []
+    return
+  }
+  titleRequestLoading.value = true
+  try {
+    const response = await axios.get<TeacherTitleChangeRequestListResponse>('/api/users/title-change-requests/', {
+      params: { status: 'PENDING' },
+    })
+    titleChangeRequests.value = response.data.records ?? []
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '职称变更申请加载失败'))
+  } finally {
+    titleRequestLoading.value = false
+  }
+}
+
+const approveTitleChangeRequest = async (record: TeacherTitleChangeRequestRecord) => {
+  titleRequestActionLoadingId.value = record.id
+  try {
+    await axios.post(`/api/users/title-change-requests/${record.id}/approve/`, {
+      review_comment: '学院管理员审核通过',
+    })
+    ElMessage.success('职称变更申请已通过并生效')
+    await Promise.all([loadTitleChangeRequests(), loadTeachers(), loadManagementSummary()])
+  } catch (error: any) {
+    ElMessage.error(resolveApiErrorMessage(error, '职称变更审核通过失败'))
+  } finally {
+    titleRequestActionLoadingId.value = null
+  }
+}
+
+const rejectTitleChangeRequest = async (record: TeacherTitleChangeRequestRecord) => {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入驳回原因（将同步给教师）', '驳回职称变更申请', {
+      confirmButtonText: '确认驳回',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：请补充职称评聘依据或相关证明材料。',
+      inputValidator: (val: string) => (val?.trim() ? true : '请填写驳回原因'),
+    })
+
+    titleRequestActionLoadingId.value = record.id
+    await axios.post(`/api/users/title-change-requests/${record.id}/reject/`, {
+      review_comment: value.trim(),
+    })
+    ElMessage.success('已驳回该职称变更申请')
+    await loadTitleChangeRequests()
+  } catch (error: any) {
+    if (error === 'cancel' || error?.action === 'cancel' || error?.action === 'close') {
+      return
+    }
+    ElMessage.error(resolveApiErrorMessage(error, '职称变更驳回失败'))
+  } finally {
+    titleRequestActionLoadingId.value = null
+  }
+}
+
 const createTeacher = async () => {
   if (!createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
@@ -298,7 +427,6 @@ const createTeacher = async () => {
     const response = await axios.post<TeacherCreateResponse>('/api/users/teachers/', {
       ...createTeacherForm,
       role_code: createTargetRoleCode.value,
-      research_direction: toResearchDirection(createTeacherForm.research_interests),
     })
 
     lastCreatedAccount.value = {
@@ -392,12 +520,7 @@ const saveTeacherEdit = async () => {
       real_name: editTeacher.real_name,
       department: editTeacher.department,
       title: editTeacher.title,
-      discipline: editTeacher.discipline,
-      research_interests: editTeacher.research_interests,
-      bio: editTeacher.bio,
-      h_index: editTeacher.h_index,
       is_active: editTeacher.is_active,
-      research_direction: toResearchDirection(editTeacher.research_interests || ''),
     })
 
     if (currentUser.value?.id === editTeacher.id) {
@@ -583,7 +706,9 @@ onMounted(async () => {
   const adminUser = await ensureAdminUser()
   if (!adminUser) return
   syncKeywordFilterFromRoute()
+  await Promise.all([loadTitleOptions(), loadColleges()])
   await loadTeachers()
+  await loadTitleChangeRequests()
   if (isSystemAdmin.value) {
     await loadManagementSummary()
   }
@@ -659,45 +784,62 @@ onMounted(async () => {
           />
           <el-form ref="createFormRef" :model="createTeacherForm" :rules="createRules" label-position="top" class="form-block">
             <div class="grid two-cols">
-              <el-form-item label="六位工号" prop="employee_id">
+              <el-form-item label="六位工号" prop="employee_id" required>
                 <el-input v-model="createTeacherForm.employee_id" maxlength="6" />
               </el-form-item>
-              <el-form-item label="教师姓名" prop="real_name">
+              <el-form-item label="教师姓名" prop="real_name" required>
                 <el-input v-model="createTeacherForm.real_name" />
               </el-form-item>
             </div>
 
             <div class="grid two-cols">
-              <el-form-item :label="createDepartmentLabel" prop="department">
-                <el-input v-model="createTeacherForm.department" :disabled="isCollegeAdmin" />
+              <el-form-item :label="createDepartmentLabel" prop="department" required>
+                <el-select
+                  v-if="isSystemAdmin"
+                  v-model="createTeacherForm.department"
+                  placeholder="请选择已维护学院"
+                  filterable
+                  clearable
+                  :loading="collegeLoading"
+                >
+                  <el-option
+                    v-for="name in collegeOptions"
+                    :key="name"
+                    :label="name"
+                    :value="name"
+                  />
+                </el-select>
+                <el-input v-else v-model="createTeacherForm.department" disabled />
               </el-form-item>
-              <el-form-item label="职称" prop="title">
-                <el-input v-model="createTeacherForm.title" />
+              <el-form-item v-if="activeSection === 'create-teacher'" label="职称" prop="title" required>
+                <el-select v-model="createTeacherForm.title" placeholder="请选择教师职称" filterable clearable>
+                  <el-option
+                    v-for="item in titleOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-else label="职称">
+                <el-input model-value="学院管理员" disabled />
+              </el-form-item>
+            </div>
+
+            <div v-if="activeSection === 'create-teacher'" class="grid two-cols">
+              <el-form-item label="个人邮箱" prop="email" required>
+                <el-input v-model="createTeacherForm.email" placeholder="请输入教师个人邮箱" />
+              </el-form-item>
+              <el-form-item label="联系电话" prop="contact_phone" required>
+                <el-input v-model="createTeacherForm.contact_phone" maxlength="11" placeholder="请输入 11 位手机号" />
               </el-form-item>
             </div>
 
             <div class="grid two-cols">
-              <el-form-item label="学科方向">
-                <el-input v-model="createTeacherForm.discipline" />
-              </el-form-item>
-              <el-form-item label="H-index">
-                <el-input-number v-model="createTeacherForm.h_index" :min="0" style="width: 100%" />
-              </el-form-item>
-            </div>
-
-            <el-form-item label="研究兴趣">
-              <el-input v-model="createTeacherForm.research_interests" placeholder="多个兴趣可用逗号分隔" />
-            </el-form-item>
-
-            <el-form-item label="个人简介">
-              <el-input v-model="createTeacherForm.bio" type="textarea" :rows="4" />
-            </el-form-item>
-
-            <div class="grid two-cols">
-              <el-form-item label="登录密码" prop="password">
+              <el-form-item label="登录密码" prop="password" required>
                 <el-input v-model="createTeacherForm.password" type="password" show-password />
               </el-form-item>
-              <el-form-item label="确认密码" prop="confirm_password">
+              <el-form-item label="确认密码" prop="confirm_password" required>
                 <el-input
                   v-model="createTeacherForm.confirm_password"
                   type="password"
@@ -769,6 +911,53 @@ onMounted(async () => {
             :closable="false"
             show-icon
           />
+
+          <el-card v-if="isCollegeAdmin" class="title-request-card workspace-surface-card" shadow="never">
+            <template #header>
+              <div class="card-header workspace-section-head">
+                <span>职称变更申请（待审核）</span>
+                <el-tag type="warning" effect="plain">{{ pendingTitleChangeRequests.length }} 条</el-tag>
+              </div>
+            </template>
+
+            <el-table
+              v-loading="titleRequestLoading"
+              :data="pendingTitleChangeRequests"
+              stripe
+              empty-text="暂无待审核职称变更申请"
+            >
+              <el-table-column prop="teacher_name" label="教师" min-width="96" />
+              <el-table-column prop="teacher_employee_id" label="工号" min-width="86" />
+              <el-table-column label="变更内容" min-width="170">
+                <template #default="{ row }">
+                  {{ row.current_title || '未设置' }} → {{ row.requested_title }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="apply_reason" label="申请说明" min-width="180" show-overflow-tooltip />
+              <el-table-column label="操作" width="152">
+                <template #default="{ row }">
+                  <div class="table-actions">
+                    <el-button
+                      link
+                      type="success"
+                      :loading="titleRequestActionLoadingId === row.id"
+                      @click="approveTitleChangeRequest(row)"
+                    >
+                      通过
+                    </el-button>
+                    <el-button
+                      link
+                      type="danger"
+                      :loading="titleRequestActionLoadingId === row.id"
+                      @click="rejectTitleChangeRequest(row)"
+                    >
+                      驳回
+                    </el-button>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
 
           <div class="toolbar-row">
             <div class="toolbar-filters">
@@ -919,34 +1108,46 @@ onMounted(async () => {
         </div>
 
         <div class="grid two-cols">
-          <el-form-item label="姓名" prop="real_name">
+          <el-form-item label="姓名" prop="real_name" required>
             <el-input v-model="editTeacher.real_name" />
           </el-form-item>
-          <el-form-item label="职称" prop="title">
+          <el-form-item label="职称" prop="title" required>
             <el-input v-model="editTeacher.title" />
           </el-form-item>
         </div>
 
         <div class="grid two-cols">
-          <el-form-item label="所属学院" prop="department">
-            <el-input v-model="editTeacher.department" />
+          <el-form-item label="所属学院" prop="department" required>
+            <el-select
+              v-if="isSystemAdmin"
+              v-model="editTeacher.department"
+              placeholder="请选择已维护学院"
+              filterable
+              clearable
+              :loading="collegeLoading"
+            >
+              <el-option
+                v-for="name in collegeOptions"
+                :key="name"
+                :label="name"
+                :value="name"
+              />
+            </el-select>
+            <el-input v-else v-model="editTeacher.department" disabled />
           </el-form-item>
-          <el-form-item label="学科方向">
-            <el-input v-model="editTeacher.discipline" />
+          <el-form-item label="学科方向（仅查看）">
+            <el-input :model-value="editTeacher.discipline || '未维护'" disabled />
           </el-form-item>
         </div>
 
         <div class="grid two-cols">
-          <el-form-item label="H-index">
-            <el-input-number v-model="editTeacher.h_index" :min="0" style="width: 100%" />
-          </el-form-item>
           <el-form-item label="账户状态">
             <el-switch v-model="editTeacher.is_active" inline-prompt active-text="启用" inactive-text="停用" />
           </el-form-item>
         </div>
 
-        <el-form-item label="研究兴趣">
-          <el-input v-model="editTeacher.research_interests" placeholder="多个兴趣可用逗号分隔" />
+        <el-form-item label="研究兴趣（仅查看）">
+          <el-input :model-value="editTeacher.research_interests || '未维护'" disabled />
         </el-form-item>
 
         <el-alert
@@ -963,8 +1164,8 @@ onMounted(async () => {
           show-icon
         />
 
-        <el-form-item label="个人简介">
-          <el-input v-model="editTeacher.bio" type="textarea" :rows="4" />
+        <el-form-item label="个人简介（仅查看）">
+          <el-input :model-value="editTeacher.bio || '未维护'" type="textarea" :rows="4" disabled />
         </el-form-item>
       </el-form>
 
@@ -1161,6 +1362,10 @@ h1 {
   background: var(--surface-2);
   color: var(--el-text-color-primary);
   text-align: left;
+}
+
+.title-request-card {
+  margin-top: 12px;
 }
 
 .summary-guidance {

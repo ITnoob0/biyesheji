@@ -112,7 +112,6 @@ const dimensionCatalog = [
   { key: 'academic_output', name: '基础学术产出' },
   { key: 'funding_support', name: '经费与项目攻关' },
   { key: 'ip_strength', name: '知识产权沉淀' },
-  { key: 'talent_training', name: '人才培养成效' },
   { key: 'academic_reputation', name: '学术活跃与声誉' },
   { key: 'interdisciplinary', name: '跨学科融合度' },
 ] as const

@@ -1,155 +1,228 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
 from django.db.models import Sum
 
-from .models import AcademicService, CoAuthor, IntellectualProperty, PaperKeyword, Project, TeachingAchievement
-from .services import build_teacher_related_paper_queryset
-from .visibility import APPROVED_STATUS
+from .models import RuleBasedAchievement
+from .rule_scoring import build_conflict_group_key, tokenize_keywords
 
 
 class TeacherScoringEngine:
     """
-    Aggregate portrait dimensions from the current relational data.
-    The formulas are intentionally lightweight so the homepage can stay real-time
-    without introducing snapshot or batch recomputation infrastructure.
+    Aggregate the teacher portrait from approved, rule-driven achievements.
+
+    This replaces the old fixed formula that relied on hard-coded paper/project/IP
+    tables. Only achievements approved by the college admin are counted.
     """
 
     WEIGHTS = {
-        'academic_output': 0.24,
-        'funding_support': 0.20,
-        'ip_strength': 0.16,
-        'talent_training': 0.14,
-        'academic_reputation': 0.14,
-        'interdisciplinary': 0.12,
+        'academic_output': 0.0,
+        'funding_support': 0.0,
+        'ip_strength': 0.0,
+        'academic_reputation': 0.0,
+        'interdisciplinary': 0.0,
     }
 
     DIMENSION_LABELS = {
-        'academic_output': '基础学术产出',
-        'funding_support': '经费与项目攻关',
-        'ip_strength': '知识产权沉淀',
-        'talent_training': '人才培养成效',
-        'academic_reputation': '学术活跃与声誉',
-        'interdisciplinary': '跨学科融合度',
+        'academic_output': '学术产出与著作',
+        'funding_support': '项目竞争与资源获取',
+        'ip_strength': '成果获奖与学术荣誉',
+        'academic_reputation': '转化服务与智库贡献',
+        'interdisciplinary': '平台团队与科普影响',
     }
 
     DIMENSION_FORMULAS = {
-        'academic_output': '论文数量与引用次数共同作用，强调近期可观测的学术产出。',
-        'funding_support': '项目数量与累计经费共同估算科研组织与攻关支撑能力。',
-        'ip_strength': '知识产权总量与成果转化数量共同反映成果沉淀强度。',
-        'talent_training': '教学成果为主，辅以论文协同产出反映育人成效。',
-        'academic_reputation': '学术服务、合作作者与引用情况共同反映学术活跃度与影响力。',
-        'interdisciplinary': '论文关键词覆盖度与项目参与情况共同反映跨学科融合表现。',
+        'academic_output': '画像展示分 = min(论文著作原始积分 ÷ 30, 100)。',
+        'funding_support': '画像展示分 = min(科研项目原始积分 ÷ 30, 100)。',
+        'ip_strength': '画像展示分 = min(科研成果获奖原始积分 ÷ 20, 100)。',
+        'academic_reputation': '画像展示分 = min((成果转化原始积分 + 智库成果原始积分) ÷ 18, 100)。',
+        'interdisciplinary': '画像展示分 = min((平台团队原始积分 + 科普类获奖原始积分) ÷ 18, 100)。',
     }
 
     WEIGHT_SPEC_DETAILS = {
         'academic_output': {
-            'name': '基础学术产出',
-            'formula_short': '论文数 * 12 + 引用数 * 0.6，上限 100',
-            'main_inputs': ['论文数量', '总被引次数'],
-            'rationale': '优先反映近期可观测、可核验的学术产出表现。',
+            'name': '学术产出与著作',
+            'formula_short': 'min(论文著作原始积分 ÷ 30, 100)',
+            'main_inputs': ['论文著作类成果积分'],
+            'rationale': '归集正式学术产出类成果。',
         },
         'funding_support': {
-            'name': '经费与项目攻关',
-            'formula_short': '项目数 * 18 + 经费折算，上限 100',
-            'main_inputs': ['项目数量', '累计经费'],
-            'rationale': '体现教师获取资源和组织科研攻关的能力。',
+            'name': '项目竞争与资源获取',
+            'formula_short': 'min(科研项目原始积分 ÷ 30, 100)',
+            'main_inputs': ['科研项目成果积分'],
+            'rationale': '归集科研项目类成果。',
         },
         'ip_strength': {
-            'name': '知识产权沉淀',
-            'formula_short': '知识产权数 * 20 + 转化数 * 18，上限 100',
-            'main_inputs': ['知识产权数量', '成果转化数量'],
-            'rationale': '体现成果沉淀与应用转化能力。',
-        },
-        'talent_training': {
-            'name': '人才培养成效',
-            'formula_short': '教学成果数 * 24 + 论文数 * 2，上限 100',
-            'main_inputs': ['教学成果数量', '论文协同产出'],
-            'rationale': '体现教学育人投入及与科研产出的联动性。',
+            'name': '成果获奖与学术荣誉',
+            'formula_short': 'min(科研成果获奖原始积分 ÷ 20, 100)',
+            'main_inputs': ['科研成果获奖积分'],
+            'rationale': '归集科研成果获奖类成果。',
         },
         'academic_reputation': {
-            'name': '学术活跃与声誉',
-            'formula_short': '学术服务、合作作者与引用折算，上限 100',
-            'main_inputs': ['学术服务数量', '合作作者数量', '总被引次数'],
-            'rationale': '体现学术共同体参与度与外部影响力。',
+            'name': '转化服务与智库贡献',
+            'formula_short': 'min((成果转化原始积分 + 智库成果原始积分) ÷ 18, 100)',
+            'main_inputs': ['成果转化成果', '智库成果'],
+            'rationale': '归集成果转化与智库贡献类成果。',
         },
         'interdisciplinary': {
-            'name': '跨学科融合度',
-            'formula_short': '关键词数 * 3 + 项目数 * 6，上限 100',
-            'main_inputs': ['论文关键词数量', '项目参与情况'],
-            'rationale': '体现研究主题覆盖和跨方向协作能力。',
+            'name': '平台团队与科普影响',
+            'formula_short': 'min((平台团队原始积分 + 科普类获奖原始积分) ÷ 18, 100)',
+            'main_inputs': ['平台与团队成果', '科普类获奖成果'],
+            'rationale': '归集平台团队建设与科普影响类成果。',
         },
     }
 
+    CATEGORY_BUCKETS = {
+        'paper_book': {'PAPER_BOOK'},
+        'projects': {'PROJECT'},
+        'award_transform': {'AWARD', 'TRANSFORMATION', 'THINK_TANK'},
+        'platform_pop': {'PLATFORM_TEAM', 'SCI_POP_AWARD'},
+    }
+
     @classmethod
-    def collect_metrics(cls, teacher_user, year: int | None = None):
-        papers = build_teacher_related_paper_queryset(teacher_user, approved_only=True, include_claimed=True)
-        projects = Project.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
-        intellectual_properties = IntellectualProperty.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
-        teaching_achievements = TeachingAchievement.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
-        academic_services = AcademicService.objects.filter(teacher=teacher_user, status=APPROVED_STATUS)
-
+    def _approved_queryset(cls, teacher_user, year: int | None = None, rule_version_id: int | None = None):
+        queryset = (
+            RuleBasedAchievement.objects.select_related('category', 'rule_item')
+            .filter(teacher=teacher_user, status='APPROVED')
+            .order_by('-date_acquired', '-created_at')
+        )
         if year is not None:
-            papers = papers.filter(date_acquired__year=year)
-            projects = projects.filter(date_acquired__year=year)
-            intellectual_properties = intellectual_properties.filter(date_acquired__year=year)
-            teaching_achievements = teaching_achievements.filter(date_acquired__year=year)
-            academic_services = academic_services.filter(date_acquired__year=year)
+            queryset = queryset.filter(date_acquired__year=year)
+        if rule_version_id is not None:
+            queryset = queryset.filter(version_id=rule_version_id)
+        return queryset
 
-        paper_count = papers.count()
-        citation_total = papers.aggregate(total=Sum('citation_count'))['total'] or 0
-        project_count = projects.count()
-        funding_total = float(projects.aggregate(total=Sum('funding_amount'))['total'] or 0)
-        ip_count = intellectual_properties.count()
-        transformed_ip_count = intellectual_properties.filter(is_transformed=True).count()
-        teaching_count = teaching_achievements.count()
-        service_count = academic_services.count()
+    @classmethod
+    def _dedup_records(cls, queryset):
+        grouped: dict[str, RuleBasedAchievement] = {}
+        ordered = list(queryset)
+        for item in ordered:
+            key = build_conflict_group_key(item)
+            current = grouped.get(key)
+            if current is None:
+                grouped[key] = item
+                continue
+            if item.rule_item.multi_match_policy == item.rule_item.MULTI_MATCH_STACKABLE:
+                grouped[f'{key}:stack:{item.id}'] = item
+                continue
+            if Decimal(str(item.final_score or 0)) > Decimal(str(current.final_score or 0)):
+                grouped[key] = item
+        return list(grouped.values())
 
-        paper_ids = list(papers.values_list('id', flat=True))
-        keyword_count = PaperKeyword.objects.filter(paper_id__in=paper_ids).count()
-        collaborator_count = CoAuthor.objects.filter(paper_id__in=paper_ids).values('name').distinct().count()
+    @classmethod
+    def collect_metrics(cls, teacher_user, year: int | None = None, rule_version_id: int | None = None):
+        records = cls._dedup_records(cls._approved_queryset(teacher_user, year=year, rule_version_id=rule_version_id))
+        return cls._collect_metrics_from_records(records)
+
+    @classmethod
+    def _collect_metrics_from_records(cls, records):
+        category_scores = {
+            'PAPER_BOOK': Decimal('0'),
+            'PROJECT': Decimal('0'),
+            'AWARD': Decimal('0'),
+            'TRANSFORMATION': Decimal('0'),
+            'THINK_TANK': Decimal('0'),
+            'PLATFORM_TEAM': Decimal('0'),
+            'SCI_POP_AWARD': Decimal('0'),
+        }
+        counts = {
+            'PAPER_BOOK': 0,
+            'PROJECT': 0,
+            'AWARD': 0,
+            'TRANSFORMATION': 0,
+            'THINK_TANK': 0,
+            'PLATFORM_TEAM': 0,
+            'SCI_POP_AWARD': 0,
+        }
+        amount_total = Decimal('0')
+        representative_count = 0
+        keyword_set: set[str] = set()
+        collaborator_set: set[str] = set()
+
+        for item in records:
+            code = item.category_code_snapshot or (item.category.code if item.category_id else '')
+            if code in category_scores:
+                category_scores[code] += Decimal(str(item.final_score or 0))
+                counts[code] += 1
+            if item.amount_value:
+                amount_total += Decimal(str(item.amount_value))
+            if item.is_representative:
+                representative_count += 1
+            keyword_set.update(tokenize_keywords(item.keywords_text))
+            collaborator_set.update(
+                str(name).strip()
+                for name in (item.coauthor_names or [])
+                if str(name).strip()
+            )
 
         return {
-            'paper_count': paper_count,
-            'citation_total': citation_total,
-            'project_count': project_count,
-            'funding_total': funding_total,
-            'ip_count': ip_count,
-            'transformed_ip_count': transformed_ip_count,
-            'teaching_count': teaching_count,
-            'service_count': service_count,
-            'keyword_count': keyword_count,
-            'collaborator_count': collaborator_count,
-            'total_achievements': paper_count + project_count + ip_count + teaching_count + service_count,
+            'paper_count': counts['PAPER_BOOK'],
+            'representative_paper_count': representative_count,
+            'project_count': counts['PROJECT'],
+            'funding_total': float(amount_total),
+            'award_count': counts['AWARD'],
+            'ip_count': counts['AWARD'],
+            'transformation_count': counts['TRANSFORMATION'],
+            'think_tank_count': counts['THINK_TANK'],
+            'transformed_ip_count': counts['TRANSFORMATION'],
+            'platform_count': counts['PLATFORM_TEAM'],
+            'science_pop_count': counts['SCI_POP_AWARD'],
+            'service_count': counts['PLATFORM_TEAM'] + counts['SCI_POP_AWARD'],
+            'keyword_count': len(keyword_set),
+            'collaborator_count': len(collaborator_set),
+            'paper_book_score': float(category_scores['PAPER_BOOK']),
+            'project_score': float(category_scores['PROJECT']),
+            'award_score': float(category_scores['AWARD']),
+            'transformation_score': float(category_scores['TRANSFORMATION']),
+            'think_tank_score': float(category_scores['THINK_TANK']),
+            'platform_team_score': float(category_scores['PLATFORM_TEAM']),
+            'science_pop_score': float(category_scores['SCI_POP_AWARD']),
+            'total_rule_score': float(sum(category_scores.values(), Decimal('0'))),
+            'total_achievements': len(records),
         }
 
     @classmethod
-    def collect_metrics_series(cls, teacher_user, years: list[int]) -> dict[int, dict]:
+    def collect_metrics_series(cls, teacher_user, years: list[int], rule_version_id: int | None = None) -> dict[int, dict]:
         normalized_years = [year for year in years if isinstance(year, int)]
-        return {year: cls.collect_metrics(teacher_user, year=year) for year in normalized_years}
+        return {year: cls.collect_metrics(teacher_user, year=year, rule_version_id=rule_version_id) for year in normalized_years}
 
     @classmethod
-    def calculate_total_score(cls, values):
-        return round(sum(values[key] * cls.WEIGHTS[key] for key in cls.WEIGHTS), 1)
+    def calculate_total_score(cls, metrics):
+        return round(float(metrics.get('total_rule_score', 0.0) or 0.0), 1)
+
+    @classmethod
+    def build_dimension_raw_scores(cls, metrics):
+        return {
+            'academic_output': round(float(metrics.get('paper_book_score', 0.0) or 0.0), 1),
+            'funding_support': round(float(metrics.get('project_score', 0.0) or 0.0), 1),
+            'ip_strength': round(float(metrics.get('award_score', 0.0) or 0.0), 1),
+            'academic_reputation': round(
+                float(metrics.get('transformation_score', 0.0) or 0.0)
+                + float(metrics.get('think_tank_score', 0.0) or 0.0),
+                1,
+            ),
+            'interdisciplinary': round(
+                float(metrics.get('platform_team_score', 0.0) or 0.0)
+                + float(metrics.get('science_pop_score', 0.0) or 0.0),
+                1,
+            ),
+        }
 
     @classmethod
     def build_dimension_values(cls, metrics):
-        academic_output = min(metrics['paper_count'] * 12 + metrics['citation_total'] * 0.6, 100)
-        funding_support = min(metrics['project_count'] * 18 + min(metrics['funding_total'], 60) * 1.1, 100)
-        ip_strength = min(metrics['ip_count'] * 20 + metrics['transformed_ip_count'] * 18, 100)
-        talent_training = min(metrics['teaching_count'] * 24 + metrics['paper_count'] * 2, 100)
-        academic_reputation = min(
-            metrics['service_count'] * 22
-            + min(metrics['collaborator_count'] * 4, 20)
-            + min(metrics['citation_total'] * 0.2, 18),
-            100,
-        )
-        interdisciplinary = min(metrics['keyword_count'] * 3 + metrics['project_count'] * 6, 100)
+        academic_output = min(metrics['paper_book_score'] / 30, 100)
+        funding_support = min(metrics['project_score'] / 30, 100)
+        research_awards = min(metrics['award_score'] / 20, 100)
+        transformation_service = min((metrics['transformation_score'] + metrics['think_tank_score']) / 18, 100)
+        platform_influence = min((metrics['platform_team_score'] + metrics['science_pop_score']) / 18, 100)
 
         return {
             'academic_output': round(academic_output, 1),
             'funding_support': round(funding_support, 1),
-            'ip_strength': round(ip_strength, 1),
-            'talent_training': round(talent_training, 1),
-            'academic_reputation': round(academic_reputation, 1),
-            'interdisciplinary': round(interdisciplinary, 1),
+            'ip_strength': round(research_awards, 1),
+            'academic_reputation': round(transformation_service, 1),
+            'interdisciplinary': round(platform_influence, 1),
         }
 
     @classmethod
@@ -161,35 +234,45 @@ class TeacherScoringEngine:
     def build_dimension_sources(cls, metrics):
         return [
             {
-                'name': '基础学术产出',
-                'description': f"依据论文 {metrics['paper_count']} 篇、总被引 {metrics['citation_total']} 次综合估计。",
+                'name': '学术产出与著作',
+                'description': '纳入成果大类：论文、著作、译著、工具书、专辑、歌曲等学术产出。',
             },
             {
-                'name': '经费与项目攻关',
-                'description': f"依据项目 {metrics['project_count']} 项、累计经费 {metrics['funding_total']:.2f} 万元估计。",
+                'name': '项目竞争与资源获取',
+                'description': '纳入成果大类：科研项目。',
             },
             {
-                'name': '知识产权沉淀',
-                'description': f"依据知识产权 {metrics['ip_count']} 项，其中转化 {metrics['transformed_ip_count']} 项估计。",
+                'name': '成果获奖与学术荣誉',
+                'description': '纳入成果大类：科研成果获奖。',
             },
             {
-                'name': '人才培养成效',
-                'description': f"依据教学成果 {metrics['teaching_count']} 项，并参考论文产出协同估计。",
+                'name': '转化服务与智库贡献',
+                'description': '纳入成果大类：成果转化、智库成果。',
             },
             {
-                'name': '学术活跃与声誉',
-                'description': f"依据学术服务 {metrics['service_count']} 项、合作作者 {metrics['collaborator_count']} 位估计。",
-            },
-            {
-                'name': '跨学科融合度',
-                'description': f"依据论文关键词 {metrics['keyword_count']} 个、项目参与情况估计。",
+                'name': '平台团队与科普影响',
+                'description': '纳入成果大类：平台与团队、科普类获奖。',
             },
         ]
 
     @classmethod
     def build_dimension_insights(cls, metrics):
         values = cls.build_dimension_values(metrics)
+        raw_scores = cls.build_dimension_raw_scores(metrics)
         source_map = {item['name']: item['description'] for item in cls.build_dimension_sources(metrics)}
+        evidence_map = {
+            'academic_output': [f"论文著作积分 {metrics['paper_book_score']:.1f} 分"],
+            'funding_support': [f"科研项目积分 {metrics['project_score']:.1f} 分"],
+            'ip_strength': [f"科研成果获奖积分 {metrics['award_score']:.1f} 分"],
+            'academic_reputation': [
+                f"成果转化积分 {metrics['transformation_score']:.1f} 分",
+                f"智库成果积分 {metrics['think_tank_score']:.1f} 分",
+            ],
+            'interdisciplinary': [
+                f"平台团队积分 {metrics['platform_team_score']:.1f} 分",
+                f"科普类获奖积分 {metrics['science_pop_score']:.1f} 分",
+            ],
+        }
         insights = []
 
         for key, label in cls.DIMENSION_LABELS.items():
@@ -201,30 +284,18 @@ class TeacherScoringEngine:
             else:
                 level = '成长维度'
 
-            evidence = []
-            if key == 'academic_output':
-                evidence = [f"论文 {metrics['paper_count']} 篇", f"总被引 {metrics['citation_total']} 次"]
-            elif key == 'funding_support':
-                evidence = [f"项目 {metrics['project_count']} 项", f"经费 {metrics['funding_total']:.2f} 万元"]
-            elif key == 'ip_strength':
-                evidence = [f"知识产权 {metrics['ip_count']} 项", f"成果转化 {metrics['transformed_ip_count']} 项"]
-            elif key == 'talent_training':
-                evidence = [f"教学成果 {metrics['teaching_count']} 项", f"协同论文 {metrics['paper_count']} 篇"]
-            elif key == 'academic_reputation':
-                evidence = [f"学术服务 {metrics['service_count']} 项", f"合作作者 {metrics['collaborator_count']} 位"]
-            elif key == 'interdisciplinary':
-                evidence = [f"论文关键词 {metrics['keyword_count']} 个", f"参与项目 {metrics['project_count']} 项"]
-
             insights.append(
                 {
                     'key': key,
                     'name': label,
                     'value': value,
-                    'weight': round(cls.WEIGHTS[key] * 100, 1),
+                    'weight': 0.0,
+                    'raw_score': raw_scores[key],
+                    'score_role': 'display_only',
                     'level': level,
                     'formula_note': cls.DIMENSION_FORMULAS[key],
                     'source_description': source_map.get(label, ''),
-                    'evidence': evidence,
+                    'evidence': evidence_map.get(key, []),
                 }
             )
 
@@ -233,47 +304,53 @@ class TeacherScoringEngine:
     @classmethod
     def build_weight_spec(cls, metrics):
         current_values = cls.build_dimension_values(metrics)
+        raw_scores = cls.build_dimension_raw_scores(metrics)
         return [
             {
                 'key': key,
                 'name': cls.WEIGHT_SPEC_DETAILS[key]['name'],
-                'weight': round(weight * 100, 1),
+                'weight': 0.0,
+                'raw_score': raw_scores[key],
+                'score_role': 'display_only',
                 'formula_short': cls.WEIGHT_SPEC_DETAILS[key]['formula_short'],
                 'main_inputs': cls.WEIGHT_SPEC_DETAILS[key]['main_inputs'],
                 'rationale': cls.WEIGHT_SPEC_DETAILS[key]['rationale'],
                 'current_value': current_values[key],
+                'aggregation_note': '科研成果积分总分按审核通过且去重后的成果 final_score 直接相加；该维度仅用于结构展示。',
             }
-            for key, weight in cls.WEIGHTS.items()
+            for key in cls.WEIGHT_SPEC_DETAILS.keys()
         ]
 
     @classmethod
     def build_calculation_summary(cls, metrics):
         values = cls.build_dimension_values(metrics)
-        total_score = cls.calculate_total_score(values)
-        strongest_key = max(values, key=values.get)
-        weakest_key = min(values, key=values.get)
+        raw_scores = cls.build_dimension_raw_scores(metrics)
+        total_score = cls.calculate_total_score(metrics)
+        strongest_key = max(raw_scores, key=raw_scores.get)
+        weakest_key = min(raw_scores, key=raw_scores.get)
         return {
-            'weight_mode': 'fixed_weights_runtime_aggregation',
-            'formula_note': '综合得分 = 各维度得分 × 固定权重后求和，按实时业务数据即时生成。',
+            'weight_mode': 'direct_rule_score_sum',
+            'formula_note': '科研成果积分总分 = 审核通过且去重后的成果 final_score 直接相加；五维雷达只做结构展示，不参与二次加权。',
             'total_score': total_score,
             'total_achievements': metrics['total_achievements'],
             'strongest_dimension': {
                 'key': strongest_key,
                 'name': cls.WEIGHT_SPEC_DETAILS[strongest_key]['name'],
-                'value': values[strongest_key],
+                'value': raw_scores[strongest_key],
+                'display_value': values[strongest_key],
             },
             'weakest_dimension': {
                 'key': weakest_key,
                 'name': cls.WEIGHT_SPEC_DETAILS[weakest_key]['name'],
-                'value': values[weakest_key],
+                'value': raw_scores[weakest_key],
+                'display_value': values[weakest_key],
             },
         }
 
     @classmethod
-    def get_comprehensive_radar_data(cls, teacher_user):
-        metrics = cls.collect_metrics(teacher_user)
-        values = cls.build_dimension_values(metrics)
-        total_score = cls.calculate_total_score(values)
+    def get_comprehensive_radar_data(cls, teacher_user, rule_version_id: int | None = None):
+        metrics = cls.collect_metrics(teacher_user, rule_version_id=rule_version_id)
+        total_score = cls.calculate_total_score(metrics)
 
         return {
             'metrics': metrics,

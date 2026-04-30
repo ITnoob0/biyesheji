@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
@@ -7,8 +8,9 @@ from rest_framework.test import APITestCase
 
 from achievements.models import TeacherProfile
 
-from .models import UserNotification
-from .serializers import DEFAULT_TEACHER_PASSWORD
+from .models import College, TeacherTitleChangeRequest, UserNotification
+from .serializers import DEFAULT_TEACHER_PASSWORD, mask_contact_value
+from .services import build_forgot_password_cache_key
 
 
 class TeacherUserApiTests(APITestCase):
@@ -26,7 +28,6 @@ class TeacherUserApiTests(APITestCase):
             discipline="科研治理",
             title="管理员",
             research_interests="平台治理",
-            h_index=0,
         )
 
     def create_teacher(self, user_id=100001, **kwargs):
@@ -51,7 +52,6 @@ class TeacherUserApiTests(APITestCase):
             discipline="人工智能",
             title=teacher.title,
             research_interests="知识图谱",
-            h_index=2,
         )
         return teacher
 
@@ -76,9 +76,71 @@ class TeacherUserApiTests(APITestCase):
             discipline="学院治理",
             title=admin_user.title,
             research_interests="学院治理",
-            h_index=0,
         )
         return admin_user
+
+    def test_system_admin_can_manage_college_directory(self):
+        self.client.force_authenticate(user=self.admin)
+
+        list_response = self.client.get(reverse("college_list_create"))
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        college_names = [item["name"] for item in list_response.data["records"]]
+        self.assertIn("数学与计算机科学学院", college_names)
+        self.assertIn("教育科学学院", college_names)
+
+        create_response = self.client.post(
+            reverse("college_list_create"),
+            {"name": "测试学院"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(College.objects.filter(name="测试学院").exists())
+
+        delete_response = self.client.delete(
+            reverse("college_detail", kwargs={"college_id": create_response.data["id"]})
+        )
+        self.assertEqual(delete_response.status_code, status.HTTP_200_OK)
+        self.assertFalse(College.objects.filter(name="测试学院").exists())
+
+    def test_existing_account_college_cannot_be_deleted(self):
+        college = College.objects.get(name="数学与计算机科学学院")
+        self.create_teacher(user_id=100130, department=college.name)
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.delete(reverse("college_detail", kwargs={"college_id": college.id}))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"]["code"], "college_in_use")
+
+    def test_college_admin_creation_requires_existing_college_and_normalizes_alias(self):
+        self.client.force_authenticate(user=self.admin)
+        invalid_payload = {
+            "employee_id": "100131",
+            "role_code": "college_admin",
+            "real_name": "学院管理员甲",
+            "department": "不存在学院",
+            "password": "SecurePass789!Q",
+            "confirm_password": "SecurePass789!Q",
+        }
+
+        invalid_response = self.client.post(reverse("teacher_list_create"), invalid_payload, format="json")
+        self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("department", invalid_response.data)
+
+        valid_payload = {
+            **invalid_payload,
+            "employee_id": "100132",
+            "real_name": "学院管理员乙",
+            "department": "软件学院",
+        }
+        valid_response = self.client.post(reverse("teacher_list_create"), valid_payload, format="json")
+        self.assertEqual(valid_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(valid_response.data["department"], "数学与计算机科学学院")
+        self.assertEqual(get_user_model().objects.get(id=100132).department, "数学与计算机科学学院")
+
+    def test_forgot_password_contact_masking_hides_sensitive_value(self):
+        self.assertEqual(mask_contact_value("13812345678", "phone"), "138****5678")
+        self.assertEqual(mask_contact_value("teacher@example.edu.cn", "email"), "t*****r@e***.edu.cn")
 
     def test_admin_can_create_college_admin_with_personal_center_fields(self):
         self.client.force_authenticate(user=self.admin)
@@ -95,7 +157,6 @@ class TeacherUserApiTests(APITestCase):
             "research_interests": "大模型, 知识图谱",
             "bio": "测试注册教师",
             "research_direction": ["大模型", "知识图谱"],
-            "h_index": 0,
             "password": "SecurePass789!Q",
             "confirm_password": "SecurePass789!Q",
         }
@@ -128,7 +189,6 @@ class TeacherUserApiTests(APITestCase):
             "research_interests": "可视化分析",
             "bio": "自助注册教师",
             "research_direction": ["数据科学"],
-            "h_index": 1,
             "password": "SecurePass789!Q",
             "confirm_password": "SecurePass789!Q",
         }
@@ -151,6 +211,83 @@ class TeacherUserApiTests(APITestCase):
         self.assertTrue(response.data["permission_scope"]["allowed_actions"])
         self.assertTrue(response.data["permission_scope"]["restricted_actions"])
 
+    def test_teacher_title_options_endpoint_returns_standard_catalog(self):
+        teacher = self.create_teacher(user_id=100120, real_name="职称目录教师")
+        self.client.force_authenticate(user=teacher)
+
+        response = self.client.get(reverse("teacher_title_options"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        options = response.data.get("options", [])
+        values = [item.get("value") for item in options]
+        self.assertEqual(
+            values,
+            ["教授", "副教授", "讲师", "助教", "研究员", "副研究员", "助理研究员", "研究实习员"],
+        )
+
+    def test_teacher_profile_update_rejects_non_catalog_title(self):
+        teacher = self.create_teacher(user_id=100121, real_name="校验教师")
+        self.client.force_authenticate(user=teacher)
+
+        response = self.client.patch(reverse("current_user"), {"title": "平台主管"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("title", response.data)
+
+    def test_teacher_cannot_change_title_directly_even_when_value_is_valid(self):
+        teacher = self.create_teacher(user_id=100122, real_name="职称直改教师", title="讲师")
+        self.client.force_authenticate(user=teacher)
+
+        response = self.client.patch(reverse("current_user"), {"title": "副教授"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("title", response.data)
+
+    def test_teacher_title_change_request_requires_college_admin_approval(self):
+        teacher = self.create_teacher(user_id=100123, real_name="申请教师", title="讲师", department="计算机学院")
+        college_admin = self.create_college_admin(
+            user_id=100323,
+            real_name="审核管理员",
+            department="计算机学院",
+        )
+
+        self.client.force_authenticate(user=teacher)
+        submit_response = self.client.post(
+            reverse("current_user_title_change_request"),
+            {
+                "requested_title": "副教授",
+                "apply_reason": "已完成学院职称评审流程。",
+            },
+            format="json",
+        )
+        self.assertEqual(submit_response.status_code, status.HTTP_201_CREATED)
+        request_id = submit_response.data["request"]["id"]
+        teacher.refresh_from_db()
+        self.assertEqual(teacher.title, "讲师")
+
+        pending_request = TeacherTitleChangeRequest.objects.get(id=request_id)
+        self.assertEqual(pending_request.status, TeacherTitleChangeRequest.STATUS_PENDING)
+        self.assertEqual(pending_request.requested_title, "副教授")
+
+        self.client.force_authenticate(user=college_admin)
+        list_response = self.client.get(reverse("teacher_title_change_request_list"), {"status": "PENDING"})
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(any(item["id"] == request_id for item in list_response.data["records"]))
+
+        approve_response = self.client.post(
+            reverse("teacher_title_change_request_approve", kwargs={"request_id": request_id}),
+            {"review_comment": "审核通过"},
+            format="json",
+        )
+        self.assertEqual(approve_response.status_code, status.HTTP_200_OK)
+
+        teacher.refresh_from_db()
+        pending_request.refresh_from_db()
+        self.assertEqual(teacher.title, "副教授")
+        self.assertEqual(teacher.profile.title, "副教授")
+        self.assertEqual(pending_request.status, TeacherTitleChangeRequest.STATUS_APPROVED)
+        self.assertEqual(pending_request.reviewer_id, college_admin.id)
+
     def test_current_user_profile_can_be_updated_with_public_profile_fields(self):
         self.client.force_authenticate(user=self.admin)
         response = self.client.patch(
@@ -166,7 +303,6 @@ class TeacherUserApiTests(APITestCase):
                 "discipline": "科研信息化",
                 "research_interests": "科研画像, 科研治理",
                 "bio": "负责系统维护与数据治理",
-                "h_index": 2,
                 "research_direction": ["科研画像", "科研治理"],
             },
             format="json",
@@ -180,7 +316,6 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(self.admin.avatar_url, "https://example.com/manager.png")
         self.assertEqual(self.admin.contact_visibility, "both")
         self.assertEqual(self.admin.profile.discipline, "科研信息化")
-        self.assertEqual(self.admin.profile.h_index, 2)
 
     def test_current_user_profile_returns_contact_visibility_strategy(self):
         teacher = self.create_teacher(
@@ -380,7 +515,7 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.data["created_count"], 2)
         teacher_a = get_user_model().objects.get(id=100451)
         self.assertFalse(teacher_a.is_staff)
-        self.assertEqual(teacher_a.department, "教育技术学院")
+        self.assertEqual(teacher_a.department, "教育科学学院")
         self.assertEqual(teacher_a.title, "讲师")
 
     def test_admin_can_download_bulk_import_template_excel(self):
@@ -463,7 +598,6 @@ class TeacherUserApiTests(APITestCase):
                 "discipline": "人工智能",
                 "research_interests": "知识图谱, 科研画像",
                 "bio": "更新后的教师简介",
-                "h_index": 5,
                 "is_active": False,
                 "research_direction": ["知识图谱", "科研画像"],
             },
@@ -473,13 +607,12 @@ class TeacherUserApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         teacher.refresh_from_db()
         self.assertEqual(teacher.real_name, "更新后教师")
-        self.assertEqual(teacher.department, "人工智能学院")
+        self.assertEqual(teacher.department, "数学与计算机科学学院")
         self.assertEqual(teacher.email, "updated@example.com")
         self.assertEqual(teacher.contact_phone, "13788886666")
         self.assertEqual(teacher.avatar_url, "https://example.com/updated.png")
         self.assertFalse(teacher.is_active)
         self.assertEqual(teacher.profile.discipline, "人工智能")
-        self.assertEqual(teacher.profile.h_index, 5)
 
     def test_admin_teacher_list_excludes_admin_accounts(self):
         self.create_teacher(user_id=100115, real_name="列表教师")
@@ -732,3 +865,249 @@ class UserNotificationApiTests(APITestCase):
         self.assertEqual(mark_all_response.data["updated_count"], 1)
         n3.refresh_from_db()
         self.assertTrue(n3.is_read)
+
+
+def _override_test_admin_can_create_college_admin_with_personal_center_fields(self):
+    self.client.force_authenticate(user=self.admin)
+    payload = {
+        "employee_id": "100101",
+        "role_code": "college_admin",
+        "real_name": "张晨阳",
+        "department": "计算机学院",
+        "password": "SecurePass789!Q",
+        "confirm_password": "SecurePass789!Q",
+    }
+
+    response = self.client.post(reverse("teacher_list_create"), payload, format="json")
+
+    self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    self.assertEqual(response.data["employee_id"], 100101)
+    self.assertEqual(response.data["username"], "100101")
+    self.assertEqual(response.data["title"], "学院管理员")
+    self.assertEqual(response.data["initial_password"], "SecurePass789!Q")
+    self.assertTrue(response.data["password_reset_required"])
+    created_user = get_user_model().objects.get(id=100101)
+    self.assertTrue(created_user.is_staff)
+    self.assertEqual(created_user.title, "学院管理员")
+
+
+def _test_teacher_profile_update_requires_password_when_contact_changes(self):
+    teacher = self.create_teacher(user_id=100135, real_name="联系方式教师")
+    self.client.force_authenticate(user=teacher)
+
+    response = self.client.patch(
+        reverse("current_user"),
+        {
+            "email": "new-email@example.com",
+        },
+        format="json",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    self.assertIn("current_password", response.data)
+
+    success_response = self.client.patch(
+        reverse("current_user"),
+        {
+            "email": "new-email@example.com",
+            "current_password": "Teacher123456!",
+        },
+        format="json",
+    )
+
+    self.assertEqual(success_response.status_code, status.HTTP_200_OK)
+    teacher.refresh_from_db()
+    self.assertEqual(teacher.email, "new-email@example.com")
+
+
+def _test_teacher_profile_update_requires_email_and_phone(self):
+    teacher = self.create_teacher(user_id=100136, real_name="必填联系方式教师")
+    self.client.force_authenticate(user=teacher)
+
+    response = self.client.patch(
+        reverse("current_user"),
+        {
+            "email": "",
+            "contact_phone": "",
+        },
+        format="json",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    self.assertIn("email", response.data)
+    self.assertIn("contact_phone", response.data)
+
+
+def _test_college_admin_create_teacher_requires_contact_fields(self):
+    college_admin = self.create_college_admin(user_id=100330, department="计算机学院")
+    self.client.force_authenticate(user=college_admin)
+
+    missing_email_response = self.client.post(
+        reverse("teacher_list_create"),
+        {
+            "employee_id": "100331",
+            "real_name": "缺失联系方式教师",
+            "department": "计算机学院",
+            "title": "讲师",
+            "password": "SecurePass789!Q",
+            "confirm_password": "SecurePass789!Q",
+        },
+        format="json",
+    )
+
+    self.assertEqual(missing_email_response.status_code, status.HTTP_400_BAD_REQUEST)
+    self.assertIn("email", missing_email_response.data)
+
+    missing_phone_response = self.client.post(
+        reverse("teacher_list_create"),
+        {
+            "employee_id": "100332",
+            "real_name": "缺失手机号教师",
+            "department": "计算机学院",
+            "title": "讲师",
+            "email": "teacher332@example.com",
+            "password": "SecurePass789!Q",
+            "confirm_password": "SecurePass789!Q",
+        },
+        format="json",
+    )
+
+    self.assertEqual(missing_phone_response.status_code, status.HTTP_400_BAD_REQUEST)
+    self.assertIn("contact_phone", missing_phone_response.data)
+
+
+def _override_test_admin_can_reset_teacher_password_and_mark_force_change(self):
+    teacher = self.create_teacher(user_id=100104, real_name="王老师")
+    self.client.force_authenticate(user=self.admin)
+
+    response = self.client.post(reverse("teacher_reset_password", kwargs={"user_id": teacher.id}))
+
+    self.assertEqual(response.status_code, status.HTTP_200_OK)
+    self.assertEqual(response.data["temporary_password"], DEFAULT_TEACHER_PASSWORD)
+    self.assertTrue(response.data["password_reset_required"])
+    teacher.refresh_from_db()
+    self.assertTrue(teacher.check_password(DEFAULT_TEACHER_PASSWORD))
+    self.assertTrue(teacher.password_reset_required)
+    reminder = UserNotification.objects.filter(
+        recipient=teacher,
+        category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
+        payload__kind="password_change_required",
+        is_read=False,
+    ).first()
+    self.assertIsNotNone(reminder)
+    self.assertEqual(reminder.action_path, "/profile-editor/security")
+
+
+def _override_test_teacher_can_change_own_password_and_clear_force_change_flag(self):
+    teacher = self.create_teacher(user_id=100105, real_name="周老师")
+    teacher.password_reset_required = True
+    teacher.save(update_fields=["password_reset_required"])
+    UserNotification.objects.create(
+        recipient=teacher,
+        category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
+        title="请尽快修改初始密码",
+        payload={"kind": "password_change_required"},
+    )
+    self.client.force_authenticate(user=teacher)
+
+    response = self.client.post(
+        reverse("current_user_change_password"),
+        {
+            "current_password": "Teacher123456!",
+            "new_password": "TeacherNew456!Q",
+            "confirm_password": "TeacherNew456!Q",
+        },
+        format="json",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_200_OK)
+    self.assertFalse(response.data["user"]["password_reset_required"])
+    teacher.refresh_from_db()
+    self.assertTrue(teacher.check_password("TeacherNew456!Q"))
+    self.assertFalse(teacher.password_reset_required)
+    self.assertFalse(
+        UserNotification.objects.filter(
+            recipient=teacher,
+            category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
+            payload__kind="password_change_required",
+            is_read=False,
+        ).exists()
+    )
+
+
+def _override_test_forgot_password_submits_reset_request_to_college_admin(self):
+    teacher = self.create_teacher(user_id=100107, real_name="陈老师")
+    self.create_college_admin(user_id=100302, department=teacher.department, real_name="学院管理员甲")
+
+    code_response = self.client.post(
+        reverse("forgot_password_code"),
+        {
+            "employee_id": "100107",
+            "reset_via": "phone",
+        },
+        format="json",
+    )
+
+    self.assertEqual(code_response.status_code, status.HTTP_200_OK)
+    self.assertEqual(code_response.data["reset_via"], "phone")
+    self.assertNotIn("verification_code", code_response.data)
+    self.assertNotIn("contact_value", code_response.data)
+    self.assertEqual(code_response.data["contact_masked"], "138****0000")
+    verification_code = cache.get(build_forgot_password_cache_key("100107", "phone"))
+    self.assertEqual(len(verification_code), 6)
+
+    reset_response = self.client.post(
+        reverse("forgot_password_reset"),
+        {
+            "employee_id": "100107",
+            "reset_via": "phone",
+            "verification_code": verification_code,
+            "new_password": "TeacherReset456!Q",
+            "confirm_password": "TeacherReset456!Q",
+        },
+        format="json",
+    )
+
+    self.assertEqual(reset_response.status_code, status.HTTP_200_OK)
+    teacher.refresh_from_db()
+    self.assertTrue(teacher.check_password("TeacherReset456!Q"))
+    self.assertFalse(teacher.password_reset_required)
+
+
+def _override_test_college_admin_can_bulk_import_teachers_with_fixed_department_and_title(self):
+    college_admin = self.create_college_admin(user_id=100303, department="教育技术学院")
+    self.client.force_authenticate(user=college_admin)
+    csv_content = (
+        "工号,姓名,个人邮箱,联系电话,学院固定说明（无需填写）,职称说明\n"
+        "100451,教师甲,teacher451@example.com,13800001111,固定为当前学院：教育技术学院,教师账号请在系统中选择职称\n"
+        "100452,教师乙,teacher452@example.com,13800002222,固定为当前学院：教育技术学院,教师账号请在系统中选择职称\n"
+    )
+    upload = SimpleUploadedFile(
+        "teachers.csv",
+        csv_content.encode("utf-8"),
+        content_type="text/csv",
+    )
+
+    response = self.client.post(
+        reverse("teacher_bulk_import"),
+        {"file": upload},
+        format="multipart",
+    )
+
+    self.assertEqual(response.status_code, status.HTTP_200_OK)
+    self.assertEqual(response.data["created_count"], 2)
+    teacher_a = get_user_model().objects.get(id=100451)
+    self.assertFalse(teacher_a.is_staff)
+    self.assertEqual(teacher_a.department, "教育科学学院")
+    self.assertEqual(teacher_a.email, "teacher451@example.com")
+    self.assertEqual(teacher_a.contact_phone, "13800001111")
+
+
+TeacherUserApiTests.test_admin_can_create_college_admin_with_personal_center_fields = _override_test_admin_can_create_college_admin_with_personal_center_fields
+TeacherUserApiTests.test_teacher_profile_update_requires_password_when_contact_changes = _test_teacher_profile_update_requires_password_when_contact_changes
+TeacherUserApiTests.test_teacher_profile_update_requires_email_and_phone = _test_teacher_profile_update_requires_email_and_phone
+TeacherUserApiTests.test_college_admin_create_teacher_requires_contact_fields = _test_college_admin_create_teacher_requires_contact_fields
+TeacherUserApiTests.test_admin_can_reset_teacher_password_and_mark_force_change = _override_test_admin_can_reset_teacher_password_and_mark_force_change
+TeacherUserApiTests.test_teacher_can_change_own_password_and_clear_force_change_flag = _override_test_teacher_can_change_own_password_and_clear_force_change_flag
+TeacherUserApiTests.test_forgot_password_submits_reset_request_to_college_admin = _override_test_forgot_password_submits_reset_request_to_college_admin
+TeacherUserApiTests.test_college_admin_can_bulk_import_teachers_with_fixed_department_and_title = _override_test_college_admin_can_bulk_import_teachers_with_fixed_department_and_title

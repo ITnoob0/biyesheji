@@ -2,13 +2,14 @@ import re
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework import serializers
 
-from .access import is_admin_user, is_college_admin_user, is_system_admin_user
+from .access import is_admin_user, is_college_admin_user, is_system_admin_user, is_teacher_user
+from .college_catalog import normalize_college_name
 from .services import (
     build_teacher_management_summary,
-    bulk_create_user_notifications,
     build_public_contact_channels,
     get_teacher_profile,
     get_user_account_status_label,
@@ -19,13 +20,96 @@ from .services import (
     get_user_role_code,
     get_user_role_label,
     get_user_security_notice,
+    clear_password_change_notifications,
+    build_forgot_password_cache_key,
+    FORGOT_PASSWORD_CODE_TTL_SECONDS,
+    generate_local_verification_code,
+    is_valid_contact_phone,
+    ensure_password_change_notification,
     set_user_password,
     sync_teacher_profile,
     update_teacher_account_and_profile,
 )
-from .models import UserNotification
+from .models import College, TeacherTitleChangeRequest, UserNotification
+from .title_catalog import is_valid_teacher_professional_title, normalize_title
 
 DEFAULT_TEACHER_PASSWORD = "teacher123456"
+
+
+def mask_contact_value(value: str | None, reset_via: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        return ""
+    if reset_via == "phone":
+        if len(normalized) <= 7:
+            return normalized[:1] + "*" * max(len(normalized) - 2, 3) + normalized[-1:]
+        return f"{normalized[:3]}{'*' * (len(normalized) - 7)}{normalized[-4:]}"
+
+    local, separator, domain = normalized.partition("@")
+    if not separator:
+        return normalized[:1] + "*" * max(len(normalized) - 2, 3) + normalized[-1:]
+    if len(local) <= 2:
+        masked_local = local[:1] + "***"
+    else:
+        masked_local = f"{local[:1]}{'*' * max(len(local) - 2, 3)}{local[-1:]}"
+    domain_name, dot, suffix = domain.partition(".")
+    masked_domain = f"{domain_name[:1]}***"
+    if dot:
+        masked_domain = f"{masked_domain}.{suffix}"
+    return f"{masked_local}@{masked_domain}"
+
+
+def validate_existing_college_department(value: str | None) -> str:
+    normalized = normalize_college_name(value)
+    if not normalized:
+        raise serializers.ValidationError("请选择所属学院。")
+    if not College.objects.filter(name=normalized, is_active=True).exists():
+        raise serializers.ValidationError("所属学院不存在，请先由系统管理员在学院管理中维护。")
+    return normalized
+
+
+class CollegeSerializer(serializers.ModelSerializer):
+    account_count = serializers.SerializerMethodField()
+    teacher_count = serializers.SerializerMethodField()
+    college_admin_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = College
+        fields = (
+            "id",
+            "name",
+            "is_active",
+            "sort_order",
+            "account_count",
+            "teacher_count",
+            "college_admin_count",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate_name(self, value):
+        normalized = normalize_college_name(value)
+        if not normalized:
+            raise serializers.ValidationError("请填写学院名称。")
+        queryset = College.objects.filter(name=normalized)
+        if self.instance is not None:
+            queryset = queryset.exclude(id=self.instance.id)
+        if queryset.exists():
+            raise serializers.ValidationError("该学院已经存在。")
+        return normalized
+
+    def get_account_count(self, obj):
+        user_model = get_user_model()
+        return user_model.objects.filter(department=obj.name, is_superuser=False).count()
+
+    def get_teacher_count(self, obj):
+        user_model = get_user_model()
+        return user_model.objects.filter(department=obj.name, is_staff=False, is_superuser=False).count()
+
+    def get_college_admin_count(self, obj):
+        user_model = get_user_model()
+        return user_model.objects.filter(department=obj.name, is_staff=True, is_superuser=False).count()
 
 
 class TeacherAccountSerializer(serializers.ModelSerializer):
@@ -36,7 +120,6 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
     permission_scope = serializers.SerializerMethodField()
     discipline = serializers.SerializerMethodField()
     research_interests = serializers.SerializerMethodField()
-    h_index = serializers.SerializerMethodField()
     security_notice = serializers.SerializerMethodField()
     contact_visibility_label = serializers.SerializerMethodField()
     public_contact_channels = serializers.SerializerMethodField()
@@ -63,7 +146,6 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
             "bio",
             "discipline",
             "research_interests",
-            "h_index",
             "is_active",
             "is_admin",
             "role_code",
@@ -97,10 +179,6 @@ class TeacherAccountSerializer(serializers.ModelSerializer):
         profile = get_teacher_profile(obj)
         return profile.research_interests if profile else ""
 
-    def get_h_index(self, obj):
-        profile = get_teacher_profile(obj)
-        return profile.h_index if profile else 0
-
     def get_security_notice(self, obj):
         return get_user_security_notice(obj)
 
@@ -128,10 +206,10 @@ class CurrentUserSerializer(TeacherAccountSerializer):
 class CurrentUserUpdateSerializer(serializers.ModelSerializer):
     discipline = serializers.CharField(required=False, allow_blank=True, max_length=200)
     research_interests = serializers.CharField(required=False, allow_blank=True)
-    h_index = serializers.IntegerField(required=False, min_value=0)
     email = serializers.EmailField(required=False, allow_blank=True)
     avatar_url = serializers.URLField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    current_password = serializers.CharField(required=False, write_only=True, style={"input_type": "password"})
     contact_visibility = serializers.ChoiceField(
         required=False,
         choices=("email_only", "phone_only", "both", "internal_only"),
@@ -151,8 +229,85 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
             "bio",
             "discipline",
             "research_interests",
-            "h_index",
+            "current_password",
         )
+
+    def validate_title(self, value: str):
+        normalized = normalize_title(value)
+        request = self.context.get("request")
+        request_user = getattr(request, "user", None)
+        instance = getattr(self, "instance", None)
+        if instance is not None and is_admin_user(instance):
+            return normalized
+        if instance is not None and request_user is not None and is_teacher_user(request_user) and request_user.id == instance.id:
+            current_title = normalize_title(getattr(instance, "title", ""))
+            if normalized != current_title:
+                raise serializers.ValidationError("职称变更需提交学院管理员审核，请使用“提交职称变更申请”。")
+            return current_title
+        if normalized and not is_valid_teacher_professional_title(normalized):
+            raise serializers.ValidationError("职称需从系统预设选项中选择。")
+        return normalized
+
+    def validate_contact_phone(self, value: str):
+        normalized = (value or "").strip()
+        if normalized and not is_valid_contact_phone(normalized):
+            raise serializers.ValidationError("联系电话必须为 11 位手机号。")
+        return normalized
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        request_user = getattr(request, "user", None)
+        instance = getattr(self, "instance", None)
+        email = (attrs.get("email", getattr(instance, "email", "")) or "").strip()
+        contact_phone = (attrs.get("contact_phone", getattr(instance, "contact_phone", "")) or "").strip()
+
+        if "department" in attrs:
+            requested_department = normalize_college_name(attrs.get("department"))
+            current_department = normalize_college_name(getattr(instance, "department", ""))
+
+            if instance is not None and is_system_admin_user(instance):
+                attrs["department"] = requested_department
+            elif request_user is not None and is_college_admin_user(request_user):
+                allowed_department = normalize_college_name(getattr(request_user, "department", ""))
+                if requested_department != allowed_department:
+                    raise serializers.ValidationError({"department": "学院管理员只能维护本学院账号，不能调整所属学院。"})
+                attrs["department"] = validate_existing_college_department(allowed_department)
+            elif (
+                instance is not None
+                and request_user is not None
+                and request_user.id == instance.id
+                and not is_system_admin_user(request_user)
+            ):
+                if requested_department != current_department:
+                    raise serializers.ValidationError({"department": "所属学院由管理员维护，教师本人不能自行调整。"})
+                attrs["department"] = validate_existing_college_department(current_department)
+            else:
+                attrs["department"] = validate_existing_college_department(requested_department)
+
+        if instance is not None and request_user is not None and is_teacher_user(request_user) and request_user.id == instance.id:
+            errors = {}
+            if not email:
+                errors["email"] = "教师账号必须绑定个人邮箱。"
+            if not contact_phone:
+                errors["contact_phone"] = "教师账号必须绑定联系电话。"
+            original_email = (getattr(instance, "email", "") or "").strip()
+            original_phone = (getattr(instance, "contact_phone", "") or "").strip()
+            contact_changed = (
+                ("email" in attrs and email != original_email)
+                or ("contact_phone" in attrs and contact_phone != original_phone)
+            )
+            if contact_changed:
+                current_password = attrs.get("current_password", "")
+                if not current_password:
+                    errors["current_password"] = "修改手机号或邮箱时需要输入当前密码验证身份。"
+                elif not instance.check_password(current_password):
+                    errors["current_password"] = "当前密码输入不正确。"
+            if errors:
+                raise serializers.ValidationError(errors)
+
+        attrs["email"] = email
+        attrs["contact_phone"] = contact_phone
+        return attrs
 
     def update(self, instance, validated_data):
         profile = get_teacher_profile(instance)
@@ -160,15 +315,13 @@ class CurrentUserUpdateSerializer(serializers.ModelSerializer):
         research_interests = validated_data.pop(
             "research_interests", profile.research_interests if profile else ""
         )
-        h_index = validated_data.pop("h_index", profile.h_index if profile else 0)
-
+        validated_data.pop("current_password", None)
         update_teacher_account_and_profile(
             instance,
             validated_data,
             {
                 "discipline": discipline,
                 "research_interests": research_interests,
-                "h_index": h_index,
             },
         )
 
@@ -180,7 +333,6 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
     employee_id = serializers.CharField(write_only=True)
     discipline = serializers.CharField(required=False, allow_blank=True, max_length=200)
     research_interests = serializers.CharField(required=False, allow_blank=True)
-    h_index = serializers.IntegerField(required=False, min_value=0, default=0)
     email = serializers.EmailField(required=False, allow_blank=True)
     avatar_url = serializers.URLField(required=False, allow_blank=True)
     contact_phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
@@ -216,7 +368,6 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             "bio",
             "discipline",
             "research_interests",
-            "h_index",
             "password",
             "confirm_password",
             "initial_password",
@@ -225,7 +376,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             "username": {"read_only": True},
             "real_name": {"required": True},
             "department": {"required": True},
-            "title": {"required": True},
+            "title": {"required": False},
         }
 
     def validate_employee_id(self, value):
@@ -240,6 +391,12 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("该工号已被占用为登录账号。")
 
         return value
+
+    def validate_contact_phone(self, value: str):
+        normalized = (value or "").strip()
+        if normalized and not is_valid_contact_phone(normalized):
+            raise serializers.ValidationError("联系电话必须为 11 位手机号。")
+        return normalized
 
     def validate(self, attrs):
         employee_id = attrs.get("employee_id", "")
@@ -263,6 +420,36 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         if is_college_admin_user(request_user):
             attrs["department"] = request_user.department or ""
 
+        try:
+            attrs["department"] = validate_existing_college_department(attrs.get("department"))
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError({"department": exc.detail}) from exc
+
+        title = normalize_title(attrs.get("title"))
+        email = (attrs.get("email") or "").strip()
+        contact_phone = (attrs.get("contact_phone") or "").strip()
+        if requested_role_code == "teacher":
+            if not title:
+                raise serializers.ValidationError({"title": "请选择教师职称。"})
+            if not is_valid_teacher_professional_title(title):
+                raise serializers.ValidationError({"title": "教师职称需从系统预设选项中选择。"})
+            if not email:
+                raise serializers.ValidationError({"email": "创建教师账号时必须填写个人邮箱。"})
+            if not contact_phone:
+                raise serializers.ValidationError({"contact_phone": "创建教师账号时必须填写联系电话。"})
+        else:
+            title = "学院管理员"
+            attrs["research_direction"] = []
+            attrs["bio"] = ""
+            attrs["discipline"] = ""
+            attrs["research_interests"] = ""
+            attrs["email"] = email
+            attrs["contact_phone"] = contact_phone
+        attrs["title"] = title
+        attrs["email"] = email
+        attrs["contact_phone"] = contact_phone
+        attrs["role_code"] = requested_role_code
+
         if not is_admin_creation and not password:
             raise serializers.ValidationError({"password": "教师自助注册时必须设置登录密码。"})
 
@@ -284,7 +471,6 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         employee_id = int(validated_data.pop("employee_id"))
         discipline = validated_data.pop("discipline", "")
         research_interests = validated_data.pop("research_interests", "")
-        h_index = validated_data.pop("h_index", 0)
         password = validated_data.pop("password", "") or DEFAULT_TEACHER_PASSWORD
         validated_data.pop("confirm_password", None)
 
@@ -293,7 +479,7 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
         is_admin_creation = bool(request and is_admin_user(request_user))
         login_account = str(employee_id)
         if is_college_admin_user(request_user):
-            validated_data["department"] = request_user.department or ""
+            validated_data["department"] = validate_existing_college_department(request_user.department)
         user_model = get_user_model()
         user = user_model(
             id=employee_id,
@@ -315,12 +501,16 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
                 "title": user.title or "",
                 "discipline": discipline,
                 "research_interests": research_interests,
-                "h_index": h_index,
             },
         )
 
         if is_admin_creation:
             user.initial_password = password
+            ensure_password_change_notification(
+                user,
+                temporary_password=password,
+                created_by_admin=True,
+            )
 
         return user
 
@@ -334,6 +524,91 @@ class TeacherCreateSerializer(serializers.ModelSerializer):
 class TeacherUpdateSerializer(CurrentUserUpdateSerializer):
     class Meta(CurrentUserUpdateSerializer.Meta):
         fields = CurrentUserUpdateSerializer.Meta.fields + ("is_active",)
+
+
+class TeacherTitleChangeRequestSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    teacher_id = serializers.IntegerField(source="teacher.id", read_only=True)
+    teacher_name = serializers.CharField(source="teacher.real_name", read_only=True)
+    teacher_employee_id = serializers.CharField(source="teacher.username", read_only=True)
+    teacher_department = serializers.CharField(source="teacher.department", read_only=True)
+    reviewer_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeacherTitleChangeRequest
+        fields = (
+            "id",
+            "teacher_id",
+            "teacher_name",
+            "teacher_employee_id",
+            "teacher_department",
+            "current_title",
+            "requested_title",
+            "apply_reason",
+            "status",
+            "status_label",
+            "review_comment",
+            "reviewer_name",
+            "created_at",
+            "reviewed_at",
+        )
+
+    def get_reviewer_name(self, obj):
+        if not obj.reviewer_id:
+            return ""
+        return obj.reviewer.real_name or obj.reviewer.username
+
+
+class TeacherTitleChangeRequestCreateSerializer(serializers.Serializer):
+    requested_title = serializers.CharField(max_length=50)
+    apply_reason = serializers.CharField(required=False, allow_blank=True, max_length=300)
+
+    default_error_messages = {
+        "same_title": "申请职称与当前职称一致，无需提交审核。",
+        "pending_exists": "已有待审核的职称变更申请，请等待学院管理员处理。",
+    }
+
+    def validate_requested_title(self, value):
+        normalized = normalize_title(value)
+        if not is_valid_teacher_professional_title(normalized):
+            raise serializers.ValidationError("申请职称需从系统预设选项中选择。")
+        return normalized
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        current_title = normalize_title(getattr(user, "title", ""))
+        requested_title = attrs["requested_title"]
+
+        if requested_title == current_title:
+            raise serializers.ValidationError({"requested_title": self.error_messages["same_title"]})
+
+        has_pending = TeacherTitleChangeRequest.objects.filter(
+            teacher=user,
+            status=TeacherTitleChangeRequest.STATUS_PENDING,
+        ).exists()
+        if has_pending:
+            raise serializers.ValidationError({"detail": self.error_messages["pending_exists"]})
+
+        attrs["current_title"] = current_title
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context["request"].user
+        return TeacherTitleChangeRequest.objects.create(
+            teacher=user,
+            current_title=validated_data["current_title"],
+            requested_title=validated_data["requested_title"],
+            apply_reason=(validated_data.get("apply_reason") or "").strip(),
+            status=TeacherTitleChangeRequest.STATUS_PENDING,
+        )
+
+
+class TeacherTitleChangeRequestReviewSerializer(serializers.Serializer):
+    review_comment = serializers.CharField(required=False, allow_blank=True, max_length=300)
+
+
+class TeacherTitleChangeRequestRejectSerializer(serializers.Serializer):
+    review_comment = serializers.CharField(required=True, allow_blank=False, max_length=300)
 
 
 class PasswordChangeSerializer(serializers.Serializer):
@@ -370,85 +645,138 @@ class PasswordChangeSerializer(serializers.Serializer):
     def save(self, **kwargs):
         user = self.context["request"].user
         set_user_password(user, self.validated_data["new_password"], require_password_change=False)
+        clear_password_change_notifications(user)
         return user
 
 
-class ForgotPasswordResetSerializer(serializers.Serializer):
+class ForgotPasswordCodeSerializer(serializers.Serializer):
     employee_id = serializers.CharField()
-    real_name = serializers.CharField()
-    department = serializers.CharField()
+    reset_via = serializers.ChoiceField(choices=("phone", "email"))
 
     default_error_messages = {
-        "identity_mismatch": "工号、姓名与所属学院不匹配，请重新确认。",
-        "admin_account": "管理员账号不支持通过该入口找回密码，请联系系统管理员处理。",
-        "no_college_admin": "该学院暂无可处理的学院管理员，请联系系统管理员。",
+        "identity_mismatch": "工号与绑定信息不匹配，请重新确认。",
+        "admin_account": "管理员账号不支持通过该入口找回密码，请联系上级管理员处理。",
+        "inactive_account": "当前账号已停用，请联系管理员处理。",
+        "missing_phone": "当前账号尚未绑定手机号，暂时无法通过手机号找回密码。",
+        "missing_email": "当前账号尚未绑定邮箱，暂时无法通过邮箱找回密码。",
     }
 
     def validate_employee_id(self, value):
-        if not re.fullmatch(r"\d{6}", value):
+        normalized = (value or "").strip()
+        if not re.fullmatch(r"\d{6}", normalized):
             raise serializers.ValidationError("工号必须是 6 位数字。")
-        return value
+        return normalized
 
     def validate(self, attrs):
         user_model = get_user_model()
-        login_account = attrs["employee_id"].strip()
-        department = (attrs.get("department") or "").strip()
+        employee_id = attrs["employee_id"]
+        reset_via = attrs["reset_via"]
         try:
-            user = user_model.objects.get(id=int(attrs["employee_id"]), username=login_account)
+            user = user_model.objects.get(id=int(employee_id), username=employee_id)
         except user_model.DoesNotExist as exc:
             raise serializers.ValidationError({"detail": self.error_messages["identity_mismatch"]}) from exc
 
         if is_admin_user(user):
             raise serializers.ValidationError({"detail": self.error_messages["admin_account"]})
+        if not user.is_active:
+            raise serializers.ValidationError({"detail": self.error_messages["inactive_account"]})
 
-        if (user.real_name or "").strip() != attrs["real_name"].strip():
-            raise serializers.ValidationError({"detail": self.error_messages["identity_mismatch"]})
-        if (user.department or "").strip() != department:
-            raise serializers.ValidationError({"detail": self.error_messages["identity_mismatch"]})
-
-        admins = list(
-            user_model.objects.filter(
-                is_active=True,
-                is_staff=True,
-                is_superuser=False,
-                department=department,
-            ).order_by("id")
-        )
-        if not admins:
-            raise serializers.ValidationError({"detail": self.error_messages["no_college_admin"]})
+        if reset_via == "phone":
+            contact_value = (getattr(user, "contact_phone", "") or "").strip()
+            if not contact_value:
+                raise serializers.ValidationError({"detail": self.error_messages["missing_phone"]})
+        else:
+            contact_value = (getattr(user, "email", "") or "").strip()
+            if not contact_value:
+                raise serializers.ValidationError({"detail": self.error_messages["missing_email"]})
 
         attrs["user"] = user
-        attrs["college_admins"] = admins
-        attrs["department"] = department
+        attrs["contact_value"] = contact_value
+        return attrs
+
+    def save(self, **kwargs):
+        employee_id = self.validated_data["employee_id"]
+        reset_via = self.validated_data["reset_via"]
+        contact_value = self.validated_data["contact_value"]
+        contact_masked = mask_contact_value(contact_value, reset_via)
+        verification_code = generate_local_verification_code()
+        cache.set(
+            build_forgot_password_cache_key(employee_id, reset_via),
+            verification_code,
+            FORGOT_PASSWORD_CODE_TTL_SECONDS,
+        )
+        terminal_message = (
+            "[ForgotPasswordCode] "
+            f"employee_id={employee_id} reset_via={reset_via} "
+            f"contact={contact_masked} code={verification_code} "
+            f"ttl_seconds={FORGOT_PASSWORD_CODE_TTL_SECONDS}"
+        )
+        print(terminal_message, flush=True)
+        return {
+            "employee_id": employee_id,
+            "reset_via": reset_via,
+            "ttl_seconds": FORGOT_PASSWORD_CODE_TTL_SECONDS,
+            "contact_masked": contact_masked,
+            "delivery_hint": "验证码已输出到后端运行终端，请在终端查看后输入。",
+        }
+
+
+class ForgotPasswordConfirmSerializer(serializers.Serializer):
+    employee_id = serializers.CharField()
+    reset_via = serializers.ChoiceField(choices=("phone", "email"))
+    verification_code = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    confirm_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+
+    default_error_messages = {
+        "identity_mismatch": "工号与绑定信息不匹配，请重新确认。",
+        "admin_account": "管理员账号不支持通过该入口找回密码，请联系上级管理员处理。",
+        "inactive_account": "当前账号已停用，请联系管理员处理。",
+        "invalid_code": "验证码无效或已过期，请重新获取。",
+    }
+
+    def validate_employee_id(self, value):
+        normalized = (value or "").strip()
+        if not re.fullmatch(r"\d{6}", normalized):
+            raise serializers.ValidationError("工号必须是 6 位数字。")
+        return normalized
+
+    def validate(self, attrs):
+        user_model = get_user_model()
+        employee_id = attrs["employee_id"]
+        reset_via = attrs["reset_via"]
+        try:
+            user = user_model.objects.get(id=int(employee_id), username=employee_id)
+        except user_model.DoesNotExist as exc:
+            raise serializers.ValidationError({"employee_id": self.error_messages["identity_mismatch"]}) from exc
+
+        if is_admin_user(user):
+            raise serializers.ValidationError({"detail": self.error_messages["admin_account"]})
+        if not user.is_active:
+            raise serializers.ValidationError({"detail": self.error_messages["inactive_account"]})
+
+        cached_code = cache.get(build_forgot_password_cache_key(employee_id, reset_via))
+        if not cached_code or str(cached_code) != (attrs.get("verification_code") or "").strip():
+            raise serializers.ValidationError({"verification_code": self.error_messages["invalid_code"]})
+
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "两次输入的新密码不一致。"})
+        if user.check_password(attrs["new_password"]):
+            raise serializers.ValidationError({"new_password": "新密码不能与当前密码相同。"})
+
+        validate_password(attrs["new_password"], user=user)
+        attrs["user"] = user
         return attrs
 
     def save(self, **kwargs):
         user = self.validated_data["user"]
-        admins = self.validated_data["college_admins"]
-        department = self.validated_data["department"]
-        requester_name = (user.real_name or user.username or "").strip()
-
-        bulk_create_user_notifications(
-            recipients=admins,
-            sender=None,
-            category=UserNotification.CATEGORY_PASSWORD_RESET_REQUEST,
-            title="收到教师密码重置申请",
-            content_builder=lambda recipient: (
-                f"教师 {requester_name}（工号 {user.username}）提交了密码重置申请，"
-                f"学院：{department}。请在教师总览中筛选并执行重置密码。"
-            ),
-            action_path="/teachers",
-            action_query_builder=lambda recipient: {
-                "focus": str(user.id),
-                "keyword": user.username,
-                "source": "password_reset_request",
-            },
-            payload_builder=lambda recipient: {
-                "teacher_id": user.id,
-                "employee_id": user.username,
-                "real_name": requester_name,
-                "department": department,
-            },
+        set_user_password(user, self.validated_data["new_password"], require_password_change=False)
+        clear_password_change_notifications(user)
+        cache.delete(
+            build_forgot_password_cache_key(
+                self.validated_data["employee_id"],
+                self.validated_data["reset_via"],
+            )
         )
         return user
 

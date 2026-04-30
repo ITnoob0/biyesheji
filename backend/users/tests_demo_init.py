@@ -6,7 +6,7 @@ from django.test import TestCase
 
 from achievements.models import Paper
 from project_guides.models import ProjectGuide
-from users.serializers import DEFAULT_TEACHER_PASSWORD
+from users.management.commands.init_demo_teachers import Command as InitDemoTeachersCommand
 
 
 class DemoInitializationCommandTests(TestCase):
@@ -47,7 +47,7 @@ class DemoInitializationCommandTests(TestCase):
         call_command("init_demo_teachers", reset_demo_data=True)
 
         restored_teacher = user_model.objects.get(id=100001)
-        self.assertTrue(restored_teacher.check_password(DEFAULT_TEACHER_PASSWORD))
+        self.assertTrue(restored_teacher.check_password(InitDemoTeachersCommand.DEMO_ACCOUNT_PASSWORD))
         self.assertTrue(restored_teacher.password_reset_required)
         self.assertFalse(Paper.objects.filter(doi="10.2026/demo-reset-extra-paper").exists())
         self.assertEqual(ProjectGuide.objects.filter(source_url__startswith="https://demo.local/guides/").count(), 4)
@@ -68,9 +68,9 @@ class DemoInitializationCommandTests(TestCase):
 
         teacher.refresh_from_db()
         admin.refresh_from_db()
-        self.assertTrue(teacher.check_password(DEFAULT_TEACHER_PASSWORD))
+        self.assertTrue(teacher.check_password(InitDemoTeachersCommand.DEMO_ACCOUNT_PASSWORD))
         self.assertTrue(teacher.password_reset_required)
-        self.assertTrue(admin.check_password("Admin123456"))
+        self.assertTrue(admin.check_password(InitDemoTeachersCommand.DEMO_ACCOUNT_PASSWORD))
 
     def test_print_accounts_outputs_demo_account_summary(self):
         stdout = StringIO()

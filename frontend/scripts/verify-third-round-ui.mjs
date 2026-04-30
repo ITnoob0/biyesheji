@@ -1,4 +1,4 @@
-import { resolvePostLoginRedirect } from '../src/utils/sessionFlow.js'
+﻿import { resolvePostLoginRedirect } from '../src/utils/sessionFlow.js'
 import {
   buildAccountLifecycleHint,
   buildAdminRouteNotice,
@@ -103,7 +103,6 @@ const verifyPaperLifecycleHelpers = () => {
       published_issue: '',
       pages: '',
       source_url: '',
-      citation_count: 0,
       is_first_author: true,
       is_representative: false,
       doi: '10.1000/repeat-doi',
@@ -134,7 +133,6 @@ const verifyPaperLifecycleHelpers = () => {
     published_issue: '',
     pages: '',
     source_url: '',
-    citation_count: 0,
     is_first_author: true,
     is_representative: false,
     doi: '',
@@ -160,7 +158,7 @@ const verifyGraphFallbackSummary = () => {
     notice: '当前图谱已自动回退到 MySQL 关系数据展示。',
     fallback_tip: '当前已使用 MySQL 关系数据继续展示图谱主体与轻量分析。',
     calculation_note: '当前图分析主要依据教师成果、合作作者与论文关键词进行轻量统计。',
-    source_scope_note: '当前图谱覆盖教师、论文、合作者、关键词以及项目、知识产权、教学成果和学术服务等节点。',
+    source_scope_note: '当前图谱覆盖教师、论文、合作者、关键词以及项目、知识产权和学术服务等节点。',
     degradation_note: '当前图谱已按 MySQL 回退链路提供主体展示与轻量分析，不执行复杂图计算。',
     interaction_note: '当前节点交互、路径说明与圈层概览只在当前已加载子图内解释。',
   })

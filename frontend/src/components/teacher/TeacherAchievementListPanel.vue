@@ -153,7 +153,6 @@ const resolveAchievementTagType = (type: string): 'success' | 'warning' | 'info'
     paper: 'success',
     project: 'primary',
     intellectual_property: 'warning',
-    teaching_achievement: 'info',
     academic_service: 'danger',
   }
   return mapping[type] || 'info'

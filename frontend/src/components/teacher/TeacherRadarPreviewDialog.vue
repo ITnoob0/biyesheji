@@ -10,10 +10,25 @@
     <template #header>
       <div class="dialog-head">
         <div>
-          <strong>{{ teacherName || '教师' }} · 综合能力雷达评估</strong>
+          <strong>{{ teacherName || '教师' }} · 科研积分结构雷达</strong>
           <p>管理员侧可按年份查看画像，并叠加同侪基准线，不跳转离开当前管理页面。</p>
         </div>
         <div class="dialog-controls">
+          <el-select
+            v-model="selectedRuleVersionId"
+            class="control-item rule-version-select"
+            size="small"
+            placeholder="规则版本"
+            @change="loadPortraitAnalysis"
+          >
+            <el-option label="全部版本" value="all" />
+            <el-option
+              v-for="version in ruleVersionOptions"
+              :key="version.id"
+              :label="version.name"
+              :value="version.id"
+            />
+          </el-select>
           <el-select
             v-model="selectedYear"
             class="control-item year-select"
@@ -41,6 +56,9 @@
           <el-tag size="small" effect="plain" class="control-item">
             {{ activeScope === 'university' ? '当前：全校平均' : '当前：本院平均' }}
           </el-tag>
+          <el-tag v-if="ruleVersionScope?.active_version" size="small" effect="plain" class="control-item">
+            启用：{{ ruleVersionScope.active_version.name }}
+          </el-tag>
         </div>
       </div>
     </template>
@@ -60,8 +78,17 @@
                 <span class="insight-name">{{ insight.name }}</span>
                 <el-tag size="small" :type="getLevelType(insight.level)" effect="plain">{{ insight.level }}</el-tag>
               </div>
-              <div class="insight-score">评分 {{ insight.value }} 分 · 权重 {{ insight.weight }}%</div>
-              <div class="insight-desc">{{ insight.source_description }}</div>
+              <div class="insight-score">雷达展示分 {{ insight.value }} 分 · 原始积分 {{ insight.raw_score ?? 0 }} 分</div>
+              <div class="insight-rule-box">
+                <div class="insight-rule-row">
+                  <span class="insight-rule-label">纳入大类</span>
+                  <span class="insight-rule-text">{{ insight.source_description }}</span>
+                </div>
+                <div class="insight-rule-row">
+                  <span class="insight-rule-label">转换公式</span>
+                  <span class="insight-rule-text">{{ insight.formula_note }}</span>
+                </div>
+              </div>
               <div class="insight-tags">
                 <el-tag v-for="(tag, idx) in insight.evidence" :key="idx" size="small" type="info" effect="plain">
                   {{ tag }}
@@ -86,10 +113,26 @@ interface DimensionInsight {
   name: string
   value: number
   weight: number
+  raw_score?: number
+  score_role?: string
   level: string
   formula_note: string
   source_description: string
   evidence: string[]
+}
+
+interface RuleVersionOption {
+  id: number
+  name: string
+  score_total?: number
+}
+
+interface RuleVersionScope {
+  selected_rule_version_id?: number | null
+  is_all_versions: boolean
+  selected_version?: RuleVersionOption | null
+  active_version?: RuleVersionOption | null
+  available_versions: RuleVersionOption[]
 }
 
 interface PortraitAnalysisResponse {
@@ -101,6 +144,7 @@ interface PortraitAnalysisResponse {
   benchmark_data?: {
     active_scope?: 'college' | 'university'
   }
+  rule_version_scope?: RuleVersionScope
 }
 
 const props = defineProps<{
@@ -122,7 +166,10 @@ const availableYears = ref<number[]>([new Date().getFullYear()])
 const benchmarkScope = ref<'college' | 'university'>('college')
 const activeScope = ref<'college' | 'university'>('college')
 const currentUser = ref<SessionUser | null>(null)
+const selectedRuleVersionId = ref<string | number>('all')
+const ruleVersionScope = ref<RuleVersionScope | null>(null)
 const isSystemAdmin = computed(() => currentUser.value?.role_code === 'admin')
+const ruleVersionOptions = computed(() => ruleVersionScope.value?.available_versions ?? [])
 
 const getLevelType = (level: string) => {
   if (level === '优势维度') return 'success'
@@ -146,6 +193,7 @@ const loadPortraitAnalysis = async () => {
         user_id: props.teacherId,
         year: selectedYear.value,
         scope: isSystemAdmin.value ? benchmarkScope.value : 'college',
+        ...(selectedRuleVersionId.value === 'all' ? {} : { rule_version: selectedRuleVersionId.value }),
       },
     })
     radarData.value = data?.radar_dimensions ?? []
@@ -157,6 +205,12 @@ const loadPortraitAnalysis = async () => {
       .filter(item => Number.isFinite(item))
     if (!availableYears.value.length) {
       availableYears.value = [selectedYear.value]
+    }
+    if (data?.rule_version_scope) {
+      ruleVersionScope.value = data.rule_version_scope
+      selectedRuleVersionId.value = data.rule_version_scope.is_all_versions
+        ? 'all'
+        : data.rule_version_scope.selected_rule_version_id || 'all'
     }
     activeScope.value = data?.benchmark_data?.active_scope === 'university' ? 'university' : 'college'
   } finally {
@@ -170,6 +224,7 @@ watch(
     if (!visible || !teacherId) return
     selectedYear.value = new Date().getFullYear()
     benchmarkScope.value = 'college'
+    selectedRuleVersionId.value = 'all'
     await loadPortraitAnalysis()
   },
   { immediate: true },
@@ -215,6 +270,10 @@ watch(
 
 .year-select {
   width: 120px;
+}
+
+.rule-version-select {
+  width: 180px;
 }
 
 .dialog-body {
@@ -266,13 +325,61 @@ watch(
   margin-bottom: 10px;
 }
 
+.insight-rule-box {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(64, 158, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(64, 158, 255, 0.05);
+}
+
+.insight-rule-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.insight-rule-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(64, 158, 255, 0.12);
+  color: #409eff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.insight-rule-text {
+  min-width: 0;
+  color: var(--text-secondary, #606266);
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
 .insight-tags {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
 .insight-tags .el-tag {
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  justify-content: center;
+  padding: 4px 8px;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
   background: rgba(64, 158, 255, 0.08);
   border-color: rgba(64, 158, 255, 0.2);
   color: #409eff;
@@ -286,6 +393,19 @@ watch(
 
   .dialog-controls {
     justify-content: flex-start;
+  }
+
+  .insights-grid,
+  .insight-tags {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-rule-row {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-rule-label {
+    width: fit-content;
   }
 }
 </style>

@@ -1,4 +1,4 @@
-export interface AcademyStatisticItem {
+﻿export interface AcademyStatisticItem {
   title: string
   value: number
   suffix?: string
@@ -15,6 +15,8 @@ export interface YearlyTrendRecord {
   teaching_count: number
   service_count: number
   achievement_total: number
+  total_score?: number
+  active_teacher_count?: number
 }
 
 export interface ScopeComparisonTrendRecord {
@@ -23,6 +25,8 @@ export interface ScopeComparisonTrendRecord {
   baseline_achievement_total: number
   scope_paper_count: number
   baseline_paper_count: number
+  scope_total_score?: number
+  baseline_total_score?: number
 }
 
 export interface DepartmentDistributionRecord {
@@ -40,12 +44,19 @@ export interface TopActiveTeacherRecord {
   ip_count: number
   teaching_count: number
   service_count: number
+  award_transform_count?: number
+  platform_pop_count?: number
   collaboration_count: number
-  citation_total: number
   achievement_total: number
+  pending_count?: number
   latest_active_year: number | null
   rank_value: number
   rank_label: string
+  paper_book_score?: number
+  project_score?: number
+  award_transform_score?: number
+  platform_pop_score?: number
+  total_score?: number
 }
 
 export interface CollaborationOverview {
@@ -103,7 +114,8 @@ export interface DepartmentBreakdownRecord {
   teaching_count: number
   service_count: number
   collaboration_count: number
-  citation_total: number
+  score_total?: number
+  pending_count?: number
 }
 
 export interface AcademyTrendSummary {
@@ -127,11 +139,14 @@ export interface AcademyComparisonSummary {
   achievement_share: number
   collaboration_total: number
   collaboration_density: number
+  score_total?: number
+  score_share?: number
   description: string
 }
 
 export interface AcademyOverviewResponse {
   statistics: AcademyStatisticItem[]
+  score_statistics?: AcademyStatisticItem[]
   yearly_trend: YearlyTrendRecord[]
   comparison_trend: ScopeComparisonTrendRecord[]
   trend_summary: AcademyTrendSummary
@@ -172,8 +187,11 @@ export interface AcademyOverviewResponse {
       ip_count: number
       teaching_count: number
       service_count: number
-      citation_total: number
       collaboration_count: number
+      total_score?: number
+      award_transform_count?: number
+      platform_pop_count?: number
+      pending_count?: number
     } | null
     teacher_recent_achievements: Array<{
       type: string
@@ -182,15 +200,18 @@ export interface AcademyOverviewResponse {
       department: string
       date_acquired: string
       detail: string
+      score_value?: number
     }>
   }
   recent_scope_records: Array<{
     type: string
+    type_label?: string
     title: string
     teacher_name: string
     department: string
     date_acquired: string
     detail: string
+    score_value?: number
   }>
   data_meta: AcademyDataMeta
   active_filters: AcademyActiveFilters

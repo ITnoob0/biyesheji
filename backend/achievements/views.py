@@ -58,7 +58,7 @@ from .models import (
     PaperKeyword,
     Project,
     ResearchKeyword,
-    TeachingAchievement,
+    RuleBasedAchievement,
 )
 from .portrait_analysis import (
     calculate_benchmark_scores,
@@ -67,6 +67,7 @@ from .portrait_analysis import (
     build_portrait_explanation,
     build_portrait_report,
     build_recent_structure,
+    build_rule_version_scope,
     invalidate_benchmark_score_cache,
     resolve_portrait_payload,
     build_snapshot_boundary,
@@ -74,7 +75,6 @@ from .portrait_analysis import (
     export_portrait_report_markdown,
 )
 from .scoring_engine import TeacherScoringEngine
-from .services import build_teacher_related_paper_queryset, sync_paper_claim_invitations
 from .serializers import (
     AcademicServiceSerializer,
     AchievementClaimAcceptSerializer,
@@ -88,7 +88,6 @@ from .serializers import (
     PaperRepresentativeBatchSerializer,
     PaperSerializer,
     ProjectSerializer,
-    TeachingAchievementSerializer,
 )
 from .visibility import APPROVED_STATUS, approved_queryset
 
@@ -117,14 +116,27 @@ def parse_int_query_param(value: str, *, minimum: int | None = None) -> int | No
     return parsed
 
 
-def build_portrait_dimension_insights_for_year(*, user, selected_year: int, portrait_payload: dict) -> list[dict]:
+def parse_rule_version_query_param(value: str) -> int | None:
+    raw = (value or '').strip().lower()
+    if raw in {'', 'all', 'current'}:
+        return None
+    return parse_int_query_param(raw, minimum=1)
+
+
+def build_portrait_dimension_insights_for_year(
+    *,
+    user,
+    selected_year: int,
+    portrait_payload: dict,
+    rule_version_id: int | None = None,
+) -> list[dict]:
     source = portrait_payload.get('source')
     current_year = timezone.now().year
     if source != 'snapshot':
         metrics = (
-            TeacherScoringEngine.collect_metrics(user)
+            TeacherScoringEngine.collect_metrics(user, rule_version_id=rule_version_id)
             if selected_year >= current_year
-            else TeacherScoringEngine.collect_metrics(user, year=selected_year)
+            else TeacherScoringEngine.collect_metrics(user, year=selected_year, rule_version_id=rule_version_id)
         )
         return TeacherScoringEngine.build_dimension_insights(metrics)
 
@@ -144,7 +156,9 @@ def build_portrait_dimension_insights_for_year(*, user, selected_year: int, port
                 'key': key,
                 'name': label,
                 'value': value,
-                'weight': round(TeacherScoringEngine.WEIGHTS.get(key, 0) * 100, 1),
+                'weight': 0.0,
+                'raw_score': value,
+                'score_role': 'snapshot_display_only',
                 'level': level,
                 'formula_note': TeacherScoringEngine.DIMENSION_FORMULAS.get(key, ''),
                 'source_description': f'{selected_year} 年历史快照维度固化结果。',
@@ -172,7 +186,6 @@ def build_achievement_operation_snapshot(achievement_type: str, instance) -> tup
             '期刊/会议': instance.journal_name,
             '时间': normalize_operation_value(instance.date_acquired),
             'DOI': instance.doi,
-            '引用次数': normalize_operation_value(instance.citation_count),
         }
         return payload, instance.journal_name
 
@@ -197,17 +210,6 @@ def build_achievement_operation_snapshot(achievement_type: str, instance) -> tup
             '时间': normalize_operation_value(instance.date_acquired),
         }
         return payload, f"{instance.get_ip_type_display()} / {instance.get_role_display()}"
-
-    if achievement_type == 'teaching-achievements':
-        payload = {
-            '成果名称': instance.title,
-            '教学成果类型': instance.get_achievement_type_display(),
-            '角色': instance.get_role_display(),
-            '级别': instance.level,
-            '时间': normalize_operation_value(instance.date_acquired),
-        }
-        return payload, f"{instance.get_achievement_type_display()} / {instance.get_role_display()} / {instance.level}"
-
     if achievement_type == 'academic-services':
         payload = {
             '服务名称': instance.title,
@@ -216,6 +218,18 @@ def build_achievement_operation_snapshot(achievement_type: str, instance) -> tup
             '时间': normalize_operation_value(instance.date_acquired),
         }
         return payload, instance.organization
+
+    if achievement_type == 'rule-achievements':
+        payload = {
+            '成果名称': instance.title,
+            '规则分类': getattr(instance, 'category_name_snapshot', '') or getattr(getattr(instance, 'category', None), 'name', ''),
+            '规则条目': getattr(instance, 'rule_title_snapshot', '') or getattr(getattr(instance, 'rule_item', None), 'title', ''),
+            '时间': normalize_operation_value(instance.date_acquired),
+            '预估积分': normalize_operation_value(getattr(instance, 'provisional_score', '')),
+            '生效积分': normalize_operation_value(getattr(instance, 'final_score', '')),
+        }
+        detail = f"{payload['规则分类']} / {payload['规则条目']}".strip(' /')
+        return payload, detail
 
     return {'标题': getattr(instance, 'title', '')}, ''
 
@@ -282,36 +296,31 @@ def get_requested_teacher(request, user_id: int | None = None):
     return request.user
 
 
-def get_portrait_data_meta(user):
+def get_portrait_data_meta(user, rule_version_id: int | None = None):
     created_candidates = []
-    latest_related_paper_created_at = (
-        build_teacher_related_paper_queryset(user, approved_only=True, include_claimed=True)
-        .order_by('-created_at')
-        .values_list('created_at', flat=True)
-        .first()
-    )
-    if latest_related_paper_created_at:
-        created_candidates.append(latest_related_paper_created_at)
-
-    for model in (Project, IntellectualProperty, TeachingAchievement, AcademicService):
-        latest = (
-            approved_queryset(model.objects.filter(teacher=user))
-            .order_by('-created_at')
-            .values_list('created_at', flat=True)
-            .first()
-        )
-        if latest:
-            created_candidates.append(latest)
+    latest_queryset = RuleBasedAchievement.objects.filter(teacher=user, status=APPROVED_STATUS)
+    if rule_version_id is not None:
+        latest_queryset = latest_queryset.filter(version_id=rule_version_id)
+    latest_rule_achievement_created_at = latest_queryset.order_by('-created_at').values_list('created_at', flat=True).first()
+    if latest_rule_achievement_created_at:
+        created_candidates.append(latest_rule_achievement_created_at)
 
     latest_created_at = max(created_candidates) if created_candidates else None
     return {
         'updated_at': latest_created_at.isoformat() if latest_created_at else None,
-        'source_note': '教师基础档案与论文、项目、知识产权、教学成果、学术服务实时聚合；关键词与合作画像仍主要基于论文数据；图谱分析继续保留 Neo4j 可选、MySQL 回退链路。',
+        'source_note': '教师基础档案与学院审核通过的规则化科研成果实时聚合；关键词与合作画像仍主要基于论文类事实字段。',
         'acceptance_scope': '本能力纳入当前阶段验收。',
     }
 
 
-def build_peer_benchmark_payload(*, target_user, request_user, year: int | None = None, scope: str = 'college'):
+def build_peer_benchmark_payload(
+    *,
+    target_user,
+    request_user,
+    year: int | None = None,
+    scope: str = 'college',
+    rule_version_id: int | None = None,
+):
     department_name = (target_user.department or '').strip()
     normalized_scope = scope if scope in {'college', 'university'} else 'college'
     forced_scope = normalized_scope
@@ -330,6 +339,7 @@ def build_peer_benchmark_payload(*, target_user, request_user, year: int | None 
         scope='college',
         college_id=department_name,
         year=year,
+        rule_version_id=rule_version_id,
     )
     response_payload = {
         'benchmark_mode': 'college_average_only',
@@ -346,8 +356,9 @@ def build_peer_benchmark_payload(*, target_user, request_user, year: int | None 
         university_average_data = calculate_benchmark_scores(
             scope='university',
             year=year,
+            rule_version_id=rule_version_id,
         )
-        college_comparison_data = calculate_college_comparison_scores(year=year)
+        college_comparison_data = calculate_college_comparison_scores(year=year, rule_version_id=rule_version_id)
         response_payload.update(
             {
                 'benchmark_mode': 'college_and_university_available',
@@ -372,7 +383,7 @@ def build_recent_achievements(user, limit: int = 6):
                 'title': paper.title,
                 'date_acquired': paper.date_acquired.isoformat(),
                 'detail': f'{paper.get_paper_type_display()} / {paper.journal_name}',
-                'highlight': '代表作' if paper.is_representative else f'引用 {paper.citation_count} 次',
+                'highlight': '代表作' if paper.is_representative else '已收录',
             }
         )
 
@@ -402,19 +413,6 @@ def build_recent_achievements(user, limit: int = 6):
             }
         )
 
-    for item in TeachingAchievement.objects.filter(teacher=user).order_by('-date_acquired', '-created_at')[:limit]:
-        recent_records.append(
-            {
-                'id': item.id,
-                'type': 'teaching_achievement',
-                'type_label': '教学成果',
-                'title': item.title,
-                'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_achievement_type_display()} / {item.level}',
-                'highlight': '育人成果',
-            }
-        )
-
     for item in AcademicService.objects.filter(teacher=user).order_by('-date_acquired', '-created_at')[:limit]:
         recent_records.append(
             {
@@ -431,145 +429,50 @@ def build_recent_achievements(user, limit: int = 6):
     return sorted(recent_records, key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
 
 
-def build_all_achievements(user):
-    achievement_records = []
-
-    def format_author_rank_label(*, rank: int | None, is_corresponding: bool) -> str:
-        parts = []
-        if rank:
-            parts.append(f'第{rank}作者')
-        if is_corresponding:
-            parts.append('通讯作者')
-        return ' / '.join(parts) if parts else '合作作者'
-
-    paper_queryset = build_teacher_related_paper_queryset(user, approved_only=True, include_claimed=True).order_by(
-        '-date_acquired',
-        '-created_at',
+def build_all_achievements(user, rule_version_id: int | None = None):
+    base_queryset = (
+        RuleBasedAchievement.objects.select_related('category', 'rule_item')
+        .filter(teacher=user, status=APPROVED_STATUS)
+        .order_by('-date_acquired', '-created_at')
     )
-    paper_list = list(paper_queryset)
-    accepted_claim_map = {
-        item.achievement_id: item
-        for item in AchievementClaim.objects.filter(
-            target_user=user,
-            status__in=['ACCEPTED', 'CONFLICT'],
-            achievement_id__in=[paper.id for paper in paper_list],
-        ).order_by('-id')
-    }
-    for paper in paper_list:
-        is_representative = bool(paper.is_representative)
-        is_owner = paper.teacher_id == user.id
-        accepted_claim = accepted_claim_map.get(paper.id)
-        claimed_rank = accepted_claim.confirmed_author_rank if accepted_claim else None
-        claimed_is_corresponding = (
-            bool(accepted_claim.confirmed_is_corresponding)
-            if accepted_claim is not None
-            else False
-        )
-        if claimed_rank is None and accepted_claim is not None:
-            claimed_rank = accepted_claim.proposed_author_rank
-        if accepted_claim is not None and accepted_claim.confirmed_author_rank is None:
-            claimed_is_corresponding = bool(accepted_claim.proposed_is_corresponding)
+    if rule_version_id is not None:
+        base_queryset = base_queryset.filter(version_id=rule_version_id)
+    queryset = TeacherScoringEngine._dedup_records(
+        base_queryset
+    )
+    achievement_records = []
+    for item in queryset:
+        author_rank_label = '未区分排名'
+        author_rank_category = 'unspecified'
+        if item.author_rank:
+            author_rank_label = f'第{item.author_rank}完成人'
+            author_rank_category = 'lead' if item.author_rank == 1 else 'participating'
+        elif item.role_text:
+            author_rank_label = item.role_text
+            author_rank_category = 'lead' if '负责' in item.role_text or '主持' in item.role_text else 'participating'
+        elif item.is_corresponding_author:
+            author_rank_label = '通讯作者'
+            author_rank_category = 'lead'
 
-        if is_owner:
-            owner_relation = paper.coauthors.filter(internal_teacher_id=user.id).order_by('id').first()
-            owner_rank = 1 if paper.is_first_author else (owner_relation.author_rank if owner_relation else None)
-            owner_is_corresponding = bool(paper.is_corresponding_author or (owner_relation and owner_relation.is_corresponding))
+        detail_parts = [item.category_name_snapshot or item.category.name, item.rule_title_snapshot or item.rule_item.title]
+        if item.publication_name:
+            detail_parts.append(item.publication_name)
+        elif item.issuing_organization:
+            detail_parts.append(item.issuing_organization)
 
-            if owner_rank == 1 and owner_is_corresponding:
-                author_rank_label = '第一作者 / 通讯作者'
-                author_rank_category = 'lead'
-            elif owner_rank == 1:
-                author_rank_label = '第一作者'
-                author_rank_category = 'lead'
-            elif owner_rank:
-                author_rank_label = format_author_rank_label(rank=owner_rank, is_corresponding=owner_is_corresponding)
-                author_rank_category = 'lead' if owner_is_corresponding else 'participating'
-            elif owner_is_corresponding:
-                author_rank_label = '通讯作者'
-                author_rank_category = 'lead'
-            else:
-                author_rank_label = '合作作者'
-                author_rank_category = 'participating'
-        else:
-            author_rank_label = format_author_rank_label(rank=claimed_rank, is_corresponding=claimed_is_corresponding)
-            author_rank_category = 'lead' if (claimed_rank == 1 or claimed_is_corresponding) else 'participating'
         achievement_records.append(
             {
-                'id': paper.id,
-                'type': 'paper',
-                'type_label': '论文成果',
-                'title': paper.title,
-                'date_acquired': paper.date_acquired.isoformat(),
-                'detail': f'{paper.get_paper_type_display()} / {paper.journal_name}',
-                'highlight': '代表作' if is_representative else f'引用 {paper.citation_count} 次',
-                'is_representative': is_representative,
+                'id': item.id,
+                'type': (item.category_code_snapshot or item.category.code or '').lower(),
+                'type_label': item.category_name_snapshot or item.category.name,
+                'title': item.title,
+                'date_acquired': item.date_acquired.isoformat(),
+                'detail': ' / '.join(part for part in detail_parts if part),
+                'highlight': f'生效积分 {item.final_score}',
+                'score_value': float(item.final_score or 0),
+                'is_representative': bool(item.is_representative),
                 'author_rank_category': author_rank_category,
                 'author_rank_label': author_rank_label,
-            }
-        )
-
-    for project in approved_queryset(Project.objects.filter(teacher=user)).order_by('-date_acquired', '-created_at'):
-        achievement_records.append(
-            {
-                'id': project.id,
-                'type': 'project',
-                'type_label': '科研项目',
-                'title': project.title,
-                'date_acquired': project.date_acquired.isoformat(),
-                'detail': f'{project.get_level_display()} / {project.get_role_display()}',
-                'highlight': f'经费 {project.funding_amount} 万元',
-                'is_representative': False,
-                'author_rank_category': 'lead' if project.role == 'PI' else 'participating',
-                'author_rank_label': project.get_role_display(),
-            }
-        )
-
-    for item in approved_queryset(IntellectualProperty.objects.filter(teacher=user)).order_by('-date_acquired', '-created_at'):
-        achievement_records.append(
-            {
-                'id': item.id,
-                'type': 'intellectual_property',
-                'type_label': '知识产权',
-                'title': item.title,
-                'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_ip_type_display()} / {item.get_role_display()} / 登记号 {item.registration_number}',
-                'highlight': '已转化' if item.is_transformed else '未转化',
-                'is_representative': False,
-                'author_rank_category': 'lead' if item.role == 'PI' else 'participating',
-                'author_rank_label': item.get_role_display(),
-            }
-        )
-
-    for item in approved_queryset(TeachingAchievement.objects.filter(teacher=user)).order_by('-date_acquired', '-created_at'):
-        teaching_role_label = '指导教师' if item.achievement_type in {'COMPETITION', 'THESIS'} else item.get_role_display()
-        achievement_records.append(
-            {
-                'id': item.id,
-                'type': 'teaching_achievement',
-                'type_label': '教学成果',
-                'title': item.title,
-                'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_achievement_type_display()} / {teaching_role_label} / {item.level}',
-                'highlight': '育人成果',
-                'is_representative': False,
-                'author_rank_category': 'lead' if item.role == 'PI' else 'participating',
-                'author_rank_label': teaching_role_label,
-            }
-        )
-
-    for item in approved_queryset(AcademicService.objects.filter(teacher=user)).order_by('-date_acquired', '-created_at'):
-        achievement_records.append(
-            {
-                'id': item.id,
-                'type': 'academic_service',
-                'type_label': '学术服务',
-                'title': item.title,
-                'date_acquired': item.date_acquired.isoformat(),
-                'detail': f'{item.get_service_type_display()} / {item.organization}',
-                'highlight': '学术共同体贡献',
-                'is_representative': False,
-                'author_rank_category': 'unspecified',
-                'author_rank_label': '未区分排名',
             }
         )
 
@@ -580,8 +483,8 @@ def build_all_achievements(user):
     )
 
 
-def build_recent_achievements(user, limit: int = 6):
-    return sorted(build_all_achievements(user), key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
+def build_recent_achievements(user, limit: int = 6, rule_version_id: int | None = None):
+    return sorted(build_all_achievements(user, rule_version_id=rule_version_id), key=lambda item: (item['date_acquired'], item['id']), reverse=True)[:limit]
 
 
 def classify_import_errors(errors: dict) -> dict:
@@ -622,7 +525,8 @@ class TeacherRadarView(APIView):
                 next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
             )
 
-        radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
+        rule_version_id = parse_rule_version_query_param(request.query_params.get('rule_version', ''))
+        radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user, rule_version_id=rule_version_id)
         return Response(
             {
                 'radar_dimensions': radar_result['radar_dimensions'],
@@ -630,7 +534,8 @@ class TeacherRadarView(APIView):
                 'dimension_insights': radar_result['dimension_insights'],
                 'weight_spec': radar_result['weight_spec'],
                 'calculation_summary': radar_result['calculation_summary'],
-                'data_meta': get_portrait_data_meta(user),
+                'rule_version_scope': build_rule_version_scope(user, rule_version_id=rule_version_id),
+                'data_meta': get_portrait_data_meta(user, rule_version_id=rule_version_id),
             }
         )
 
@@ -653,6 +558,7 @@ class TeacherPortraitAnalysisView(APIView):
         selected_year = parse_int_query_param(request.query_params.get('year', ''), minimum=1900) or current_year
         requested_scope = (request.query_params.get('scope', 'college') or 'college').strip().lower()
         normalized_scope = requested_scope if requested_scope in {'college', 'university'} else 'college'
+        rule_version_id = parse_rule_version_query_param(request.query_params.get('rule_version', ''))
 
         year_for_benchmark = selected_year if selected_year < current_year else None
         benchmark_payload = build_peer_benchmark_payload(
@@ -660,19 +566,22 @@ class TeacherPortraitAnalysisView(APIView):
             request_user=request.user,
             year=year_for_benchmark,
             scope=normalized_scope,
+            rule_version_id=rule_version_id,
         )
-        portrait_payload = resolve_portrait_payload(user, year=selected_year)
+        portrait_payload = resolve_portrait_payload(user, year=selected_year, rule_version_id=rule_version_id)
         dimension_insights = build_portrait_dimension_insights_for_year(
             user=user,
             selected_year=selected_year,
             portrait_payload=portrait_payload,
+            rule_version_id=rule_version_id,
         )
         snapshot_boundary = build_snapshot_boundary(
             user,
             generation_trigger='analysis_request',
             year=selected_year,
+            rule_version_id=rule_version_id,
         )
-        stage_comparison = build_stage_comparison(user, year=selected_year)
+        stage_comparison = build_stage_comparison(user, year=selected_year, rule_version_id=rule_version_id)
 
         dimension_keys = list(TeacherScoringEngine.DIMENSION_LABELS.keys())
         radar_dimensions = [
@@ -728,6 +637,7 @@ class TeacherPortraitAnalysisView(APIView):
                 'radar_series_data': radar_series_data,
                 'dimension_insights': dimension_insights,
                 'benchmark_data': benchmark_payload,
+                'rule_version_scope': build_rule_version_scope(user, rule_version_id=rule_version_id),
             }
         )
 
@@ -1052,36 +962,7 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
     search_fields = ('title', 'journal_name', 'doi')
 
     def get_queryset(self):
-        include_claimed = parse_bool_query_param(self.request.query_params.get('include_claimed', '')) is True
-        if include_claimed:
-            target_teacher = None
-            teacher_id = self.request.query_params.get('teacher_id', '').strip()
-            if is_admin_user(self.request.user):
-                if teacher_id.isdigit():
-                    user_model = get_user_model()
-                    candidate = user_model.objects.filter(id=int(teacher_id)).first()
-                    if candidate and can_access_teacher_scope(self.request.user, candidate):
-                        target_teacher = candidate
-                if target_teacher is None:
-                    queryset = self.queryset.none()
-                else:
-                    related_paper_ids = build_teacher_related_paper_queryset(
-                        target_teacher,
-                        approved_only=False,
-                        include_claimed=True,
-                    ).values_list('id', flat=True)
-                    queryset = self.queryset.filter(id__in=related_paper_ids)
-            else:
-                target_teacher = self.request.user
-                related_paper_ids = build_teacher_related_paper_queryset(
-                    target_teacher,
-                    approved_only=False,
-                    include_claimed=True,
-                ).values_list('id', flat=True)
-                queryset = self.queryset.filter(id__in=related_paper_ids)
-        else:
-            queryset = super().get_queryset()
-
+        queryset = super().get_queryset()
         queryset = queryset.annotate(metadata_alert_count=metadata_alert_count_expression())
 
         paper_type = self.request.query_params.get('paper_type', '').strip()
@@ -1114,24 +995,14 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         if missing_field in {'doi', 'pages', 'source_url', 'journal_level'}:
             queryset = queryset.filter(**{missing_field: ''})
 
-        citation_min = self.request.query_params.get('citation_min', '').strip()
-        if citation_min.isdigit():
-            queryset = queryset.filter(citation_count__gte=int(citation_min))
-
-        citation_max = self.request.query_params.get('citation_max', '').strip()
-        if citation_max.isdigit():
-            queryset = queryset.filter(citation_count__lte=int(citation_max))
-
         ordering_map = {
             'date_desc': ('-date_acquired', '-created_at'),
             'date_asc': ('date_acquired', 'created_at'),
-            'citation_desc': ('-citation_count', '-date_acquired', '-created_at'),
-            'citation_asc': ('citation_count', '-date_acquired', '-created_at'),
             'title_asc': ('title', '-date_acquired', '-created_at'),
             'title_desc': ('-title', '-date_acquired', '-created_at'),
             'created_desc': ('-created_at',),
             'created_asc': ('created_at',),
-            'representative_desc': ('-is_representative', '-citation_count', '-date_acquired', '-created_at'),
+            'representative_desc': ('-is_representative', '-date_acquired', '-created_at'),
             'metadata_alerts_desc': ('-metadata_alert_count', '-date_acquired', '-created_at'),
         }
         sort_by = self.request.query_params.get('sort_by', '').strip()
@@ -1141,7 +1012,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
 
     def perform_create(self, serializer):
         paper = serializer.save(teacher=self.request.user, status='PENDING_REVIEW')
-        sync_paper_claim_invitations(paper)
         self._extract_keywords(paper)
         log_paper_operation(
             paper=paper,
@@ -1160,7 +1030,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 'published_issue',
                 'pages',
                 'source_url',
-                'citation_count',
                 'is_first_author',
                 'is_representative',
                 'doi',
@@ -1182,7 +1051,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
         before = snapshot_paper_fields(serializer.instance)
         generic_before_snapshot, _ = build_achievement_operation_snapshot(self.operation_log_type, serializer.instance)
         paper = serializer.save()
-        sync_paper_claim_invitations(paper)
         self._extract_keywords(paper)
         if paper.status != 'PENDING_REVIEW':
             paper.status = 'PENDING_REVIEW'
@@ -1314,7 +1182,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                 'published_issue': entry.get('published_issue', ''),
                 'pages': entry.get('pages', ''),
                 'source_url': entry.get('source_url', ''),
-                'citation_count': entry.get('citation_count', 0),
                 'is_first_author': entry.get('is_first_author', True),
                 'is_representative': entry.get('is_representative', False),
                 'doi': entry.get('doi', ''),
@@ -1340,7 +1207,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
             try:
                 with transaction.atomic():
                     paper = paper_serializer.save(teacher=request.user, status='PENDING_REVIEW')
-                    sync_paper_claim_invitations(paper)
                     self._extract_keywords(paper)
                     log_paper_operation(
                         paper=paper,
@@ -1359,7 +1225,6 @@ class PaperViewSet(TeacherOwnedAchievementViewSet):
                             'published_issue',
                             'pages',
                             'source_url',
-                            'citation_count',
                             'is_first_author',
                             'is_representative',
                             'doi',
@@ -1600,24 +1465,6 @@ class IntellectualPropertyViewSet(TeacherOwnedAchievementViewSet):
         AcademicGraphSyncService.delete_intellectual_property(identifier)
 
 
-class TeachingAchievementViewSet(TeacherOwnedAchievementViewSet):
-    operation_log_type = 'teaching-achievements'
-    queryset = TeachingAchievement.objects.select_related('teacher').all().order_by('-date_acquired', '-created_at')
-    serializer_class = TeachingAchievementSerializer
-    search_fields = ('title', 'level')
-
-    def sync_graph(self, instance):
-        AcademicGraphSyncService.sync_teaching_achievement(
-            teaching_id=instance.id,
-            title=instance.title,
-            teacher=self.teacher_payload(instance),
-            achievement_type=instance.achievement_type,
-            level=instance.level,
-        )
-
-    def delete_graph_snapshot(self, identifier):
-        AcademicGraphSyncService.delete_teaching_achievement(identifier)
-
 
 class AcademicServiceViewSet(TeacherOwnedAchievementViewSet):
     operation_log_type = 'academic-services'
@@ -1652,54 +1499,55 @@ class TeacherDashboardStatsView(APIView):
                 next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
             )
 
-        radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user)
+        rule_version_id = parse_rule_version_query_param(request.query_params.get('rule_version', ''))
+        radar_result = TeacherScoringEngine.get_comprehensive_radar_data(user, rule_version_id=rule_version_id)
         metrics = radar_result['metrics']
 
         statistics = [
             {
-                'title': '总成果数',
-                'value': metrics['total_achievements'],
-                'suffix': '项',
+                'title': '核心科研积分',
+                'value': round(metrics['total_rule_score'], 1),
+                'suffix': '分',
                 'icon': 'CollectionTag',
                 'iconClass': 'icon-blue',
                 'trend': None,
-                'helper': '论文、项目、知识产权、教学成果、学术服务总和',
+                'helper': '按审核通过成果的 final_score 直接累计。',
             },
             {
-                'title': '论文成果',
-                'value': metrics['paper_count'],
-                'suffix': '篇',
+                'title': '学术产出积分',
+                'value': round(metrics['paper_book_score'], 1),
+                'suffix': '分',
                 'icon': 'Document',
                 'iconClass': 'icon-blue',
                 'trend': None,
-                'helper': f'总被引 {metrics["citation_total"]} 次',
+                'helper': '按论文著作类生效积分累计。',
             },
             {
-                'title': '项目与知识产权',
-                'value': metrics['project_count'] + metrics['ip_count'],
-                'suffix': '项',
+                'title': '项目竞争积分',
+                'value': round(metrics['project_score'], 1),
+                'suffix': '分',
                 'icon': 'Reading',
                 'iconClass': 'icon-green',
                 'trend': None,
-                'helper': f'项目 {metrics["project_count"]} 项 / 知识产权 {metrics["ip_count"]} 项',
+                'helper': '按科研项目类生效积分累计。',
             },
             {
-                'title': '教学与学术服务',
-                'value': metrics['teaching_count'] + metrics['service_count'],
-                'suffix': '项',
+                'title': '奖励转化积分',
+                'value': round(metrics['award_score'] + metrics['transformation_score'] + metrics['think_tank_score'], 1),
+                'suffix': '分',
                 'icon': 'User',
                 'iconClass': 'icon-orange',
                 'trend': None,
-                'helper': f'教学成果 {metrics["teaching_count"]} 项 / 学术服务 {metrics["service_count"]} 项',
+                'helper': '按获奖、成果转化、智库成果生效积分累计。',
             },
             {
-                'title': '综合画像评分',
-                'value': radar_result['total_score'],
+                'title': '平台科普积分',
+                'value': round(metrics['platform_team_score'] + metrics['science_pop_score'], 1),
                 'suffix': '分',
                 'icon': 'Trophy',
                 'iconClass': 'icon-red',
                 'trend': None,
-                'helper': '依据多成果类型实时聚合计算',
+                'helper': '按平台团队与科普类获奖生效积分累计。',
             },
         ]
 
@@ -1712,21 +1560,28 @@ class TeacherDashboardStatsView(APIView):
                 'calculation_summary': radar_result['calculation_summary'],
                 'achievement_overview': {
                     'paper_count': metrics['paper_count'],
+                    'paper_score': round(metrics['paper_book_score'], 1),
                     'project_count': metrics['project_count'],
-                    'intellectual_property_count': metrics['ip_count'],
-                    'teaching_achievement_count': metrics['teaching_count'],
-                    'academic_service_count': metrics['service_count'],
-                    'total_citations': metrics['citation_total'],
+                    'project_score': round(metrics['project_score'], 1),
+                    'intellectual_property_count': metrics['award_count'] + metrics['transformation_count'] + metrics['think_tank_count'],
+                    'intellectual_property_score': round(
+                        metrics['award_score'] + metrics['transformation_score'] + metrics['think_tank_score'],
+                        1,
+                    ),
+                    'academic_service_count': metrics['platform_count'] + metrics['science_pop_count'],
+                    'academic_service_score': round(metrics['platform_team_score'] + metrics['science_pop_score'], 1),
                     'total_achievements': metrics['total_achievements'],
+                    'total_score': round(metrics['total_rule_score'], 1),
                 },
-                'recent_achievements': build_recent_achievements(user),
-                'dimension_trend': build_dimension_trend(user),
-                'recent_structure': build_recent_structure(user),
-                'stage_comparison': build_stage_comparison(user),
-                'snapshot_boundary': build_snapshot_boundary(user),
-                'peer_benchmark': build_peer_benchmark_payload(target_user=user, request_user=request.user),
+                'recent_achievements': build_recent_achievements(user, rule_version_id=rule_version_id),
+                'dimension_trend': build_dimension_trend(user, rule_version_id=rule_version_id),
+                'recent_structure': build_recent_structure(user, rule_version_id=rule_version_id),
+                'stage_comparison': build_stage_comparison(user, rule_version_id=rule_version_id),
+                'snapshot_boundary': build_snapshot_boundary(user, rule_version_id=rule_version_id),
+                'peer_benchmark': build_peer_benchmark_payload(target_user=user, request_user=request.user, rule_version_id=rule_version_id),
                 'portrait_explanation': build_portrait_explanation(),
-                'data_meta': get_portrait_data_meta(user),
+                'rule_version_scope': build_rule_version_scope(user, rule_version_id=rule_version_id),
+                'data_meta': get_portrait_data_meta(user, rule_version_id=rule_version_id),
             }
         )
 
@@ -1745,13 +1600,16 @@ class TeacherAllAchievementsView(APIView):
                 next_step='请确认教师账号是否存在，或返回教师列表后重新选择。',
             )
 
-        records = build_all_achievements(user)
+        rule_version_id = parse_rule_version_query_param(request.query_params.get('rule_version', ''))
+        records = build_all_achievements(user, rule_version_id=rule_version_id)
         return Response(
             {
                 'teacher_id': user.id,
                 'teacher_name': getattr(user, 'real_name', '') or user.username,
                 'achievement_total': len(records),
+                'achievement_score_total': round(sum(float(item.get('score_value', 0) or 0) for item in records), 1),
                 'records': records,
+                'rule_version_scope': build_rule_version_scope(user, rule_version_id=rule_version_id),
             }
         )
 
@@ -1771,15 +1629,16 @@ class TeacherPortraitReportView(APIView):
             )
 
         export_format = request.query_params.get('export', '').strip().lower()
+        rule_version_id = parse_rule_version_query_param(request.query_params.get('rule_version', ''))
         if export_format == 'markdown':
-            content = export_portrait_report_markdown(user)
+            content = export_portrait_report_markdown(user, rule_version_id=rule_version_id)
             response = HttpResponse(content, content_type='text/markdown; charset=utf-8')
             filename = f'teacher-portrait-report-{user.id}-{timezone.now().strftime("%Y%m%d-%H%M%S")}.md'
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
             return response
 
-        report_payload = build_portrait_report(user)
-        report_payload['data_meta'] = get_portrait_data_meta(user)
+        report_payload = build_portrait_report(user, rule_version_id=rule_version_id)
+        report_payload['data_meta'] = get_portrait_data_meta(user, rule_version_id=rule_version_id)
         return Response(report_payload)
 
 

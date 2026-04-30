@@ -131,6 +131,9 @@
                     <p>{{ item.content }}</p>
                     <div class="layout-notification-menu__item-meta">
                       <el-tag size="small" effect="plain">{{ item.category_label }}</el-tag>
+                      <el-tag v-if="isLegacyAchievementClaimNotification(item)" size="small" type="warning" effect="plain">
+                        历史协作
+                      </el-tag>
                       <el-tag v-if="!item.is_read" size="small" type="danger" effect="plain">未读</el-tag>
                       <span v-if="item.sender_name">来自：{{ item.sender_name }}</span>
                     </div>
@@ -356,6 +359,21 @@ const normalizeActionQuery = (raw: Record<string, any> | null | undefined): Reco
   }, {})
 }
 
+const CLAIM_NOTIFICATION_CATEGORIES = new Set(['ACHIEVEMENT_CLAIM', 'CLAIM_REMINDER'])
+
+const isLegacyAchievementClaimNotification = (item: UserNotificationRecord): boolean =>
+  CLAIM_NOTIFICATION_CATEGORIES.has(item.category) || (item.action_path || '').includes('achievement-claims')
+
+const resolveAchievementClaimFallbackPath = (): string => {
+  if (currentUser.value?.role_code === 'college_admin') {
+    return '/teachers/achievement-review'
+  }
+  if (currentUser.value?.role_code === 'admin') {
+    return '/academy-dashboard'
+  }
+  return '/dashboard/representative-achievements'
+}
+
 const loadNotifications = async ({ silent = false }: { silent?: boolean } = {}) => {
   if (!currentUser.value) {
     notifications.value = []
@@ -412,6 +430,11 @@ const handleNotificationClick = async (item: UserNotificationRecord) => {
     ElMessage.warning(resolveApiErrorMessage(error, '消息已读状态更新失败'))
   }
 
+  if (isLegacyAchievementClaimNotification(item)) {
+    ElMessage.info('成果认领属于历史论文合著协作通知；当前规则化成果请通过成果录入与学院审核处理。')
+    await router.push(resolveAchievementClaimFallbackPath())
+    return
+  }
   if (!item.action_path) {
     return
   }

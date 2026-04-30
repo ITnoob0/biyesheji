@@ -18,28 +18,28 @@ METADATA_ALERT_DEFINITIONS = (
         'field': 'doi',
         'label': '缺少 DOI',
         'severity': 'warning',
-        'message': '建议补充 DOI，方便去重、检索和成果回溯。',
+        'message': '建议补充 DOI，便于去重、检索和成果回溯。',
     },
     {
         'code': 'missing_pages',
         'field': 'pages',
         'label': '缺少页码',
         'severity': 'info',
-        'message': '建议补充页码范围，方便成果核验与导出。',
+        'message': '建议补充页码范围，便于成果核验与导出。',
     },
     {
         'code': 'missing_source_url',
         'field': 'source_url',
         'label': '缺少来源链接',
         'severity': 'warning',
-        'message': '建议补充来源链接，方便回查原始成果页面。',
+        'message': '建议补充来源链接，便于回查原始成果页面。',
     },
     {
         'code': 'missing_journal_level',
         'field': 'journal_level',
         'label': '缺少期刊级别',
         'severity': 'info',
-        'message': '建议补充 SCI、EI、CCF 等级，方便统计和治理。',
+        'message': '建议补充 SCI、EI、CCF 等级，便于统计和治理。',
     },
 )
 
@@ -108,7 +108,6 @@ def snapshot_paper_fields(paper: Paper) -> dict:
         'published_issue': paper.published_issue,
         'pages': paper.pages,
         'source_url': paper.source_url,
-        'citation_count': paper.citation_count,
         'is_first_author': paper.is_first_author,
         'is_representative': paper.is_representative,
         'doi': paper.doi,
@@ -168,33 +167,30 @@ def build_paper_summary_payload(queryset, request=None) -> dict:
         .order_by('-count', 'doi')
     )
 
-    alert_breakdown = []
-    for definition in METADATA_ALERT_DEFINITIONS:
-        alert_breakdown.append(
-            {
-                'code': definition['code'],
-                'label': definition['label'],
-                'severity': definition['severity'],
-                'count': queryset.filter(**{definition['field']: ''}).count(),
-            }
-        )
+    alert_breakdown = [
+        {
+            'code': definition['code'],
+            'label': definition['label'],
+            'severity': definition['severity'],
+            'count': queryset.filter(**{definition['field']: ''}).count(),
+        }
+        for definition in METADATA_ALERT_DEFINITIONS
+    ]
 
-    recent_records = []
-    for paper in latest_records:
-        recent_records.append(
-            {
-                'id': paper.id,
-                'title': paper.title,
-                'date_acquired': paper.date_acquired.isoformat(),
-                'paper_type': paper.paper_type,
-                'paper_type_display': paper.get_paper_type_display(),
-                'journal_name': paper.journal_name,
-                'citation_count': paper.citation_count,
-                'is_representative': paper.is_representative,
-                'metadata_alerts': build_paper_metadata_alerts(paper),
-                'metadata_alert_details': build_paper_metadata_alert_details(paper),
-            }
-        )
+    recent_records = [
+        {
+            'id': paper.id,
+            'title': paper.title,
+            'date_acquired': paper.date_acquired.isoformat(),
+            'paper_type': paper.paper_type,
+            'paper_type_display': paper.get_paper_type_display(),
+            'journal_name': paper.journal_name,
+            'is_representative': paper.is_representative,
+            'metadata_alerts': build_paper_metadata_alerts(paper),
+            'metadata_alert_details': build_paper_metadata_alert_details(paper),
+        }
+        for paper in latest_records
+    ]
 
     return {
         'total_count': queryset.count(),
@@ -202,11 +198,7 @@ def build_paper_summary_payload(queryset, request=None) -> dict:
         'recent_count': queryset.filter(date_acquired__year__gte=timezone.now().year - 2).count(),
         'missing_doi_count': queryset.filter(doi='').count(),
         'missing_source_url_count': queryset.filter(source_url='').count(),
-        'incomplete_metadata_count': queryset.filter(
-            metadata_alert_count__gt=0
-        ).count()
-        if hasattr(queryset, 'query')
-        else queryset.filter(pages='').count(),
+        'incomplete_metadata_count': queryset.filter(metadata_alert_count__gt=0).count(),
         'duplicate_doi_count': len(duplicate_doi_groups),
         'yearly_distribution': [
             {'year': item['year'], 'count': item['count']}
@@ -227,18 +219,13 @@ def build_paper_summary_payload(queryset, request=None) -> dict:
 
 
 def build_representative_overview(queryset) -> dict:
-    representative_queryset = queryset.filter(is_representative=True).order_by(
-        '-citation_count',
-        '-date_acquired',
-        '-created_at',
-    )
+    representative_queryset = queryset.filter(is_representative=True).order_by('-date_acquired', '-created_at')
     top_items = [
         {
             'id': paper.id,
             'title': paper.title,
             'journal_name': paper.journal_name,
             'date_acquired': paper.date_acquired.isoformat(),
-            'citation_count': paper.citation_count,
             'metadata_alerts': build_paper_metadata_alerts(paper),
         }
         for paper in representative_queryset[:5]
@@ -292,10 +279,9 @@ def build_compare_candidates(queryset) -> list[dict]:
             'title': paper.title,
             'journal_name': paper.journal_name,
             'date_acquired': paper.date_acquired.isoformat(),
-            'citation_count': paper.citation_count,
             'is_representative': paper.is_representative,
         }
-        for paper in queryset.order_by('-date_acquired', '-citation_count', '-created_at')[:20]
+        for paper in queryset.order_by('-date_acquired', '-created_at')[:20]
     ]
 
 
@@ -308,11 +294,7 @@ def build_compare_payload(left: Paper, right: Paper) -> dict:
     right_coauthors = {item.name for item in right.coauthors.all()}
 
     def completeness_score(paper: Paper) -> int:
-        return sum(
-            1
-            for field in ('doi', 'pages', 'source_url', 'journal_level')
-            if getattr(paper, field, '')
-        )
+        return sum(1 for field in ('doi', 'pages', 'source_url', 'journal_level') if getattr(paper, field, ''))
 
     left_score = completeness_score(left)
     right_score = completeness_score(right)
@@ -320,7 +302,6 @@ def build_compare_payload(left: Paper, right: Paper) -> dict:
         {'field': 'paper_type', 'label': '成果类型', 'left': left.get_paper_type_display(), 'right': right.get_paper_type_display()},
         {'field': 'journal_name', 'label': '期刊/会议', 'left': left.journal_name, 'right': right.journal_name},
         {'field': 'date_acquired', 'label': '发表时间', 'left': left.date_acquired.isoformat(), 'right': right.date_acquired.isoformat()},
-        {'field': 'citation_count', 'label': '引用次数', 'left': left.citation_count, 'right': right.citation_count},
         {'field': 'is_representative', 'label': '代表作', 'left': '是' if left.is_representative else '否', 'right': '是' if right.is_representative else '否'},
         {'field': 'metadata_completeness', 'label': '元数据完整度', 'left': left_score, 'right': right_score},
     ]
@@ -342,7 +323,6 @@ def build_compare_payload(left: Paper, right: Paper) -> dict:
         },
         'comparison_rows': comparison_rows,
         'summary': {
-            'citation_gap': left.citation_count - right.citation_count,
             'metadata_completeness_gap': left_score - right_score,
             'shared_keywords': sorted(left_keywords & right_keywords),
             'shared_coauthors': sorted(left_coauthors & right_coauthors),
@@ -373,7 +353,6 @@ def export_papers_as_csv(papers: Iterable[Paper]) -> str:
             '成果类型',
             '期刊/会议',
             '发表时间',
-            '引用次数',
             '代表作',
             'DOI',
             '来源链接',
@@ -392,7 +371,6 @@ def export_papers_as_csv(papers: Iterable[Paper]) -> str:
                 paper.get_paper_type_display(),
                 paper.journal_name,
                 paper.date_acquired.isoformat(),
-                paper.citation_count,
                 '是' if paper.is_representative else '否',
                 paper.doi,
                 paper.source_url,

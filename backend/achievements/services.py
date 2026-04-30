@@ -33,20 +33,12 @@ def build_teacher_related_paper_queryset(
     teacher_user,
     *,
     approved_only: bool = True,
-    include_claimed: bool = True,
+    include_claimed: bool = False,
 ) -> QuerySet[Paper]:
     queryset = Paper.objects.all()
     if approved_only:
         queryset = queryset.filter(status=APPROVED_STATUS)
-
-    if include_claimed:
-        queryset = queryset.filter(
-            Q(teacher=teacher_user)
-            | Q(claims__target_user=teacher_user, claims__status__in=['ACCEPTED', 'CONFLICT'])
-        )
-    else:
-        queryset = queryset.filter(teacher=teacher_user)
-
+    queryset = queryset.filter(teacher=teacher_user)
     return queryset.distinct()
 
 

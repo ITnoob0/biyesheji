@@ -61,8 +61,6 @@ export type TeacherDetail = {
   research_interests: string
   research_direction: string[]
   bio: string
-  h_index: number
-  hIndex: number
   is_admin: boolean
 }
 
@@ -72,7 +70,6 @@ export type PaperRecord = {
   date_acquired: string
   paper_type_display: string
   journal_name: string
-  citation_count: number
   keywords: string[]
   coauthor_details: Array<{ id: number; name: string }>
 }
@@ -89,6 +86,7 @@ export type RecentAchievementRecord = {
 
 export type AllAchievementRecord = RecentAchievementRecord & {
   is_representative: boolean
+  score_value?: number
   author_rank_category: 'lead' | 'participating' | 'unspecified'
   author_rank_label: string
 }
@@ -97,17 +95,22 @@ export type AllAchievementResponse = {
   teacher_id: number
   teacher_name: string
   achievement_total: number
+  achievement_score_total?: number
   records: AllAchievementRecord[]
+  rule_version_scope?: RuleVersionScope
 }
 
 export type AchievementOverview = {
   paper_count: number
+  paper_score?: number
   project_count: number
+  project_score?: number
   intellectual_property_count: number
-  teaching_achievement_count: number
+  intellectual_property_score?: number
   academic_service_count: number
-  total_citations: number
+  academic_service_score?: number
   total_achievements: number
+  total_score?: number
 }
 
 export type PortraitDataMeta = {
@@ -116,14 +119,40 @@ export type PortraitDataMeta = {
   acceptance_scope?: string
 }
 
+export type RuleVersionOption = {
+  id: number
+  code: string
+  name: string
+  status: string
+  status_label: string
+  source_document?: string
+  summary?: string
+  updated_at?: string | null
+  achievement_total?: number
+  score_total?: number
+}
+
+export type RuleVersionScope = {
+  selected_rule_version_id?: number | null
+  is_all_versions: boolean
+  selected_version?: RuleVersionOption | null
+  active_version?: RuleVersionOption | null
+  available_versions: RuleVersionOption[]
+  score_scope_note: string
+  freeze_note: string
+}
+
 export type WeightSpecItem = {
   key: string
   name: string
   weight: number
+  raw_score?: number
+  score_role?: string
   formula_short: string
   main_inputs: string[]
   rationale: string
   current_value: number
+  aggregation_note?: string
 }
 
 export type CalculationSummary = {
@@ -153,6 +182,8 @@ export type DimensionInsight = {
   name: string
   value: number
   weight: number
+  raw_score?: number
+  score_role?: string
   level: string
   formula_note: string
   source_description: string
@@ -164,7 +195,6 @@ export type DimensionTrendPoint = {
   academic_output: number
   funding_support: number
   ip_strength: number
-  talent_training: number
   academic_reputation: number
   interdisciplinary: number
   total_score: number
@@ -175,7 +205,6 @@ export type RecentStructurePoint = {
   papers: number
   projects: number
   intellectual_properties: number
-  teaching_achievements: number
   academic_services: number
   total: number
 }
@@ -251,6 +280,7 @@ export type SnapshotBoundary = {
     freeze_scope: string
     generation_trigger: string
   }
+  rule_version_scope?: RuleVersionScope
 }
 
 export type PortraitReportSection = {
@@ -277,6 +307,7 @@ export type PortraitReportResponse = {
   }
   sections: PortraitReportSection[]
   data_meta?: PortraitDataMeta
+  rule_version_scope?: RuleVersionScope
 }
 
 export type DashboardStatsResponse = {
@@ -293,6 +324,7 @@ export type DashboardStatsResponse = {
   snapshot_boundary?: SnapshotBoundary
   portrait_explanation?: PortraitExplanation
   data_meta?: PortraitDataMeta
+  rule_version_scope?: RuleVersionScope
 }
 
 export type RadarResponse = {
@@ -302,6 +334,7 @@ export type RadarResponse = {
   weight_spec?: WeightSpecItem[]
   calculation_summary?: CalculationSummary
   data_meta?: PortraitDataMeta
+  rule_version_scope?: RuleVersionScope
 }
 
 export type PortraitAnalysisResponse = {
@@ -314,6 +347,7 @@ export type PortraitAnalysisResponse = {
   radar_dimensions: RadarDimensionPoint[]
   radar_series_data: RadarSeriesItem[]
   benchmark_data: PeerBenchmarkPayload
+  rule_version_scope?: RuleVersionScope
 }
 
 export const buildProfileHighlights = (teacherInfo: TeacherDetail): string[] => {
@@ -399,11 +433,10 @@ export const buildRecentAchievementEmptyText = (records: RecentAchievementRecord
 
 const DIMENSION_SERIES = [
   { key: 'academic_output', label: '学术产出', color: '#2563eb' },
-  { key: 'funding_support', label: '项目攻关', color: '#0f766e' },
-  { key: 'ip_strength', label: '知识产权', color: '#f59e0b' },
-  { key: 'talent_training', label: '人才培养', color: '#8b5cf6' },
-  { key: 'academic_reputation', label: '学术活跃', color: '#ef4444' },
-  { key: 'interdisciplinary', label: '跨学科', color: '#14b8a6' },
+  { key: 'funding_support', label: '项目竞争', color: '#0f766e' },
+  { key: 'ip_strength', label: '成果荣誉', color: '#f59e0b' },
+  { key: 'academic_reputation', label: '转化服务', color: '#ef4444' },
+  { key: 'interdisciplinary', label: '平台科普', color: '#14b8a6' },
 ] as const
 
 export const buildDimensionTrendOption = (trend: DimensionTrendPoint[], echarts: any): EChartsOption => {
@@ -453,11 +486,10 @@ export const buildAchievementStructureOption = (records: RecentStructurePoint[],
   const years = records.map(item => item.year)
   const tokens = getChartThemeTokens()
   const seriesConfig = [
-    { key: 'papers', label: '论文', color: '#2563eb' },
-    { key: 'projects', label: '项目', color: '#10b981' },
-    { key: 'intellectual_properties', label: '知识产权', color: '#f59e0b' },
-    { key: 'teaching_achievements', label: '教学成果', color: '#8b5cf6' },
-    { key: 'academic_services', label: '学术服务', color: '#ef4444' },
+    { key: 'papers', label: '学术产出', color: '#2563eb' },
+    { key: 'projects', label: '科研项目', color: '#10b981' },
+    { key: 'intellectual_properties', label: '奖励转化', color: '#f59e0b' },
+    { key: 'academic_services', label: '平台科普', color: '#ef4444' },
   ] as const
 
   return {
@@ -489,26 +521,25 @@ export const buildAchievementStructureOption = (records: RecentStructurePoint[],
 }
 
 export const buildTrendOption = (papers: PaperRecord[], echarts: any): EChartsOption => {
-  const yearMap = new Map<number, { publications: number; citations: number }>()
+  const yearMap = new Map<number, { academicOutputs: number }>()
 
   papers.forEach(paper => {
     const year = Number(paper.date_acquired.slice(0, 4))
     if (!year) return
 
-    const current = yearMap.get(year) || { publications: 0, citations: 0 }
-    current.publications += 1
-    current.citations += paper.citation_count || 0
+    const current = yearMap.get(year) || { academicOutputs: 0 }
+    current.academicOutputs += 1
     yearMap.set(year, current)
   })
 
   const years = [...yearMap.keys()].sort((a, b) => a - b)
   const tokens = getChartThemeTokens()
-  const publicationBarWidth = years.length <= 1 ? 72 : years.length <= 2 ? 60 : years.length <= 4 ? 42 : 28
+  const academicOutputBarWidth = years.length <= 1 ? 72 : years.length <= 2 ? 60 : years.length <= 4 ? 42 : 28
 
   return {
     ...buildBaseChartOption(),
     tooltip: { ...buildBaseChartOption().tooltip, trigger: 'axis' },
-    legend: { data: ['发文量', '引用次数'], top: 0, textStyle: { color: tokens.textSecondary } },
+    legend: { data: ['学术产出量'], top: 0, textStyle: { color: tokens.textSecondary } },
     grid: { left: 36, right: 36, bottom: 24, top: 48, containLabel: true },
     xAxis: {
       type: 'category',
@@ -519,44 +550,25 @@ export const buildTrendOption = (papers: PaperRecord[], echarts: any): EChartsOp
     yAxis: [
       {
         type: 'value',
-        name: '发文量',
+        name: '学术产出量',
         minInterval: 1,
         nameTextStyle: { color: tokens.textTertiary },
         axisLabel: { color: tokens.textTertiary },
         splitLine: { lineStyle: { color: tokens.border } },
       },
-      {
-        type: 'value',
-        name: '引用次数',
-        nameTextStyle: { color: tokens.textTertiary },
-        axisLabel: { color: tokens.textTertiary },
-      },
     ],
     series: [
       {
-        name: '发文量',
+        name: '学术产出量',
         type: 'bar',
-        barWidth: publicationBarWidth,
-        data: years.map(year => yearMap.get(year)?.publications || 0),
+        barWidth: academicOutputBarWidth,
+        data: years.map(year => yearMap.get(year)?.academicOutputs || 0),
         itemStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: '#2563eb' },
             { offset: 1, color: '#60a5fa' },
           ]),
           borderRadius: [8, 8, 0, 0],
-        },
-      },
-      {
-        name: '引用次数',
-        type: 'line',
-        yAxisIndex: 1,
-        smooth: true,
-        data: years.map(year => yearMap.get(year)?.citations || 0),
-        symbolSize: 8,
-        lineStyle: { color: '#f59e0b', width: 3 },
-        itemStyle: { color: '#f59e0b' },
-        areaStyle: {
-          color: 'rgba(245, 158, 11, 0.12)',
         },
       },
     ],

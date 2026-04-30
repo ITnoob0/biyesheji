@@ -130,7 +130,7 @@ const changePassword = async () => {
 
     <el-form ref="formRef" :model="passwordForm" :rules="rules" label-position="top" class="security-form">
       <div class="form-grid">
-        <el-form-item label="当前密码" prop="current_password">
+        <el-form-item label="当前密码" prop="current_password" required>
           <el-input
             v-model="passwordForm.current_password"
             type="password"
@@ -138,7 +138,7 @@ const changePassword = async () => {
             :disabled="passwordFormDisabled"
           />
         </el-form-item>
-        <el-form-item label="新密码" prop="new_password">
+        <el-form-item label="新密码" prop="new_password" required>
           <el-input
             v-model="passwordForm.new_password"
             type="password"
@@ -148,7 +148,7 @@ const changePassword = async () => {
         </el-form-item>
       </div>
 
-      <el-form-item label="确认新密码" prop="confirm_password">
+      <el-form-item label="确认新密码" prop="confirm_password" required>
         <el-input
           v-model="passwordForm.confirm_password"
           type="password"

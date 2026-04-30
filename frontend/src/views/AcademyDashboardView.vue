@@ -6,6 +6,7 @@ import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import TeacherAchievementPreviewDialog from '../components/teacher/TeacherAchievementPreviewDialog.vue'
 import TeacherRadarPreviewDialog from '../components/teacher/TeacherRadarPreviewDialog.vue'
+import TeacherTrendPreviewDialog from '../components/teacher/TeacherTrendPreviewDialog.vue'
 import { buildAdminRouteNotice } from '../utils/authPresentation.js'
 import { ensureSessionUserContext, type SessionUser } from '../utils/sessionAuth'
 import { observeElementsResize } from '../utils/resizeObserver'
@@ -19,6 +20,7 @@ import {
 } from './academy-dashboard/overview'
 
 type AcademyDashboardSection = 'overview' | 'comparison' | 'drilldown' | 'teacher-analysis'
+type YearQuickFilter = 'recent_1' | 'recent_3' | 'recent_5'
 
 interface SectionFilterState {
   department: string
@@ -28,28 +30,12 @@ interface SectionFilterState {
   year: string | undefined
 }
 
-interface CollegeUnclaimedRecord {
-  id: number
-  achievement_title: string
-  target_user_name: string
-  initiator_name: string
-  created_at: string
-  pending_days: number
-}
-
-interface CollegeUnclaimedResponse {
-  days_threshold: number
-  record_count: number
-  records: CollegeUnclaimedRecord[]
-}
-
-type YearQuickFilter = 'recent_1' | 'recent_3' | 'recent_5'
-
 const YEAR_QUICK_FILTER_OPTIONS: Array<{ label: string; value: YearQuickFilter }> = [
   { label: '近一年', value: 'recent_1' },
   { label: '近三年', value: 'recent_3' },
   { label: '近五年', value: 'recent_5' },
 ]
+const FALLBACK_TEACHER_TITLES = ['教授', '副教授', '讲师', '助教', '研究员', '副研究员', '助理研究员', '研究实习员']
 
 const props = withDefaults(
   defineProps<{
@@ -63,14 +49,11 @@ const props = withDefaults(
 const router = useRouter()
 const checkedUser = ref<SessionUser | null>(null)
 const loading = ref(false)
-const unclaimedLoading = ref(false)
-const unclaimedReminding = ref(false)
 const radarPreviewVisible = ref(false)
 const achievementPreviewVisible = ref(false)
+const trendPreviewVisible = ref(false)
 const previewTeacherId = ref<number | null>(null)
 const previewTeacherName = ref('')
-const unclaimedDaysThreshold = ref(7)
-const collegeUnclaimedRecords = ref<CollegeUnclaimedRecord[]>([])
 const overviewData = ref<AcademyOverviewResponse | null>(null)
 const comparisonData = ref<AcademyOverviewResponse | null>(null)
 const drilldownData = ref<AcademyOverviewResponse | null>(null)
@@ -125,6 +108,7 @@ const activeData = computed(() => {
   if (activeSection.value === 'teacher-analysis') return teacherAnalysisData.value
   return overviewData.value
 })
+
 const filterOptions = computed(
   () =>
     activeData.value?.filter_options ?? {
@@ -144,17 +128,13 @@ const yearFilterOptions = computed(() => [
   })),
 ])
 const teacherTitleOptions = computed(() => {
-  const defaults = ['教授', '副教授', '讲师']
-  const merged = [...defaults, ...(filterOptions.value.teacher_titles || [])]
-  return Array.from(new Set(merged.filter(Boolean)))
+  const source = filterOptions.value.teacher_titles?.length ? filterOptions.value.teacher_titles : FALLBACK_TEACHER_TITLES
+  return Array.from(new Set(source.filter(Boolean)))
 })
-const statistics = computed(() => activeData.value?.statistics ?? [])
-const topTeachers = computed(() => activeData.value?.top_active_teachers ?? [])
-const recentRecords = computed(() => activeData.value?.recent_scope_records ?? [])
-const recentRecordsTopFive = computed(() => recentRecords.value.slice(0, 5))
+const statistics = computed(() => activeData.value?.score_statistics ?? activeData.value?.statistics ?? [])
+const countStatistics = computed(() => activeData.value?.statistics ?? [])
 const drillTeacherRows = computed(() => drilldownData.value?.top_active_teachers ?? [])
 const teacherAnalysisRows = computed(() => teacherAnalysisData.value?.top_active_teachers ?? [])
-const overviewTeacherRows = computed(() => overviewData.value?.top_active_teachers?.slice(0, 5) ?? [])
 const departmentDistribution = computed<DepartmentDistributionRecord[]>(() => {
   if (activeSection.value === 'comparison') {
     const compareRecords = comparisonData.value?.comparison_department_distribution ?? []
@@ -164,15 +144,21 @@ const departmentDistribution = computed<DepartmentDistributionRecord[]>(() => {
   }
   return activeData.value?.department_distribution ?? []
 })
-const summaryItems = computed(() => {
-  const data = activeData.value
-  if (!data) return []
-  return [
-    { label: '当前成果口径', value: '全部成果' },
-    { label: '当前排行维度', value: data.ranking_meta.current_rank_label || '总成果' },
-    { label: '趋势摘要', value: data.trend_summary.description || '暂无趋势摘要。' },
-  ]
+const countSummary = computed(() => {
+  const target = countStatistics.value.find(item => item.title.includes('唯一成果')) ?? countStatistics.value[2]
+  return target?.value ?? 0
 })
+const pendingSummary = computed(() => {
+  const target =
+    activeData.value?.top_active_teachers?.reduce((sum, item) => sum + Number(item.pending_count || 0), 0) ?? 0
+  return target
+})
+const teacherTotalSummary = computed(() => activeData.value?.comparison_summary?.teacher_total ?? 0)
+const dashboardScopeTags = computed(() => [
+  { label: '教师总数', value: `${teacherTotalSummary.value} 人` },
+  { label: '唯一成果', value: `${countSummary.value} 项` },
+  { label: '待审核', value: `${pendingSummary.value} 项` },
+])
 
 const ensureChart = (instance: echarts.ECharts | null, element: HTMLElement | null) => {
   if (!element) {
@@ -206,13 +192,13 @@ const renderCharts = async () => {
 
   comparisonChart = ensureChart(comparisonChart, comparisonChartRef.value)
   if (comparisonChart) {
-    comparisonChart.setOption(buildScopeComparisonOption(data.comparison_trend ?? [], echarts))
+    comparisonChart.setOption(buildScopeComparisonOption(data.comparison_trend ?? [], echarts), true)
   }
 }
 
 const currentExportTarget = computed(() => {
   if (activeSection.value === 'drilldown' || activeSection.value === 'teacher-analysis') return 'teachers'
-  if (activeSection.value === 'overview' && isCollegeAdmin.value) return 'recent_records'
+  if (activeSection.value === 'overview' && isCollegeAdmin.value) return 'teachers'
   return 'departments'
 })
 
@@ -238,6 +224,7 @@ const buildRequestParams = () => {
 
   if (activeSection.value === 'teacher-analysis') {
     params.teacher_id = state.teacher_id
+    params.rank_limit = 'all'
     return params
   }
 
@@ -304,7 +291,6 @@ const loadSectionData = async () => {
       params: buildRequestParams(),
     })
     applyPayload(data)
-    await loadCollegeUnclaimedClaims()
     await renderCharts()
   } catch (error: any) {
     if (error?.response?.status === 403) {
@@ -312,45 +298,9 @@ const loadSectionData = async () => {
       router.replace('/dashboard')
       return
     }
-    ElMessage.error('学院看板加载失败，请检查后端接口状态。')
+    ElMessage.error('学院看板加载失败，请检查后端统计接口。')
   } finally {
     loading.value = false
-  }
-}
-
-const loadCollegeUnclaimedClaims = async () => {
-  if (!(isCollegeAdmin.value && activeSection.value === 'overview')) {
-    collegeUnclaimedRecords.value = []
-    return
-  }
-  unclaimedLoading.value = true
-  try {
-    const { data } = await axios.get<CollegeUnclaimedResponse>('/api/achievements/claims/college-unclaimed/', {
-      params: { days_threshold: unclaimedDaysThreshold.value },
-    })
-    collegeUnclaimedRecords.value = data.records ?? []
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || '未认领成果追踪加载失败')
-  } finally {
-    unclaimedLoading.value = false
-  }
-}
-
-const remindCollegeUnclaimedClaims = async () => {
-  if (!(isCollegeAdmin.value && activeSection.value === 'overview')) {
-    return
-  }
-  unclaimedReminding.value = true
-  try {
-    const { data } = await axios.post('/api/achievements/claims/college-unclaimed/remind/', {
-      days_threshold: unclaimedDaysThreshold.value,
-    })
-    ElMessage.success(data.detail || '已发送系统提醒')
-    await loadCollegeUnclaimedClaims()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.detail || '系统提醒发送失败')
-  } finally {
-    unclaimedReminding.value = false
   }
 }
 
@@ -382,7 +332,7 @@ const exportCurrentData = async () => {
   link.download = `academy-dashboard-${activeSection.value}.csv`
   link.click()
   URL.revokeObjectURL(url)
-  ElMessage.success('已导出当前数据')
+  ElMessage.success('已导出当前统计结果。')
 }
 
 const drillTeacher = async (userId: number) => {
@@ -400,6 +350,16 @@ const openTeacherAchievementsPreview = (userId: number, teacherName = '') => {
   previewTeacherId.value = userId
   previewTeacherName.value = teacherName
   achievementPreviewVisible.value = true
+}
+
+const openTeacherTrendPreview = (userId: number, teacherName = '') => {
+  previewTeacherId.value = userId
+  previewTeacherName.value = teacherName
+  trendPreviewVisible.value = true
+}
+
+const openReviewPage = () => {
+  router.push('/teachers/achievement-review')
 }
 
 const handleResize = () => {
@@ -456,8 +416,18 @@ onUnmounted(() => {
           <p class="eyebrow workspace-hero__eyebrow">Academy Dashboard</p>
           <h1 class="workspace-hero__title">学院看板</h1>
           <p class="subtitle workspace-hero__text">
-            {{ isSystemAdmin ? '面向系统管理员查看全校范围的学院对比、钻取与教师管理分析。' : '面向学院管理员查看本学院教师表现、近期成果与管理分析。' }}
+            {{ isSystemAdmin ? '面向系统管理员查看全校范围的学院对比、教师排行与规则成果积分分布。' : '面向学院管理员查看本院教师的规则成果积分、数量趋势与审核后生效情况。' }}
           </p>
+          <div v-if="activeData" class="hero-scope-tags">
+            <span v-for="item in dashboardScopeTags" :key="item.label" class="hero-scope-tag">
+              <strong>{{ item.value }}</strong>
+              <span>{{ item.label }}</span>
+            </span>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <el-button plain @click="exportCurrentData">导出当前结果</el-button>
+          <el-button v-if="checkedUser?.is_admin" type="primary" @click="openReviewPage">进入成果审核</el-button>
         </div>
       </div>
     </section>
@@ -543,40 +513,16 @@ onUnmounted(() => {
         </el-card>
       </section>
 
-      <template v-if="activeSection === 'overview' && isSystemAdmin">
+      <template v-if="activeSection === 'overview'">
         <section class="single-row">
           <el-card class="chart-card workspace-surface-card" shadow="never">
             <template #header>
               <div class="section-head workspace-section-head">
-                <span>年度成果趋势</span>
+                <span>年度积分趋势</span>
+                <el-tag type="primary" effect="plain">积分 / 成果 / 活跃教师</el-tag>
               </div>
             </template>
             <div ref="trendChartRef" class="chart-canvas"></div>
-          </el-card>
-        </section>
-
-        <section class="overview-bottom-row">
-          <el-card class="chart-card workspace-surface-card overview-bottom-row__wide" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>范围结构分布</span>
-              </div>
-            </template>
-            <div ref="sideChartRef" class="chart-canvas chart-canvas--compact"></div>
-          </el-card>
-
-          <el-card class="meta-card workspace-surface-card" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>全校管理摘要</span>
-              </div>
-            </template>
-            <div class="meta-list">
-              <div v-for="item in summaryItems" :key="item.label" class="meta-item">
-                <strong>{{ item.label }}</strong>
-                <p>{{ item.value }}</p>
-              </div>
-            </div>
           </el-card>
         </section>
       </template>
@@ -586,7 +532,7 @@ onUnmounted(() => {
           <el-card class="chart-card workspace-surface-card" shadow="never">
             <template #header>
               <div class="section-head workspace-section-head">
-                <span>学院对比趋势</span>
+                <span>范围积分对比</span>
               </div>
             </template>
             <div ref="comparisonChartRef" class="chart-canvas"></div>
@@ -640,18 +586,17 @@ onUnmounted(() => {
               <el-table-column type="index" label="#" width="60" align="center" header-align="center" />
               <el-table-column prop="teacher_name" label="教师" min-width="120" align="center" header-align="center" />
               <el-table-column prop="department" label="学院" min-width="150" align="center" header-align="center" />
-              <el-table-column label="排行值" width="110" align="center" header-align="center">
-                <template #default="{ row }">{{ row.rank_value }}</template>
+              <el-table-column label="核心科研积分" width="120" align="center" header-align="center">
+                <template #default="{ row }">{{ row.total_score ?? 0 }}</template>
               </el-table-column>
-              <el-table-column prop="achievement_total" label="总成果" width="90" align="center" header-align="center" />
-              <el-table-column prop="paper_count" label="论文" width="90" align="center" header-align="center" />
-              <el-table-column prop="project_count" label="项目" width="90" align="center" header-align="center" />
-              <el-table-column label="操作" min-width="180" align="center" header-align="center">
+              <el-table-column prop="achievement_total" label="成果数" width="90" align="center" header-align="center" />
+              <el-table-column prop="pending_count" label="待审核" width="90" align="center" header-align="center" />
+              <el-table-column label="操作" min-width="200" align="center" header-align="center">
                 <template #default="{ row }">
                   <div class="table-actions">
                     <el-button link type="warning" @click="drillTeacher(row.user_id)">钻取</el-button>
                     <el-button link type="primary" @click="openTeacherProfile(row.user_id, row.teacher_name)">画像</el-button>
-                    <el-button link type="success" @click="openTeacherAchievementsPreview(row.user_id, row.teacher_name)">全部成果</el-button>
+                    <el-button link type="success" @click="openTeacherAchievementsPreview(row.user_id, row.teacher_name)">成果</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -660,113 +605,33 @@ onUnmounted(() => {
         </section>
       </template>
 
-      <template v-if="activeSection === 'overview' && isCollegeAdmin">
-        <section class="single-row">
-          <el-card class="chart-card workspace-surface-card" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>年度成果趋势</span>
-              </div>
-            </template>
-            <div ref="trendChartRef" class="chart-canvas"></div>
-          </el-card>
-        </section>
-
-        <section class="overview-bottom-row">
-          <el-card class="rank-card workspace-surface-card overview-bottom-row__wide" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>本院教师速览</span>
-              </div>
-            </template>
-            <el-table :data="overviewTeacherRows" empty-text="暂无教师记录">
-              <el-table-column prop="teacher_name" label="教师" min-width="120" align="center" header-align="center" />
-              <el-table-column prop="title" label="职称" width="110" align="center" header-align="center" />
-              <el-table-column prop="achievement_total" label="总成果" width="90" align="center" header-align="center" />
-              <el-table-column label="操作" width="120" align="center" header-align="center">
-                <template #default="{ row }">
-                  <el-button link type="primary" @click="openTeacherAchievementsPreview(row.user_id, row.teacher_name)">全部成果</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
-
-          <el-card class="meta-card workspace-surface-card" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>近期成果记录</span>
-              </div>
-            </template>
-            <div class="drill-list">
-              <div v-for="item in recentRecordsTopFive" :key="`${item.type}-${item.title}-${item.date_acquired}`" class="drill-record">
-                <strong>{{ item.title }}</strong>
-                <p>{{ item.teacher_name }} · {{ item.department }}</p>
-                <p>{{ item.detail }} · {{ item.date_acquired }}</p>
-              </div>
-              <p v-if="!recentRecordsTopFive.length" class="metric-helper">当前暂无近期成果记录。</p>
-            </div>
-          </el-card>
-        </section>
-
+      <template v-if="activeSection === 'teacher-analysis' && (isCollegeAdmin || isSystemAdmin)">
         <section class="single-row">
           <el-card class="rank-card workspace-surface-card" shadow="never">
             <template #header>
               <div class="section-head workspace-section-head">
-                <span>异常 / 未认领数据追踪</span>
-                <div class="filter-header-actions">
-                  <el-select v-model="unclaimedDaysThreshold" class="unclaimed-threshold" @change="loadCollegeUnclaimedClaims">
-                    <el-option :value="7" label="超过 7 天" />
-                    <el-option :value="14" label="超过 14 天" />
-                    <el-option :value="30" label="超过 30 天" />
-                  </el-select>
-                  <el-button
-                    type="warning"
-                    plain
-                    :loading="unclaimedReminding"
-                    @click="remindCollegeUnclaimedClaims"
-                  >
-                    一键发送系统提醒
-                  </el-button>
-                </div>
-              </div>
-            </template>
-
-            <el-table
-              :data="collegeUnclaimedRecords"
-              :loading="unclaimedLoading"
-              empty-text="当前没有长期未认领成果"
-            >
-              <el-table-column prop="achievement_title" label="成果题目" min-width="220" align="center" header-align="center" />
-              <el-table-column prop="target_user_name" label="被邀请教师" min-width="120" align="center" header-align="center" />
-              <el-table-column prop="initiator_name" label="录入者" min-width="120" align="center" header-align="center" />
-              <el-table-column label="邀请时间" width="130" align="center" header-align="center">
-                <template #default="{ row }">{{ row.created_at.slice(0, 10) }}</template>
-              </el-table-column>
-              <el-table-column prop="pending_days" label="待认领天数" width="120" align="center" header-align="center" />
-            </el-table>
-          </el-card>
-        </section>
-      </template>
-
-      <template v-if="activeSection === 'teacher-analysis' && isCollegeAdmin">
-        <section class="single-row">
-          <el-card class="rank-card workspace-surface-card" shadow="never">
-            <template #header>
-              <div class="section-head workspace-section-head">
-                <span>本院教师分析</span>
+                <span>{{ isSystemAdmin ? '全校教师分析' : '本院教师分析' }}</span>
+                <el-tag effect="plain">{{ teacherAnalysisRows.length }} 名教师</el-tag>
               </div>
             </template>
 
             <el-table :data="teacherAnalysisRows" empty-text="暂无教师统计数据">
               <el-table-column type="index" label="#" width="60" align="center" header-align="center" />
               <el-table-column prop="teacher_name" label="教师" min-width="120" align="center" header-align="center" />
+              <el-table-column v-if="isSystemAdmin" prop="department" label="学院" min-width="150" align="center" header-align="center" />
               <el-table-column prop="title" label="职称" width="110" align="center" header-align="center" />
-              <el-table-column prop="achievement_total" label="总成果" width="90" align="center" header-align="center" />
-              <el-table-column prop="paper_count" label="论文" width="90" align="center" header-align="center" />
-              <el-table-column prop="project_count" label="项目" width="90" align="center" header-align="center" />
-              <el-table-column label="操作" width="120" align="center" header-align="center">
+              <el-table-column label="积分" width="100" align="center" header-align="center">
+                <template #default="{ row }">{{ row.total_score ?? 0 }}</template>
+              </el-table-column>
+              <el-table-column prop="achievement_total" label="成果数" width="90" align="center" header-align="center" />
+              <el-table-column prop="pending_count" label="待审核" width="90" align="center" header-align="center" />
+              <el-table-column label="操作" width="220" align="center" header-align="center">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openTeacherProfile(row.user_id, row.teacher_name)">画像</el-button>
+                  <div class="table-actions">
+                    <el-button link type="primary" @click="openTeacherProfile(row.user_id, row.teacher_name)">画像</el-button>
+                    <el-button link type="success" @click="openTeacherAchievementsPreview(row.user_id, row.teacher_name)">成果</el-button>
+                    <el-button link type="warning" @click="openTeacherTrendPreview(row.user_id, row.teacher_name)">趋势</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -781,6 +646,7 @@ onUnmounted(() => {
       :teacher-id="previewTeacherId"
       :teacher-name="previewTeacherName"
     />
+    <TeacherTrendPreviewDialog v-model="trendPreviewVisible" :teacher-id="previewTeacherId" :teacher-name="previewTeacherName" />
   </div>
 </template>
 
@@ -801,6 +667,7 @@ onUnmounted(() => {
 }
 
 .hero-main,
+.hero-actions,
 .section-head,
 .filter-header-actions,
 .metric-value-row,
@@ -813,6 +680,34 @@ onUnmounted(() => {
 .hero-main,
 .section-head {
   justify-content: space-between;
+}
+
+.hero-scope-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hero-scope-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.hero-scope-tag strong {
+  color: #fff;
+  font-size: 15px;
+}
+
+.hero-scope-tag span {
+  font-size: 12px;
 }
 
 .eyebrow {
@@ -938,10 +833,6 @@ h1 {
   white-space: nowrap;
 }
 
-.unclaimed-threshold {
-  width: 130px;
-}
-
 @media (max-width: 1320px) {
   .metric-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -964,6 +855,7 @@ h1 {
   }
 
   .hero-main,
+  .hero-actions,
   .section-head,
   .filter-header-actions {
     flex-direction: column;

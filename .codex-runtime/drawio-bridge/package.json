@@ -1,0 +1,9 @@
+{
+  "name": "drawio-bridge-runtime",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned local runtime for the Codex drawio MCP bridge",
+  "dependencies": {
+    "drawio-mcp-server": "^2.0.4"
+  }
+}

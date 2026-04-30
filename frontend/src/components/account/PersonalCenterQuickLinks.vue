@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ChatDotRound, DataAnalysis, DocumentAdd, MagicStick } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -15,7 +15,7 @@ const quickLinks = computed(() => [
   {
     key: 'achievements',
     title: '成果工作台',
-    description: '录入论文、项目、知识产权、教学成果和学术服务。',
+    description: '按评价规则录入学术产出、项目、获奖转化与平台科普成果。',
     icon: DocumentAdd,
     stat: `${props.achievementTotal} 项成果`,
     actionLabel: '进入成果页',

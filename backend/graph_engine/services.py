@@ -46,15 +46,6 @@ class AcademicGraphSyncService:
     @classmethod
     def delete_intellectual_property(cls, ip_id):
         return cls._execute('delete_intellectual_property_from_graph', ip_id=ip_id)
-
-    @classmethod
-    def sync_teaching_achievement(cls, **payload):
-        return cls._execute('sync_teaching_achievement_to_graph', **payload)
-
-    @classmethod
-    def delete_teaching_achievement(cls, teaching_id):
-        return cls._execute('delete_teaching_achievement_from_graph', teaching_id=teaching_id)
-
     @classmethod
     def sync_academic_service(cls, **payload):
         return cls._execute('sync_academic_service_to_graph', **payload)

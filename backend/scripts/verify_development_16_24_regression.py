@@ -110,7 +110,6 @@ def main() -> int:
             "published_issue": "4",
             "pages": "21-29",
             "source_url": regression_source_url,
-            "citation_count": 3,
             "is_first_author": True,
             "is_representative": True,
             "doi": regression_doi,
@@ -141,7 +140,6 @@ def main() -> int:
             "published_issue": "5",
             "pages": "30-38",
             "source_url": f"{regression_source_url}-updated",
-            "citation_count": 5,
             "is_first_author": True,
             "is_representative": True,
             "doi": regression_doi,
@@ -198,7 +196,7 @@ def main() -> int:
     assert_condition(
         results,
         "teacher.radar.payload",
-        len(teacher_radar_payload.get("radar_dimensions", [])) == 6
+        len(teacher_radar_payload.get("radar_dimensions", [])) == 5
         and bool(teacher_radar_payload.get("dimension_insights")),
         "教师画像雷达返回 6 个维度和维度洞察",
     )
@@ -298,8 +296,10 @@ def main() -> int:
     assert_condition(
         results,
         "admin.teacher_list.payload",
-        len(admin_teacher_list_payload) >= 4 and all(not item.get("is_admin", False) for item in admin_teacher_list_payload),
-        "教师管理列表返回教师账号且排除管理员账号",
+        len(admin_teacher_list_payload) >= 4
+        and all(item.get("role_code") != "admin" for item in admin_teacher_list_payload)
+        and any(item.get("role_code") == "teacher" for item in admin_teacher_list_payload),
+        "系统管理员教师管理列表返回可管理账号并排除系统管理员账号",
     )
 
     admin_teacher_detail = admin_client.get("/api/users/teachers/100001/")

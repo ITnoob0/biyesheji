@@ -1,11 +1,12 @@
 ﻿import { RouterView, type RouteRecordRaw } from 'vue-router'
 import AcademyDashboardView from '../views/AcademyDashboardView.vue'
-import AchievementEntryView from '../views/AchievementEntryView.vue'
-import AchievementReviewView from '../views/AchievementReviewView.vue'
-import AchievementClaimView from '../views/personal-center/AchievementClaimView.vue'
+import CollegeManagementView from '../views/CollegeManagementView.vue'
 import DashboardView from '../views/DashboardView.vue'
+import EvaluationRulesView from '../views/EvaluationRulesView.vue'
 import ProjectGuideManagementView from '../views/ProjectGuideManagementView.vue'
 import ProjectRecommendationView from '../views/ProjectRecommendationView.vue'
+import RuleAchievementEntryView from '../views/RuleAchievementEntryView.vue'
+import RuleAchievementReviewView from '../views/RuleAchievementReviewView.vue'
 import TeacherManagementView from '../views/TeacherManagementView.vue'
 import TeacherProfileEditorView from '../views/TeacherProfileEditorView.vue'
 
@@ -66,23 +67,10 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'achievement-entry',
         name: 'teacher-profile-editor-achievement-entry',
-        component: AchievementEntryView,
-        props: { sectionMode: 'manage' },
+        component: RuleAchievementEntryView,
         meta: {
           title: '成果录入',
           order: 30,
-          moduleKey: 'personal-center',
-          requiresAuth: true,
-          menuRoles: ['teacher'],
-        },
-      },
-      {
-        path: 'achievement-claims',
-        name: 'teacher-profile-editor-achievement-claims',
-        component: AchievementClaimView,
-        meta: {
-          title: '成果认领',
-          order: 35,
           moduleKey: 'personal-center',
           requiresAuth: true,
           menuRoles: ['teacher'],
@@ -185,6 +173,18 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           requiresAuth: true,
         },
       },
+      {
+        path: 'rules',
+        name: 'dashboard-rules',
+        component: EvaluationRulesView,
+        props: { sectionMode: 'overview', entryScope: 'portrait' },
+        meta: {
+          title: '评价规则',
+          order: 70,
+          moduleKey: 'portrait',
+          requiresAuth: true,
+        },
+      },
     ],
   }),
   {
@@ -222,8 +222,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'AchievementEntry',
-        component: AchievementEntryView,
-        props: { sectionMode: 'overview' },
+        component: RuleAchievementEntryView,
         meta: {
           title: '成果总览',
           order: 10,
@@ -235,8 +234,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'manage',
         name: 'achievement-entry-manage',
-        component: AchievementEntryView,
-        props: { sectionMode: 'manage' },
+        component: RuleAchievementEntryView,
         meta: {
           title: '成果列表 / 录入',
           order: 20,
@@ -248,8 +246,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'import',
         name: 'achievement-entry-import',
-        component: AchievementEntryView,
-        props: { sectionMode: 'import' },
+        component: RuleAchievementEntryView,
         meta: {
           title: 'BibTeX 导入',
           order: 30,
@@ -261,8 +258,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'statistics',
         name: 'achievement-entry-statistics',
-        component: AchievementEntryView,
-        props: { sectionMode: 'statistics' },
+        component: RuleAchievementEntryView,
         meta: {
           title: '统计摘要',
           order: 40,
@@ -274,8 +270,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'representative',
         name: 'achievement-entry-representative',
-        component: AchievementEntryView,
-        props: { sectionMode: 'representative' },
+        component: RuleAchievementEntryView,
         meta: {
           title: '代表成果',
           order: 50,
@@ -441,7 +436,7 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
       {
         path: 'achievement-review',
         name: 'teacher-management-achievement-review',
-        component: AchievementReviewView,
+        component: RuleAchievementReviewView,
         meta: {
           title: '成果审核',
           order: 30,
@@ -449,6 +444,51 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
           requiresAuth: true,
           requiresAdmin: true,
           menuRoles: ['college_admin'],
+        },
+      },
+    ],
+  }),
+  buildModuleRoute({
+    path: 'evaluation-rules',
+    component: RouterView,
+    meta: {
+      title: '评价规则',
+      icon: 'Setting',
+      order: 115,
+      moduleKey: 'evaluation-rules',
+      moduleRoot: true,
+      requiresAuth: true,
+      requiresAdmin: true,
+      menuRoles: ['admin', 'college_admin'],
+    },
+    children: [
+      {
+        path: '',
+        name: 'evaluation-rules',
+        component: EvaluationRulesView,
+        props: { sectionMode: 'overview', entryScope: 'management' },
+        meta: {
+          title: '规则总览',
+          order: 10,
+          moduleKey: 'evaluation-rules',
+          requiresAuth: true,
+          requiresAdmin: true,
+          menuRoles: ['admin', 'college_admin'],
+        },
+      },
+      {
+        path: 'manage',
+        name: 'evaluation-rules-manage',
+        component: EvaluationRulesView,
+        props: { sectionMode: 'manage', entryScope: 'management' },
+        meta: {
+          title: '规则维护',
+          order: 20,
+          moduleKey: 'evaluation-rules',
+          requiresAuth: true,
+          requiresAdmin: true,
+          requiresSystemAdmin: true,
+          menuRoles: ['admin'],
         },
       },
     ],
@@ -496,31 +536,31 @@ export const workspaceChildrenRoutes: RouteRecordRaw[] = [
         },
       },
       {
-        path: 'drilldown',
-        name: 'academy-dashboard-drilldown',
-        component: AcademyDashboardView,
-        props: { sectionMode: 'drilldown' },
-        meta: {
-          title: '学院钻取',
-          order: 30,
-          moduleKey: 'academy-dashboard',
-          requiresAuth: true,
-          requiresAdmin: true,
-          menuRoles: ['admin'],
-        },
-      },
-      {
         path: 'teacher-analysis',
         name: 'academy-dashboard-teacher-analysis',
         component: AcademyDashboardView,
         props: { sectionMode: 'teacher-analysis' },
         meta: {
           title: '教师分析',
-          order: 20,
+          order: 40,
           moduleKey: 'academy-dashboard',
           requiresAuth: true,
           requiresAdmin: true,
-          menuRoles: ['college_admin'],
+          menuRoles: ['admin', 'college_admin'],
+        },
+      },
+      {
+        path: 'colleges',
+        name: 'academy-dashboard-colleges',
+        component: CollegeManagementView,
+        meta: {
+          title: '学院管理',
+          order: 30,
+          moduleKey: 'academy-dashboard',
+          requiresAuth: true,
+          requiresAdmin: true,
+          requiresSystemAdmin: true,
+          menuRoles: ['admin'],
         },
       },
     ],

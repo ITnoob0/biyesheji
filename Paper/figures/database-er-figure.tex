@@ -1,0 +1,32 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  >=Stealth,
+  entity/.style={draw, rounded corners=2pt, text width=3.8cm, align=left, font=\scriptsize, inner sep=5pt, fill=black!2},
+  rel/.style={line width=0.9pt}
+]
+  \node[entity] (teacher) at (-4.8, 0.8) {\textbf{Teacher}\\\rule{3.55cm}{0.4pt}\\teacher\_id (PK)\\user\_id (FK)\\name\\college\\discipline};
+  \node[entity] (achievement) at (0.0, 2.6) {\textbf{Achievement}\\\rule{3.55cm}{0.4pt}\\achievement\_id (PK)\\teacher\_id (FK)\\type\\title\\status\\score};
+  \node[entity] (portrait) at (0.0, -1.1) {\textbf{PortraitSnapshot}\\\rule{3.55cm}{0.4pt}\\snapshot\_id (PK)\\teacher\_id (FK)\\snapshot\_year\\dimension\_json\\total\_score};
+  \node[entity] (notice) at (4.8, 2.6) {\textbf{Notification}\\\rule{3.55cm}{0.4pt}\\notice\_id (PK)\\receiver\_id (FK)\\type\\is\_read\\created\_at};
+  \node[entity] (record) at (4.8, -1.1) {\textbf{RecommendationRecord}\\\rule{3.55cm}{0.4pt}\\record\_id (PK)\\teacher\_id (FK)\\guide\_id (FK)\\rule\_profile\\feedback};
+  \node[entity] (guide) at (4.8, -4.0) {\textbf{ProjectGuide}\\\rule{3.55cm}{0.4pt}\\guide\_id (PK)\\title\\level\\deadline\\tags};
+
+  \draw[rel] (teacher.east) -- (achievement.west);
+  \node[font=\scriptsize, above] at ($(teacher.east)!0.18!(achievement.west)$) {1};
+  \node[font=\scriptsize, above] at ($(teacher.east)!0.82!(achievement.west)$) {N};
+
+  \draw[rel] (teacher.east) -- (portrait.west);
+  \node[font=\scriptsize, below] at ($(teacher.east)!0.18!(portrait.west)$) {1};
+  \node[font=\scriptsize, below] at ($(teacher.east)!0.82!(portrait.west)$) {N};
+
+  \draw[rel] (achievement.east) -- (notice.west);
+  \node[font=\scriptsize, above] at ($(achievement.east)!0.5!(notice.west)$) {触发通知};
+
+  \draw[rel] (portrait.east) -- (record.west);
+  \node[font=\scriptsize, above] at ($(portrait.east)!0.5!(record.west)$) {支撑推荐};
+
+  \draw[rel] (record.south) -- (guide.north);
+  \node[font=\scriptsize, right] at ($(record.south)!0.2!(guide.north)$) {N};
+  \node[font=\scriptsize, right] at ($(record.south)!0.82!(guide.north)$) {1};
+\end{tikzpicture}

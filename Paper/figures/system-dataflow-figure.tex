@@ -1,0 +1,35 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  font=\small,
+  >=Stealth,
+  ext/.style={draw, fill=black!4, minimum width=2.7cm, minimum height=1.0cm, align=center},
+  proc/.style={draw, rounded corners=4pt, minimum width=3.0cm, minimum height=1.0cm, align=center},
+  store/.style={draw, double, minimum width=3.0cm, minimum height=1.0cm, align=center},
+  flow/.style={->, line width=0.9pt},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1.2pt}
+]
+  \node[ext] (actor) at (-5.8, 2.8) {教师 / 管理员};
+  \node[proc] (p1) at (-2.6, 2.8) {P1\\成果填报与导入};
+  \node[proc] (p2) at (1.2, 2.8) {P2\\成果审核与认领};
+  \node[proc] (p3) at (-1.0, 0.1) {P3\\画像计算};
+  \node[proc] (p4) at (3.2, 0.1) {P4\\问答与看板};
+  \node[ext] (result) at (7.1, 0.1) {教师端界面\\学院看板};
+
+  \node[store] (d1) at (-4.8, -2.1) {D1 教师与账号库};
+  \node[store] (d2) at (-1.0, -2.1) {D2 成果与日志库};
+  \node[store] (d3) at (3.2, -2.1) {D3 指南与知识片段库};
+
+  \draw[flow] (actor.east) -- node[lab, above]{录入 / 审核入口} (p1.west);
+  \draw[flow] (p1.east) -- node[lab, above]{待审核成果} (p2.west);
+  \draw[flow] (p2.south west) -- node[lab, right]{已审成果} (p3.north east);
+  \draw[flow] (p3.east) -- node[lab, above]{推荐结果} (p4.west);
+  \draw[flow] (p4.east) -- node[lab, above]{输出结果} (result.west);
+
+  \draw[flow] (d1.north) -- ++(0,0.8) -| node[lab, pos=0.7, above]{教师档案} (p3.west);
+  \draw[flow] (p1.south) -- ++(0,-0.55) -| (d2.west);
+  \draw[flow] (p2.south) -- ++(0,-0.55) -| (d2.east);
+  \draw[flow] (d2.north) -- node[lab, left]{成果记录} (p3.south);
+  \draw[flow] (d3.north) -- node[lab, right]{规则 / 知识} (p4.south);
+  \draw[flow] (p4.south) -- node[lab, left]{反馈} (d3.north);
+\end{tikzpicture}

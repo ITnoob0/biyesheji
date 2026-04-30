@@ -1,0 +1,43 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  >=Stealth,
+  layer/.style={draw, rounded corners=4pt, minimum width=12.4cm, minimum height=1.15cm, align=center, font=\small},
+  sub/.style={draw, minimum width=3.2cm, minimum height=0.75cm, align=center, font=\scriptsize, fill=black!2},
+  arrow/.style={->, line width=0.9pt}
+]
+  \node[layer] (l1) at (0, 4.1) {};
+  \node[sub] at (-4.2,4.1) {教师端};
+  \node[sub] at (0,4.1) {学院管理员端};
+  \node[sub] at (4.2,4.1) {系统管理员端};
+  \node[font=\small, anchor=west] at (-6.0,4.75) {表现层};
+
+  \node[layer] (l2) at (0, 2.2) {};
+  \node[sub] at (-4.2,2.2) {Vue 3 + Vite};
+  \node[sub] at (0,2.2) {Element Plus 页面容器};
+  \node[sub] at (4.2,2.2) {ECharts 可视化组件};
+  \node[font=\small, anchor=west] at (-6.0,2.85) {前端应用层};
+
+  \node[layer] (l3) at (0, 0.3) {};
+  \node[sub] at (-4.2,0.3) {认证与权限接口};
+  \node[sub] at (0,0.3) {成果 / 画像 / 推荐 / 问答接口};
+  \node[sub] at (4.2,0.3) {学院看板 / 图谱接口};
+  \node[font=\small, anchor=west] at (-6.0,0.95) {服务接口层};
+
+  \node[layer] (l4) at (0, -1.6) {};
+  \node[sub] at (-4.2,-1.6) {Django / DRF 业务服务};
+  \node[sub] at (0,-1.6) {规则引擎与画像计算};
+  \node[sub] at (4.2,-1.6) {通知、日志与异常处理};
+  \node[font=\small, anchor=west] at (-6.0,-0.95) {业务处理层};
+
+  \node[layer] (l5) at (0, -3.5) {};
+  \node[sub] at (-4.2,-3.5) {MySQL 主业务库};
+  \node[sub] at (0,-3.5) {Neo4j 图谱增强层};
+  \node[sub] at (4.2,-3.5) {系统内知识片段与推荐历史};
+  \node[font=\small, anchor=west] at (-6.0,-2.85) {数据支撑层};
+
+  \draw[arrow] (0,3.55) -- (0,2.75);
+  \draw[arrow] (0,1.65) -- (0,0.85);
+  \draw[arrow] (0,-0.25) -- (0,-1.05);
+  \draw[arrow] (0,-2.15) -- (0,-2.95);
+\end{tikzpicture}

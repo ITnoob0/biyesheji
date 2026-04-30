@@ -1,6 +1,10 @@
-from django.contrib.auth import get_user_model
+﻿from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
+
+import json
+
+from evaluation_rules.models import EvaluationRuleItem
 
 from .governance import build_paper_metadata_alert_details, build_paper_metadata_alerts
 from .models import (
@@ -13,7 +17,17 @@ from .models import (
     PaperKeyword,
     PaperOperationLog,
     Project,
-    TeachingAchievement,
+    RuleBasedAchievement,
+    RuleBasedAchievementAttachment,
+)
+from .rule_entry_schema import build_rule_entry_form_schema, flatten_rule_entry_form_schema
+from .rule_scoring import (
+    apply_rule_snapshots,
+    build_same_achievement_basis,
+    build_same_achievement_key,
+    build_score_preview,
+    tokenize_keywords,
+    validate_team_rule_constraints,
 )
 
 
@@ -97,7 +111,6 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             'published_issue',
             'pages',
             'source_url',
-            'citation_count',
             'is_first_author',
             'is_corresponding_author',
             'is_representative',
@@ -126,11 +139,6 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
         if len(cleaned) < 2:
             raise serializers.ValidationError('期刊或会议名称不能为空。')
         return cleaned
-
-    def validate_citation_count(self, value):
-        if value < 0:
-            raise serializers.ValidationError('引用次数不能为负数。')
-        return value
 
     def validate_coauthors(self, value):
         normalized = []
@@ -182,7 +190,7 @@ class PaperSerializer(TeacherOwnedAchievementSerializer):
             is_corresponding = bool(item.get('is_corresponding', False))
             if author_rank is not None:
                 if author_rank in used_ranks:
-                    raise serializers.ValidationError('合作者位次不能重复。')
+                    raise serializers.ValidationError('合作作者位次不能重复。')
                 used_ranks.add(author_rank)
             seen_keys.add(dedupe_key)
             normalized.append(
@@ -340,45 +348,6 @@ class IntellectualPropertySerializer(TeacherOwnedAchievementSerializer):
             raise serializers.ValidationError('登记号不能为空。')
         return cleaned
 
-
-class TeachingAchievementSerializer(TeacherOwnedAchievementSerializer):
-    achievement_type_display = serializers.CharField(source='get_achievement_type_display', read_only=True)
-    role_display = serializers.SerializerMethodField()
-
-    class Meta:
-        model = TeachingAchievement
-        fields = (
-            'id',
-            'teacher',
-            'teacher_name',
-            'title',
-            'date_acquired',
-            'status',
-            'status_label',
-            'achievement_type',
-            'achievement_type_display',
-            'role',
-            'role_display',
-            'level',
-            'created_at',
-        )
-        read_only_fields = TeacherOwnedAchievementSerializer.read_only_fields + ('achievement_type_display', 'role_display')
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        achievement_type = attrs.get('achievement_type')
-        if achievement_type is None and self.instance is not None:
-            achievement_type = self.instance.achievement_type
-
-        if achievement_type in {'COMPETITION', 'THESIS'}:
-            attrs['role'] = 'PI'
-
-        return attrs
-
-    def get_role_display(self, obj):
-        if obj.achievement_type in {'COMPETITION', 'THESIS'}:
-            return '指导教师'
-        return obj.get_role_display()
 
 
 class AcademicServiceSerializer(TeacherOwnedAchievementSerializer):
@@ -566,8 +535,340 @@ class AchievementClaimAcceptSerializer(serializers.Serializer):
         return value.strip()
 
 
+class RuleBasedAchievementAttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RuleBasedAchievementAttachment
+        fields = ('id', 'original_name', 'file', 'file_url', 'created_at')
+        read_only_fields = fields
+
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if request is None:
+            return obj.file.url if obj.file else ''
+        return request.build_absolute_uri(obj.file.url) if obj.file else ''
+
+
+class RuleBasedAchievementSerializer(serializers.ModelSerializer):
+    UNIQUE_IDENTIFIER_MESSAGES = {
+        'PAPER_BOOK': '请填写成果唯一识别信息，如 DOI、ISBN、检索号或刊号，不得使用简称。',
+        'PROJECT': '请填写项目唯一识别信息，如立项编号、合同编号或任务书编号。',
+        'AWARD': '请填写获奖成果唯一识别信息，如证书编号或通知文号。',
+        'TRANSFORMATION': '请填写转化成果唯一识别信息，如专利号、标准号、合同号或证书编号。',
+        'THINK_TANK': '请填写智库成果唯一识别信息，如批示编号、刊发编号或采纳编号。',
+        'PLATFORM_TEAM': '请填写平台或团队唯一识别信息，如认定文号或正式编号。',
+        'SCI_POP_AWARD': '请填写科普获奖唯一识别信息，如证书编号或通知文号。',
+    }
+
+    teacher_name = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    category_code = serializers.CharField(source='category.code', read_only=True)
+    rule_item_title = serializers.CharField(source='rule_item.title', read_only=True)
+    rule_item_code = serializers.CharField(source='rule_item.rule_code', read_only=True)
+    score_preview = serializers.SerializerMethodField()
+    same_achievement_key = serializers.SerializerMethodField()
+    same_achievement_basis = serializers.SerializerMethodField()
+    attachments = RuleBasedAchievementAttachmentSerializer(many=True, read_only=True)
+    evidence_files = serializers.ListField(
+        child=serializers.FileField(),
+        write_only=True,
+        required=False,
+        allow_empty=True,
+    )
+
+    class Meta:
+        model = RuleBasedAchievement
+        fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'version',
+            'category',
+            'category_code',
+            'category_name',
+            'rule_item',
+            'rule_item_code',
+            'rule_item_title',
+            'title',
+            'external_reference',
+            'date_acquired',
+            'status',
+            'status_label',
+            'issuing_organization',
+            'publication_name',
+            'role_text',
+            'author_rank',
+            'is_corresponding_author',
+            'is_representative',
+            'school_unit_order',
+            'amount_value',
+            'amount_unit',
+            'keywords_text',
+            'coauthor_names',
+            'team_identifier',
+            'team_total_members',
+            'team_allocated_score',
+            'team_contribution_note',
+            'evidence_note',
+            'factual_payload',
+            'provisional_score',
+            'final_score',
+            'score_detail',
+            'score_preview',
+            'same_achievement_key',
+            'same_achievement_basis',
+            'review_comment',
+            'reviewed_by',
+            'reviewed_at',
+            'attachments',
+            'evidence_files',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = (
+            'id',
+            'teacher',
+            'teacher_name',
+            'version',
+            'status',
+            'status_label',
+            'provisional_score',
+            'final_score',
+            'score_detail',
+            'score_preview',
+            'reviewed_by',
+            'reviewed_at',
+            'attachments',
+            'created_at',
+            'updated_at',
+        )
+
+    def get_teacher_name(self, obj):
+        return obj.teacher.real_name or obj.teacher.username
+
+    def get_status_label(self, obj):
+        return obj.get_status_display()
+
+    def get_score_preview(self, obj):
+        return build_score_preview(
+            rule_item=obj.rule_item,
+            amount_value=obj.amount_value,
+            team_allocated_score=obj.team_allocated_score,
+            instance=obj,
+        )
+
+    def get_same_achievement_key(self, obj):
+        return build_same_achievement_key(obj)
+
+    def get_same_achievement_basis(self, obj):
+        return build_same_achievement_basis(obj)
+
+    def validate_title(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError('成果名称至少需要 2 个字符。')
+        return cleaned
+
+    def _normalize_factual_payload(self, raw_payload, base_payload=None):
+        payload = dict(base_payload or {})
+        if raw_payload is serializers.empty or raw_payload is None or raw_payload == '':
+            return payload
+
+        parsed_payload = raw_payload
+        if isinstance(raw_payload, str):
+            try:
+                parsed_payload = json.loads(raw_payload)
+            except json.JSONDecodeError as exc:
+                raise serializers.ValidationError({'factual_payload': '扩展事实字段格式错误。'}) from exc
+
+        if not isinstance(parsed_payload, dict):
+            raise serializers.ValidationError({'factual_payload': '扩展事实字段必须是对象。'})
+
+        for key, value in parsed_payload.items():
+            if isinstance(value, str):
+                payload[key] = value.strip()
+            else:
+                payload[key] = value
+        return payload
+
+    def _is_empty_entry_value(self, value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) == 0
+        return False
+
+    def _normalize_root_fields(self, attrs):
+        for field_name in (
+            'external_reference',
+            'issuing_organization',
+            'publication_name',
+            'role_text',
+            'school_unit_order',
+            'team_identifier',
+            'team_contribution_note',
+            'evidence_note',
+        ):
+            if field_name in attrs and isinstance(attrs[field_name], str):
+                attrs[field_name] = attrs[field_name].strip()
+
+        if 'coauthor_names' in attrs and isinstance(attrs['coauthor_names'], str):
+            try:
+                parsed_coauthors = json.loads(attrs['coauthor_names'])
+                if isinstance(parsed_coauthors, list):
+                    attrs['coauthor_names'] = parsed_coauthors
+            except json.JSONDecodeError:
+                attrs['coauthor_names'] = [item.strip() for item in attrs['coauthor_names'].split('，') if item.strip()]
+
+        return attrs
+
+    def _validate_form_schema(self, *, rule_item, attrs, instance):
+        factual_payload = self._normalize_factual_payload(
+            attrs.get('factual_payload', serializers.empty),
+            base_payload=getattr(instance, 'factual_payload', {}) if instance else {},
+        )
+        schema_fields = flatten_rule_entry_form_schema(build_rule_entry_form_schema(rule_item))
+
+        errors: dict[str, str] = {}
+        factual_errors: list[str] = []
+        for field in schema_fields:
+            key = field.get('key')
+            label = field.get('label') or key
+            if field.get('storage') == 'root':
+                value = attrs.get(key, getattr(instance, key, None) if instance else None)
+            else:
+                value = factual_payload.get(key)
+            if field.get('required') and self._is_empty_entry_value(value):
+                if field.get('storage') == 'root':
+                    errors[key] = f'请填写{label}。'
+                else:
+                    factual_errors.append(f'请填写{label}。')
+
+        if factual_errors:
+            errors['factual_payload'] = '；'.join(factual_errors)
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return factual_payload
+
+    def _validate_unique_identifier_fields(self, *, category, attrs, instance):
+        category_code = (getattr(category, 'code', '') or '').strip().upper()
+        external_reference = attrs.get('external_reference', getattr(instance, 'external_reference', '') if instance else '')
+        team_identifier = attrs.get('team_identifier', getattr(instance, 'team_identifier', '') if instance else '')
+
+        errors: dict[str, str] = {}
+        if category_code in self.UNIQUE_IDENTIFIER_MESSAGES and not self._is_empty_entry_value(external_reference):
+            if len(str(external_reference).strip()) < 2:
+                errors['external_reference'] = '成果唯一识别信息至少需要 2 个字符，并与正式材料保持一致。'
+
+        if category_code == 'PLATFORM_TEAM':
+            if self._is_empty_entry_value(team_identifier):
+                errors['team_identifier'] = '请填写团队归并标识，同一平台或团队跨教师录入时必须保持一致。'
+            elif len(str(team_identifier).strip()) < 2:
+                errors['team_identifier'] = '团队归并标识至少需要 2 个字符，请填写正式且稳定的归并标识。'
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        instance = getattr(self, 'instance', None)
+        rule_item = attrs.get('rule_item', getattr(instance, 'rule_item', None))
+        category = attrs.get('category', getattr(instance, 'category', None))
+        date_acquired = attrs.get('date_acquired', getattr(instance, 'date_acquired', None))
+
+        if date_acquired and date_acquired > timezone.now().date():
+            raise serializers.ValidationError({'date_acquired': '日期不能晚于今天。'})
+
+        if rule_item is None:
+            raise serializers.ValidationError({'rule_item': '请选择加分项。'})
+        if category is None:
+            raise serializers.ValidationError({'category': '请选择成果大类。'})
+        if rule_item.category_ref_id != category.id:
+            raise serializers.ValidationError({'rule_item': '所选加分项不属于当前成果大类。'})
+        if rule_item.entry_policy == EvaluationRuleItem.ENTRY_FORBIDDEN:
+            raise serializers.ValidationError({'rule_item': '当前规则条目不允许教师直接填报。'})
+
+        attrs = self._normalize_root_fields(attrs)
+        self._validate_unique_identifier_fields(category=category, attrs=attrs, instance=instance)
+
+        if rule_item.requires_amount_input and attrs.get('amount_value', getattr(instance, 'amount_value', None)) in {None, ''}:
+            raise serializers.ValidationError({'amount_value': '当前规则需要填写金额/数量计分基数。'})
+
+        preview_errors = validate_team_rule_constraints(
+            RuleBasedAchievement(
+                teacher=request.user if request else getattr(instance, 'teacher', None),
+                version=rule_item.version,
+                category=category,
+                rule_item=rule_item,
+                title=attrs.get('title', getattr(instance, 'title', '')),
+                external_reference=attrs.get('external_reference', getattr(instance, 'external_reference', '')),
+                date_acquired=date_acquired,
+                team_identifier=attrs.get('team_identifier', getattr(instance, 'team_identifier', '')),
+                team_total_members=attrs.get('team_total_members', getattr(instance, 'team_total_members', None)),
+                team_allocated_score=attrs.get('team_allocated_score', getattr(instance, 'team_allocated_score', None)),
+            ),
+            approval_phase=False,
+        )
+        if preview_errors:
+            raise serializers.ValidationError({'team_identifier': '；'.join(preview_errors)})
+
+        if 'keywords_text' in attrs:
+            attrs['keywords_text'] = '，'.join(tokenize_keywords(attrs['keywords_text']))
+
+        attrs['factual_payload'] = self._validate_form_schema(
+            rule_item=rule_item,
+            attrs=attrs,
+            instance=instance,
+        )
+        attrs['version'] = rule_item.version
+        return attrs
+
+    def create(self, validated_data):
+        evidence_files = validated_data.pop('evidence_files', [])
+        instance = RuleBasedAchievement(**validated_data)
+        apply_rule_snapshots(instance)
+        instance.teacher = self.context['request'].user
+        instance.status = 'PENDING_REVIEW'
+        instance.save()
+        self._save_attachments(instance, evidence_files)
+        return instance
+
+    def update(self, instance, validated_data):
+        evidence_files = validated_data.pop('evidence_files', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        apply_rule_snapshots(instance)
+        if instance.status in {'APPROVED', 'REJECTED'}:
+            instance.status = 'PENDING_REVIEW'
+            instance.review_comment = ''
+            instance.reviewed_by = None
+            instance.reviewed_at = None
+            instance.final_score = 0
+        instance.save()
+        if evidence_files is not None:
+            instance.attachments.all().delete()
+            self._save_attachments(instance, evidence_files)
+        return instance
+
+    def _save_attachments(self, instance: RuleBasedAchievement, files):
+        request = self.context.get('request')
+        for file_obj in files or []:
+            RuleBasedAchievementAttachment.objects.create(
+                achievement=instance,
+                file=file_obj,
+                original_name=getattr(file_obj, 'name', ''),
+                uploaded_by=request.user if request else None,
+            )
+
+
 class AchievementClaimRejectSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
 
     def validate_reason(self, value):
         return value.strip()
+

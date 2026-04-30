@@ -1,0 +1,32 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  font=\small,
+  >=Stealth,
+  context/.style={draw, fill=black!4, minimum width=2.5cm, minimum height=1.05cm, align=center},
+  block/.style={draw, rounded corners=3pt, minimum width=3.3cm, minimum height=1.05cm, align=center, inner sep=3pt},
+  group/.style={draw, rounded corners=4pt, inner sep=7pt},
+  link/.style={->, line width=0.9pt}
+]
+  \node[context] (scene) at (-5.7, 0.0) {高校科研治理场景};
+
+  \node[block] (q1) at (-1.3, 2.2) {数据来源分散\\口径不统一};
+  \node[block] (q2) at (-1.3, 0.0) {分析入口碎片化\\缺乏统一画像};
+  \node[block] (q3) at (-1.3, -2.2) {辅助决策能力弱\\解释依据不足};
+  \node[group, fit=(q1)(q2)(q3)] (pain) {};
+  \node[font=\small] at ($(pain.north)+(0,0.45)$) {治理痛点};
+
+  \node[block] (m1) at (3.0, 2.2) {成果治理规范化};
+  \node[block] (m2) at (3.0, 0.0) {教师科研画像构建};
+  \node[block] (m3) at (3.0, -2.2) {推荐、问答与看板联动};
+  \node[group, fit=(m1)(m2)(m3)] (target) {};
+  \node[font=\small] at ($(target.north)+(0,0.45)$) {建设目标};
+
+  \node[context, minimum width=3.3cm] (goal) at (7.0, 0.0) {轻量、可解释、可落地\\科研治理支撑系统};
+
+  \draw[link] (scene.east) -- (pain.west);
+  \draw[link] (q1.east) -- (m1.west);
+  \draw[link] (q2.east) -- (m2.west);
+  \draw[link] (q3.east) -- (m3.west);
+  \draw[link] (target.east) -- (goal.west);
+\end{tikzpicture}

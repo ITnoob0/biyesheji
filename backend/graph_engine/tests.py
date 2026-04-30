@@ -12,7 +12,6 @@ from achievements.models import (
     PaperKeyword,
     Project,
     ResearchKeyword,
-    TeachingAchievement,
 )
 
 
@@ -65,14 +64,6 @@ class GraphTopologyFallbackTests(APITestCase):
             is_transformed=False,
             status='APPROVED',
         )
-        teaching = TeachingAchievement.objects.create(
-            teacher=self.user,
-            title='图谱与画像融合教改成果',
-            date_acquired='2026-03-04',
-            achievement_type='TEACHING_REFORM',
-            level='校级',
-            status='APPROVED',
-        )
         service = AcademicService.objects.create(
             teacher=self.user,
             title='学术图数据治理专题论坛报告',
@@ -106,7 +97,6 @@ class GraphTopologyFallbackTests(APITestCase):
         self.assertTrue(any(node.get('recordType') == 'paper' and node.get('entityId') == paper.id for node in response.data['nodes']))
         self.assertTrue(any(node.get('recordType') == 'project' and node.get('entityId') == project.id for node in response.data['nodes']))
         self.assertTrue(any(node.get('recordType') == 'intellectual_property' and node.get('entityId') == ip.id for node in response.data['nodes']))
-        self.assertTrue(any(node.get('recordType') == 'teaching_achievement' and node.get('entityId') == teaching.id for node in response.data['nodes']))
         self.assertTrue(any(node.get('recordType') == 'academic_service' and node.get('entityId') == service.id for node in response.data['nodes']))
 
         self.assertTrue(any('relationLabel' in link for link in response.data['links']))
@@ -168,6 +158,44 @@ class GraphTopologyFallbackTests(APITestCase):
         self.assertEqual(circle['extended_collaborator_count'], 1)
         self.assertEqual(circle['core_collaborators'][0]['name'], '核心合作者')
         self.assertIn('轻量', circle['threshold_note'])
+
+    def test_relational_topology_only_uses_owned_papers_without_claim_expansion(self):
+        owner = User.objects.create_user(
+            id=100084,
+            username='100084',
+            password='teacher123456',
+            real_name='录入教师',
+        )
+        claimed_teacher = User.objects.create_user(
+            id=100085,
+            username='100085',
+            password='teacher123456',
+            real_name='认领教师',
+        )
+        paper = Paper.objects.create(
+            teacher=owner,
+            title='认领后进入图谱的论文',
+            abstract='用于验证已认领论文会进入被认领教师的学术社交拓扑。',
+            date_acquired='2026-03-08',
+            doi='10.1234/claimed-topology-paper',
+            paper_type='JOURNAL',
+            journal_name='图谱验证期刊',
+            status='APPROVED',
+        )
+        coauthor = CoAuthor.objects.create(
+            paper=paper,
+            name=claimed_teacher.real_name,
+            is_internal=True,
+            internal_teacher=claimed_teacher,
+        )
+        self.assertIsNotNone(coauthor)
+
+        self.client.force_authenticate(claimed_teacher)
+        response = self.client.get(f'/api/graph/topology/{claimed_teacher.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(node.get('name') == paper.title for node in response.data['nodes']))
+        self.assertEqual(response.data['analysis']['collaboration_overview']['paper_count'], 0)
 
     @override_settings(ENABLE_NEO4J=True)
     def test_graph_still_falls_back_to_mysql_when_neo4j_runtime_is_unavailable(self):

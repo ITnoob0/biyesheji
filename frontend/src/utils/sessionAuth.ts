@@ -29,7 +29,6 @@ export type SessionUser = Pick<
   | 'bio'
   | 'discipline'
   | 'research_interests'
-  | 'h_index'
   | 'is_active'
   | 'is_admin'
   | 'role_code'
@@ -100,7 +99,6 @@ const normalizeSessionUser = (raw: SessionUserPayload | null | undefined): Sessi
   bio: raw?.bio ?? '',
   discipline: raw?.discipline ?? '',
   research_interests: raw?.research_interests ?? '',
-  h_index: Number(raw?.h_index ?? 0),
   is_active: raw?.is_active ?? true,
   is_admin: Boolean(raw?.is_admin),
   role_code: raw?.role_code === 'college_admin' ? 'college_admin' : raw?.role_code === 'admin' ? 'admin' : 'teacher',

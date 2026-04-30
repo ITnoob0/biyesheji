@@ -1,4 +1,4 @@
-export type GraphNodeType =
+﻿export type GraphNodeType =
   | 'CenterTeacher'
   | 'Paper'
   | 'Keyword'

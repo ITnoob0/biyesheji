@@ -163,9 +163,6 @@
                 </el-form-item>
               </div>
               <div class="double-grid">
-                <el-form-item label="引用次数">
-                  <el-input-number v-model="paperForm.citation_count" :min="0" style="width: 100%" />
-                </el-form-item>
                 <el-form-item label="DOI" prop="doi">
                   <el-input v-model="paperForm.doi" placeholder="如 10.1000/xyz123" />
                 </el-form-item>
@@ -338,7 +335,6 @@
                     <strong>{{ row.title }}</strong>
                     <div class="tag-list">
                       <el-tag v-if="row.is_representative" size="small" type="success" effect="plain">代表作</el-tag>
-                      <el-tag size="small" effect="plain">{{ row.citation_count }} 引用</el-tag>
                     </div>
                   </div>
                 </template>
@@ -599,7 +595,7 @@
           />
         </el-tab-pane>
 
-      <el-tab-pane label="教学成果" name="teaching-achievements">
+      <el-tab-pane v-if="false" label="教学成果" name="teaching-achievements">
           <div class="entry-grid">
             <el-card shadow="never">
             <template #header>{{ isEditing('teaching-achievements') ? editingLabelMap['teaching-achievements'].edit : editingLabelMap['teaching-achievements'].create }}</template>
@@ -927,7 +923,6 @@ const paperForm = reactive<PaperFormState>({
   published_issue: '',
   pages: '',
   source_url: '',
-  citation_count: 0,
   is_first_author: true,
   is_corresponding_author: false,
   is_representative: false,
@@ -1290,7 +1285,6 @@ const resetPaperForm = (): void => {
   paperForm.published_issue = ''
   paperForm.pages = ''
   paperForm.source_url = ''
-  paperForm.citation_count = 0
   paperForm.is_first_author = true
   paperForm.is_corresponding_author = false
   paperForm.is_representative = false
@@ -1353,7 +1347,6 @@ const populatePaperForm = (record: PaperRecord): void => {
   paperForm.published_issue = record.published_issue
   paperForm.pages = record.pages
   paperForm.source_url = record.source_url
-  paperForm.citation_count = record.citation_count
   paperForm.is_first_author = record.is_first_author
   paperForm.is_corresponding_author = record.is_corresponding_author
   paperForm.is_representative = record.is_representative
@@ -1499,7 +1492,6 @@ const submitPaper = async (): Promise<void> => {
       published_issue: paperForm.published_issue,
       pages: paperForm.pages,
       source_url: paperForm.source_url,
-      citation_count: paperForm.citation_count,
       is_first_author: paperForm.is_first_author,
       is_corresponding_author: paperForm.is_corresponding_author,
       is_representative: paperForm.is_representative,

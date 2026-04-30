@@ -24,7 +24,6 @@ from achievements.models import (
     IntellectualProperty,
     Paper,
     Project,
-    TeachingAchievement,
 )
 
 
@@ -196,37 +195,6 @@ def sync_intellectual_properties() -> int:
     return len(records)
 
 
-def sync_teaching_achievements() -> int:
-    records = list(TeachingAchievement.objects.select_related("teacher").order_by("id"))
-    for item in records:
-        run_cypher(
-            [
-                {
-                    "statement": """
-                    MERGE (t:Teacher {user_id: $teacher_user_id})
-                    SET t.name = $teacher_name
-
-                    MERGE (ta:TeachingAchievement {teaching_id: $teaching_id})
-                    SET ta.title = $title,
-                        ta.achievement_type = $achievement_type,
-                        ta.level = $level
-
-                    MERGE (t)-[:HAS_TEACHING_ACHIEVEMENT]->(ta)
-                    """,
-                    "parameters": {
-                        "teacher_user_id": int(item.teacher_id),
-                        "teacher_name": item.teacher.real_name or item.teacher.username,
-                        "teaching_id": str(item.id),
-                        "title": item.title,
-                        "achievement_type": item.achievement_type,
-                        "level": item.level,
-                    },
-                }
-            ]
-        )
-    return len(records)
-
-
 def sync_academic_services() -> int:
     records = list(AcademicService.objects.select_related("teacher").order_by("id"))
     for item in records:
@@ -266,7 +234,6 @@ def main() -> int:
     paper_count = sync_papers()
     project_count = sync_projects()
     ip_count = sync_intellectual_properties()
-    teaching_count = sync_teaching_achievements()
     service_count = sync_academic_services()
 
     node_counts = run_cypher(
@@ -279,7 +246,6 @@ def main() -> int:
     print(f"neo4j_synced_papers={paper_count}")
     print(f"neo4j_synced_projects={project_count}")
     print(f"neo4j_synced_ips={ip_count}")
-    print(f"neo4j_synced_teaching={teaching_count}")
     print(f"neo4j_synced_services={service_count}")
     print(f"neo4j_node_counts={node_counts}")
     print(f"neo4j_relation_counts={rel_counts}")

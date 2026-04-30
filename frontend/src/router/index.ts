@@ -66,14 +66,18 @@ router.beforeEach(async to => {
   }
 
   if (to.meta.requiresAdmin && !sessionUser.is_admin) {
+    const routeName = String(to.name ?? '')
     const adminFeatureLabel =
-      to.name === 'teacher-management'
+      routeName === 'teacher-management'
         ? '教师管理入口'
-        : to.name === 'project-guide-management'
-          ? '项目指南管理入口'
-          : to.name === 'academy-dashboard'
-            ? '学院级统计看板'
-            : '管理员入口'
+        : ['evaluation-rules', 'evaluation-rules-manage'].includes(routeName)
+          ? '评价规则入口'
+          : routeName === 'project-guide-management'
+            ? '项目指南管理入口'
+            : routeName === 'academy-dashboard'
+              ? '学院看板入口'
+              : '管理员入口'
+
     setSessionNotice(buildAdminRouteNotice(adminFeatureLabel))
     return {
       name: 'dashboard',
@@ -82,16 +86,20 @@ router.beforeEach(async to => {
   }
 
   if (to.meta.requiresSystemAdmin && sessionUser.role_code !== 'admin') {
+    const routeName = String(to.name ?? '')
     const systemAdminFeatureLabel =
-      to.name === 'teacher-management-accounts'
+      routeName === 'teacher-management-accounts'
         ? '添加教师入口'
-        : to.name === 'teacher-management-college-admins'
+        : routeName === 'teacher-management-college-admins'
           ? '创建学院管理员入口'
-          : to.name === 'project-guide-management'
-            ? '项目指南管理入口'
-            : to.name === 'academy-dashboard'
-              ? '学院级统计看板'
-              : '系统管理员入口'
+          : routeName === 'evaluation-rules-manage'
+            ? '评价规则维护入口'
+            : routeName === 'project-guide-management'
+              ? '项目指南管理入口'
+              : routeName === 'academy-dashboard'
+                ? '学院看板入口'
+                : '系统管理员入口'
+
     setSessionNotice(buildSystemAdminRouteNotice(systemAdminFeatureLabel))
     return {
       path: resolveWorkspaceHomePath(sessionUser),

@@ -30,7 +30,6 @@ export interface TeacherAccountResponse {
   bio: string
   discipline: string
   research_interests: string
-  h_index: number
   is_active: boolean
   is_admin: boolean
   role_code: TeacherAccountRoleCode
@@ -46,6 +45,22 @@ export interface TeacherAccountResponse {
 
 export interface TeacherCreateResponse extends TeacherAccountResponse {
   initial_password?: string
+}
+
+export interface CollegeRecordResponse {
+  id: number
+  name: string
+  is_active: boolean
+  sort_order: number
+  account_count: number
+  teacher_count: number
+  college_admin_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CollegeListResponse {
+  records: CollegeRecordResponse[]
 }
 
 export interface TeacherPasswordResetResponse {
@@ -121,6 +136,7 @@ export type UserNotificationCategory =
   | 'ACHIEVEMENT_CLAIM'
   | 'CLAIM_REMINDER'
   | 'PASSWORD_RESET_REQUEST'
+  | 'TITLE_CHANGE_REQUEST'
 
 export interface UserNotificationRecord {
   id: number
@@ -141,4 +157,36 @@ export interface UserNotificationListResponse {
   total_count: number
   unread_count: number
   records: UserNotificationRecord[]
+}
+
+export interface TeacherTitleOption {
+  label: string
+  value: string
+}
+
+export interface TeacherTitleOptionsResponse {
+  options: TeacherTitleOption[]
+}
+
+export type TeacherTitleChangeRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED'
+
+export interface TeacherTitleChangeRequestRecord {
+  id: number
+  teacher_id: number
+  teacher_name: string
+  teacher_employee_id: string
+  teacher_department: string
+  current_title: string
+  requested_title: string
+  apply_reason: string
+  status: TeacherTitleChangeRequestStatus
+  status_label: string
+  review_comment: string
+  reviewer_name: string
+  created_at: string
+  reviewed_at: string | null
+}
+
+export interface TeacherTitleChangeRequestListResponse {
+  records: TeacherTitleChangeRequestRecord[]
 }

@@ -1,4 +1,4 @@
-import type { AchievementQueryState, CoAuthorRecordInput, TabName } from '../../types/achievements'
+﻿import type { AchievementQueryState, CoAuthorRecordInput, TabName } from '../../types/achievements'
 
 export const achievementEndpointMap: Record<TabName, string> = {
   papers: '/api/achievements/papers/',
@@ -146,9 +146,7 @@ export const paperRepresentativeOptions = [
 
 export const paperSortOptions = [
   { label: '按时间从新到旧', value: 'date_desc' },
-  { label: '按引用次数从高到低', value: 'citation_desc' },
   { label: '按时间从旧到新', value: 'date_asc' },
-  { label: '按引用次数从低到高', value: 'citation_asc' },
   { label: '按题目 A-Z', value: 'title_asc' },
   { label: '按题目 Z-A', value: 'title_desc' },
   { label: '按创建时间从新到旧', value: 'created_desc' },

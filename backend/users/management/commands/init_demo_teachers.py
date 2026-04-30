@@ -10,7 +10,6 @@ from achievements.models import (
     Project,
     ResearchKeyword,
     TeacherProfile,
-    TeachingAchievement,
 )
 from project_guides.models import ProjectGuide
 from users.serializers import DEFAULT_TEACHER_PASSWORD, sync_teacher_profile
@@ -22,7 +21,8 @@ class Command(BaseCommand):
 
     DEMO_ADMIN_ID = 1
     DEMO_ADMIN_USERNAME = 'admin'
-    DEMO_ADMIN_PASSWORD = 'Admin123456'
+    DEMO_ACCOUNT_PASSWORD = 'liujianlei'
+    DEMO_ADMIN_PASSWORD = DEMO_ACCOUNT_PASSWORD
     DEMO_GUIDE_SOURCE_PREFIX = 'https://demo.local/guides/'
     DEMO_TEACHER_IDS = (100001, 100002, 100003, 100004)
 
@@ -67,11 +67,10 @@ class Command(BaseCommand):
                 'id': 100001,
                 'username': '100001',
                 'real_name': '张晨阳',
-                'department': '计算机学院',
+                'department': '数学与计算机科学学院',
                 'title': '副教授',
                 'discipline': '人工智能',
                 'research_interests': '大语言模型、知识图谱、教育智能',
-                'h_index': 12,
                 'bio': '长期从事高校教师科研画像与智能辅助系统相关研究。',
                 'research_direction': ['大语言模型', '知识图谱', '教育智能'],
                 'papers': [
@@ -81,7 +80,6 @@ class Command(BaseCommand):
                         'paper_type': 'JOURNAL',
                         'journal_name': '计算机工程与应用',
                         'journal_level': 'CCF-C',
-                        'citation_count': 28,
                         'doi': '10.2026/demo-teacher1-01',
                         'abstract': '本文围绕高校教师科研画像构建流程、指标体系与智能服务场景展开研究。',
                         'coauthors': ['刘佳宁', '王晨'],
@@ -93,7 +91,6 @@ class Command(BaseCommand):
                         'paper_type': 'CONFERENCE',
                         'journal_name': '全国教育信息化大会',
                         'journal_level': '会议论文',
-                        'citation_count': 11,
                         'doi': '10.2026/demo-teacher1-02',
                         'abstract': '针对高校科研管理场景，提出一种基于大语言模型的智能辅助决策框架。',
                         'coauthors': ['马文博'],
@@ -119,11 +116,10 @@ class Command(BaseCommand):
                 'id': 100002,
                 'username': '100002',
                 'real_name': '李雨桐',
-                'department': '信息工程学院',
+                'department': '数学与计算机科学学院',
                 'title': '讲师',
                 'discipline': '数据科学',
                 'research_interests': '学术社交网络、数据挖掘、可视化分析',
-                'h_index': 8,
                 'bio': '聚焦学术网络分析与可视化技术在高校科研中的应用。',
                 'research_direction': ['数据挖掘', '可视化分析', '学术社交网络'],
                 'papers': [
@@ -133,7 +129,6 @@ class Command(BaseCommand):
                         'paper_type': 'JOURNAL',
                         'journal_name': '现代教育技术',
                         'journal_level': '核心期刊',
-                        'citation_count': 17,
                         'doi': '10.2026/demo-teacher2-01',
                         'abstract': '本文针对高校教师合作网络的可视化表达需求，提出一种多层关系拓扑构建方法。',
                         'coauthors': ['孙浩', '赵倩'],
@@ -158,11 +153,10 @@ class Command(BaseCommand):
                 'id': 100003,
                 'username': '100003',
                 'real_name': '王浩然',
-                'department': '人工智能学院',
+                'department': '数学与计算机科学学院',
                 'title': '教授',
                 'discipline': '智能计算',
                 'research_interests': '跨模态智能、情感计算、数字人',
-                'h_index': 21,
                 'bio': '致力于跨模态大模型与情感数字人方向研究。',
                 'research_direction': ['跨模态智能', '情感计算', '数字人'],
                 'papers': [
@@ -172,7 +166,6 @@ class Command(BaseCommand):
                         'paper_type': 'JOURNAL',
                         'journal_name': '软件学报',
                         'journal_level': 'CCF-B',
-                        'citation_count': 46,
                         'doi': '10.2026/demo-teacher3-01',
                         'abstract': '本文提出一种结合语义先验与表情驱动的跨模态数字人情感生成模型。',
                         'coauthors': ['周文静', '陈思远'],
@@ -198,11 +191,10 @@ class Command(BaseCommand):
                 'id': 100004,
                 'username': '100004',
                 'real_name': '汪心蓝',
-                'department': '教育技术学院',
+                'department': '教育科学学院',
                 'title': '副教授',
                 'discipline': '教育数据智能',
                 'research_interests': '学习分析、教育知识图谱、科研画像评估',
-                'h_index': 10,
                 'bio': '长期从事教育数据智能与教师科研画像方向研究，关注成果治理、画像建模与智能辅助服务。',
                 'research_direction': ['学习分析', '教育知识图谱', '科研画像'],
                 'papers': [
@@ -212,7 +204,6 @@ class Command(BaseCommand):
                         'paper_type': 'JOURNAL',
                         'journal_name': '开放教育研究',
                         'journal_level': 'CSSCI',
-                        'citation_count': 14,
                         'doi': '10.2026/demo-teacher4-01',
                         'abstract': '本文围绕高校教师科研画像的指标体系构建、数据整合方法与典型应用场景展开研究，验证画像驱动的科研服务可提升成果治理效率。',
                         'coauthors': ['赵明悦', '陈思源'],
@@ -224,7 +215,6 @@ class Command(BaseCommand):
                         'paper_type': 'CONFERENCE',
                         'journal_name': '全国教育人工智能大会',
                         'journal_level': '会议论文',
-                        'citation_count': 7,
                         'doi': '10.2026/demo-teacher4-02',
                         'abstract': '针对教师成果演化过程难以持续追踪的问题，提出一种结合学习分析与知识图谱的成长轨迹可视化方法，用于辅助教师科研规划。',
                         'coauthors': ['林若溪'],
@@ -269,8 +259,6 @@ class Command(BaseCommand):
                 self._sync_project(user, teacher_data['project'])
             if 'ip' in teacher_data:
                 self._sync_ip(user, teacher_data['ip'])
-            if 'teaching' in teacher_data:
-                self._sync_teaching(user, teacher_data['teaching'])
             if 'service' in teacher_data:
                 self._sync_service(user, teacher_data['service'])
             created_teachers.append(user)
@@ -313,7 +301,6 @@ class Command(BaseCommand):
                 'title': admin_user.title,
                 'discipline': '科研治理',
                 'research_interests': '演示治理, 系统维护',
-                'h_index': 0,
             },
         )
         return admin_user
@@ -342,8 +329,8 @@ class Command(BaseCommand):
         user.is_active = True
         user.save()
         if created or reset_passwords or not user.has_usable_password():
-            set_user_password(user, DEFAULT_TEACHER_PASSWORD, require_password_change=True)
-            account_password_states[user.username] = DEFAULT_TEACHER_PASSWORD
+            set_user_password(user, self.DEMO_ACCOUNT_PASSWORD, require_password_change=True)
+            account_password_states[user.username] = self.DEMO_ACCOUNT_PASSWORD
         else:
             account_password_states[user.username] = '__preserved__'
 
@@ -354,7 +341,6 @@ class Command(BaseCommand):
                 'title': data['title'],
                 'discipline': data['discipline'],
                 'research_interests': data['research_interests'],
-                'h_index': data['h_index'],
             },
         )
 
@@ -363,7 +349,6 @@ class Command(BaseCommand):
             title=data['title'],
             discipline=data['discipline'],
             research_interests=data['research_interests'],
-            h_index=data['h_index'],
         )
         return user
 
@@ -378,7 +363,6 @@ class Command(BaseCommand):
                     'paper_type': paper_data['paper_type'],
                     'journal_name': paper_data['journal_name'],
                     'journal_level': paper_data['journal_level'],
-                    'citation_count': paper_data['citation_count'],
                     'abstract': paper_data['abstract'],
                     'is_first_author': True,
                 },
@@ -406,14 +390,6 @@ class Command(BaseCommand):
             registration_number=ip_data['registration_number'],
             defaults=ip_data,
         )
-
-    def _sync_teaching(self, user, teaching_data):
-        TeachingAchievement.objects.update_or_create(
-            teacher=user,
-            title=teaching_data['title'],
-            defaults=teaching_data,
-        )
-
     def _sync_service(self, user, service_data):
         AcademicService.objects.update_or_create(
             teacher=user,
@@ -432,7 +408,7 @@ class Command(BaseCommand):
                 'application_deadline': '2026-06-30',
                 'summary': '面向教师科研画像、教育知识图谱与智能评价方向组织申报，是推荐与问答演示的核心指南数据。',
                 'target_keywords': ['科研画像', '知识图谱', '教师评价'],
-                'target_disciplines': ['人工智能', '教育数据智能', '教育技术学院'],
+                'target_disciplines': ['人工智能', '教育数据智能', '教育科学学院'],
                 'recommendation_tags': ['画像重点', '省部级', '演示推荐'],
                 'support_amount': '20-30 万元',
                 'eligibility_notes': '申报人需具备近三年相关成果基础。',
@@ -447,7 +423,7 @@ class Command(BaseCommand):
                 'application_deadline': '2026-07-15',
                 'summary': '面向教育数据智能、学习分析和科研服务平台方向，用于演示推荐筛选、排序和说明能力。',
                 'target_keywords': ['教育数据智能', '学习分析', '可视化分析'],
-                'target_disciplines': ['数据科学', '教育数据智能', '信息工程学院'],
+                'target_disciplines': ['数据科学', '教育数据智能', '数学与计算机科学学院'],
                 'recommendation_tags': ['学科贴合', '演示推荐'],
                 'support_amount': '15-25 万元',
                 'eligibility_notes': '需具备教育数据或学习分析相关研究积累。',
@@ -462,7 +438,7 @@ class Command(BaseCommand):
                 'application_deadline': '2026-08-01',
                 'summary': '面向数字人、跨模态智能和智能交互合作，用于展示不同教师画像下的推荐差异。',
                 'target_keywords': ['跨模态智能', '数字人', '情感计算'],
-                'target_disciplines': ['智能计算', '人工智能学院'],
+                'target_disciplines': ['智能计算', '数学与计算机科学学院'],
                 'recommendation_tags': ['企业合作', '对比演示'],
                 'support_amount': '联合研发',
                 'eligibility_notes': '鼓励具有跨模态成果积累的教师团队申报。',
@@ -518,11 +494,11 @@ class Command(BaseCommand):
             )
         if reset_passwords:
             self.stdout.write(
-                f"- 教师默认密码：{DEFAULT_TEACHER_PASSWORD}（本次已显式重置为标准演示密码，初始化后为临时密码）"
+                f"- 教师默认密码：{self.DEMO_ACCOUNT_PASSWORD}（本次已显式重置为标准演示密码，初始化后为临时密码）"
             )
         else:
             self.stdout.write(
-                f"- 教师账号密码：默认保留数据库中已有密码；仅新建账号会使用 {DEFAULT_TEACHER_PASSWORD}"
+                f"- 教师账号密码：默认保留数据库中已有密码；仅新建账号会使用 {self.DEMO_ACCOUNT_PASSWORD}"
             )
         for teacher in teachers:
             password_state = account_password_states.get(teacher.username)

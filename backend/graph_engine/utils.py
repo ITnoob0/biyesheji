@@ -124,35 +124,6 @@ class Neo4jEngine:
 
     def delete_intellectual_property_from_graph(self, ip_id):
         self._run("MATCH (i:IntellectualProperty {ip_id: $ip_id}) DETACH DELETE i", ip_id=str(ip_id))
-
-    def sync_teaching_achievement_to_graph(self, teaching_id, title, teacher, achievement_type, level):
-        query = """
-        MERGE (t:Teacher {user_id: $teacher_user_id})
-        SET t.name = $teacher_name
-
-        MERGE (ta:TeachingAchievement {teaching_id: $teaching_id})
-        SET ta.title = $title,
-            ta.achievement_type = $achievement_type,
-            ta.level = $level
-
-        MERGE (t)-[:HAS_TEACHING_ACHIEVEMENT]->(ta)
-        """
-        self._run(
-            query,
-            teaching_id=str(teaching_id),
-            title=title,
-            teacher_user_id=int(teacher['user_id']),
-            teacher_name=teacher['name'],
-            achievement_type=achievement_type,
-            level=level,
-        )
-
-    def delete_teaching_achievement_from_graph(self, teaching_id):
-        self._run(
-            "MATCH (ta:TeachingAchievement {teaching_id: $teaching_id}) DETACH DELETE ta",
-            teaching_id=str(teaching_id),
-        )
-
     def sync_academic_service_to_graph(self, service_id, title, teacher, service_type, organization):
         query = """
         MERGE (t:Teacher {user_id: $teacher_user_id})

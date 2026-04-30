@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -19,7 +19,6 @@ const tabOptions: Array<{ name: TabName; label: string }> = [
   { name: 'papers', label: '论文成果' },
   { name: 'projects', label: '科研项目' },
   { name: 'intellectual-properties', label: '知识产权' },
-  { name: 'teaching-achievements', label: '教学成果' },
   { name: 'academic-services', label: '学术服务' },
 ]
 
@@ -48,7 +47,7 @@ onMounted(async () => {
         <p class="eyebrow workspace-hero__eyebrow">Achievement Review</p>
         <h1 class="workspace-hero__title">成果审核</h1>
         <p class="hero-text workspace-hero__text">
-          审核本学院教师提交的科研成果，包括论文、项目、知识产权、教学成果和学术服务。
+          审核本学院教师提交的科研成果，包括论文、项目、知识产权和学术服务。
           <span v-if="sessionUser?.department"> · 当前学院：{{ sessionUser.department }}</span>
         </p>
       </div>

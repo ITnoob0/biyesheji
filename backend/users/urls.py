@@ -1,7 +1,10 @@
 from django.urls import path
 
 from .views import (
+    CollegeDetailView,
+    CollegeListCreateView,
     CurrentUserAvatarUploadView,
+    CurrentUserTitleChangeRequestView,
     UserNotificationListView,
     UserNotificationMarkAllReadView,
     UserNotificationMarkReadView,
@@ -11,6 +14,11 @@ from .views import (
     TeacherBulkImportTemplateView,
     CurrentUserPasswordChangeView,
     CurrentUserView,
+    TeacherTitleChangeRequestApproveView,
+    TeacherTitleChangeRequestListView,
+    TeacherTitleChangeRequestRejectView,
+    TeacherTitleOptionsView,
+    ForgotPasswordCodeView,
     ForgotPasswordResetView,
     TeacherDetailView,
     TeacherListCreateView,
@@ -22,11 +30,27 @@ from .views import (
 
 urlpatterns = [
     path("me/", CurrentUserView.as_view(), name="current_user"),
+    path("colleges/", CollegeListCreateView.as_view(), name="college_list_create"),
+    path("colleges/<int:college_id>/", CollegeDetailView.as_view(), name="college_detail"),
+    path("me/title-change-requests/", CurrentUserTitleChangeRequestView.as_view(), name="current_user_title_change_request"),
+    path("teacher-titles/", TeacherTitleOptionsView.as_view(), name="teacher_title_options"),
     path("me/change-password/", CurrentUserPasswordChangeView.as_view(), name="current_user_change_password"),
     path("me/avatar/", CurrentUserAvatarUploadView.as_view(), name="current_user_avatar_upload"),
     path("register/", TeacherRegistrationView.as_view(), name="teacher_register"),
-    path("forgot-password/", ForgotPasswordResetView.as_view(), name="forgot_password_reset"),
+    path("forgot-password/code/", ForgotPasswordCodeView.as_view(), name="forgot_password_code"),
+    path("forgot-password/reset/", ForgotPasswordResetView.as_view(), name="forgot_password_reset"),
     path("teachers/", TeacherListCreateView.as_view(), name="teacher_list_create"),
+    path("title-change-requests/", TeacherTitleChangeRequestListView.as_view(), name="teacher_title_change_request_list"),
+    path(
+        "title-change-requests/<int:request_id>/approve/",
+        TeacherTitleChangeRequestApproveView.as_view(),
+        name="teacher_title_change_request_approve",
+    ),
+    path(
+        "title-change-requests/<int:request_id>/reject/",
+        TeacherTitleChangeRequestRejectView.as_view(),
+        name="teacher_title_change_request_reject",
+    ),
     path("teachers/summary/", TeacherManagementSummaryView.as_view(), name="teacher_management_summary"),
     path("teachers/bulk-actions/", TeacherBulkActionView.as_view(), name="teacher_bulk_action"),
     path("teachers/bulk-import/", TeacherBulkImportView.as_view(), name="teacher_bulk_import"),

@@ -4,12 +4,16 @@ from collections import Counter
 
 from django.db.models import Count
 
-from achievements.models import Paper, PaperKeyword
-from achievements.visibility import APPROVED_STATUS
+from achievements.models import PaperKeyword
+from achievements.services import build_teacher_related_paper_queryset
+
+
+def _paper_queryset(teacher):
+    return build_teacher_related_paper_queryset(teacher, approved_only=True)
 
 
 def _build_collaboration_overview(teacher):
-    paper_queryset = Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS)
+    paper_queryset = _paper_queryset(teacher)
     collaborator_rows = list(
         paper_queryset.filter(coauthors__isnull=False)
         .values('coauthors__name')
@@ -38,10 +42,11 @@ def _build_collaboration_overview(teacher):
 
 
 def _build_collaboration_circle_overview(teacher):
+    paper_queryset = _paper_queryset(teacher)
     collaborator_rows = [
         {'name': item['coauthors__name'], 'count': item['count']}
         for item in (
-            Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS, coauthors__isnull=False)
+            paper_queryset.filter(coauthors__isnull=False)
             .values('coauthors__name')
             .annotate(count=Count('coauthors__id'))
             .order_by('-count', 'coauthors__name')
@@ -81,9 +86,7 @@ def _build_collaboration_circle_overview(teacher):
 
 
 def _build_collaborator_type_breakdown(teacher):
-    counters = Counter(
-        Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS, coauthors__isnull=False).values_list('coauthors__is_internal', flat=True)
-    )
+    counters = Counter(_paper_queryset(teacher).filter(coauthors__isnull=False).values_list('coauthors__is_internal', flat=True))
 
     internal_count = counters.get(True, 0)
     external_count = counters.get(False, 0)
@@ -103,8 +106,9 @@ def _build_collaborator_type_breakdown(teacher):
 
 
 def _build_theme_hotspots(teacher):
+    paper_ids = list(_paper_queryset(teacher).values_list('id', flat=True))
     keyword_ranking = list(
-        PaperKeyword.objects.filter(paper__teacher=teacher)
+        PaperKeyword.objects.filter(paper_id__in=paper_ids)
         .values('keyword__name')
         .annotate(count=Count('keyword_id'))
         .order_by('-count', 'keyword__name')[:8]
@@ -123,7 +127,7 @@ def _build_theme_hotspots(teacher):
     recent_years = sorted(
         {
             year
-            for year in Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS).values_list('date_acquired__year', flat=True)
+            for year in _paper_queryset(teacher).values_list('date_acquired__year', flat=True)
             if year
         },
         reverse=True,
@@ -133,8 +137,7 @@ def _build_theme_hotspots(teacher):
     for year in sorted(recent_years):
         yearly_keywords = list(
             PaperKeyword.objects.filter(
-                paper__teacher=teacher,
-                paper__status=APPROVED_STATUS,
+                paper_id__in=paper_ids,
                 paper__date_acquired__year=year,
             )
             .values('keyword__name')
@@ -179,7 +182,7 @@ def build_graph_analysis(teacher):
         top_collaborators.append(strongest)
 
     collaborator_rows = list(
-        Paper.objects.filter(teacher=teacher, status=APPROVED_STATUS, coauthors__isnull=False)
+        _paper_queryset(teacher).filter(coauthors__isnull=False)
         .values('coauthors__name')
         .annotate(count=Count('coauthors__id'))
         .order_by('-count', 'coauthors__name')[:5]

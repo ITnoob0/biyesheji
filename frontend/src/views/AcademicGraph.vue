@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="graph-shell">
     <section class="graph-top workspace-surface-card">
       <div class="graph-top__head">
@@ -90,7 +90,7 @@
           </el-result>
         </div>
         <div v-else-if="!loading && isEmpty" class="state-layer">
-          <el-empty description="当前教师暂无可展示的学术图谱数据，可先录入论文、项目、知识产权、教学成果或学术服务。" />
+          <el-empty description="当前教师暂无可展示的学术图谱数据，可先录入论文、项目、知识产权或学术服务。" />
         </div>
       </div>
     </section>

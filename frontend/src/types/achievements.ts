@@ -1,4 +1,4 @@
-export type TabName =
+﻿export type TabName =
   | 'papers'
   | 'projects'
   | 'intellectual-properties'
@@ -67,7 +67,6 @@ export interface PaperRecord extends TeacherOwnedAchievementRecord {
   published_issue: string
   pages: string
   source_url: string
-  citation_count: number
   is_first_author: boolean
   is_corresponding_author: boolean
   is_representative: boolean
@@ -122,7 +121,6 @@ export interface PaperFormState {
   published_issue: string
   pages: string
   source_url: string
-  citation_count: number
   is_first_author: boolean
   is_corresponding_author: boolean
   is_representative: boolean
@@ -174,7 +172,6 @@ export interface PaperMutationPayload {
   published_issue: string
   pages: string
   source_url: string
-  citation_count: number
   is_first_author: boolean
   is_corresponding_author: boolean
   is_representative: boolean
@@ -276,7 +273,6 @@ export interface BibtexPreviewEntry {
   published_issue: string
   pages: string
   source_url: string
-  citation_count: number
   is_first_author: boolean
   is_representative: boolean
   doi: string
@@ -331,7 +327,6 @@ export interface PaperSummaryRecord {
   paper_type: string
   paper_type_display: string
   journal_name: string
-  citation_count: number
   is_representative: boolean
   metadata_alerts: string[]
   metadata_alert_details: MetadataAlertDetail[]
@@ -421,7 +416,6 @@ export interface RepresentativeOverview {
     title: string
     journal_name: string
     date_acquired: string
-    citation_count: number
     metadata_alerts: string[]
   }>
 }
@@ -435,7 +429,6 @@ export interface PaperGovernanceResponse {
     title: string
     journal_name: string
     date_acquired: string
-    citation_count: number
     is_representative: boolean
   }>
   recent_operations: PaperOperationLogRecord[]
@@ -465,7 +458,6 @@ export interface PaperComparisonResponse {
   }
   comparison_rows: PaperCompareRow[]
   summary: {
-    citation_gap: number
     metadata_completeness_gap: number
     shared_keywords: string[]
     shared_coauthors: string[]

@@ -16,7 +16,14 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
   _skipAuthHandling?: boolean
 }
 
-const AUTH_FREE_PATHS = ['/api/token/', '/api/token/refresh/', '/api/users/register/', '/api/users/forgot-password/']
+const AUTH_FREE_PATHS = [
+  '/api/token/',
+  '/api/token/refresh/',
+  '/api/users/register/',
+  '/api/users/forgot-password/',
+  '/api/users/forgot-password/code/',
+  '/api/users/forgot-password/reset/',
+]
 
 let httpInitialized = false
 let appRouter: Router | null = null

@@ -11,9 +11,12 @@
       <div class="dialog-head">
         <div>
           <strong>{{ response?.teacher_name || teacherName || '教师' }} · 全部成果</strong>
-          <p>代表作优先展示，其余成果按时间从近到远排序，并支持组合筛选。</p>
+          <p>代表成果优先展示，其余成果按时间从近到远排序；统计口径与教师画像中的已生效成果保持一致。</p>
         </div>
-        <el-tag type="success" effect="plain">{{ response?.achievement_total || 0 }} 条</el-tag>
+        <div class="dialog-tag-group">
+          <el-tag type="success" effect="plain">{{ response?.achievement_total || 0 }} 条</el-tag>
+          <el-tag type="primary" effect="plain">{{ response?.achievement_score_total || 0 }} 分</el-tag>
+        </div>
       </div>
     </template>
 
@@ -79,6 +82,12 @@ watch(
 .dialog-head p {
   margin: 6px 0 0;
   color: var(--text-tertiary);
+}
+
+.dialog-tag-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .dialog-body {

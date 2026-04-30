@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
+  font=\small,
+  >=Stealth,
+  outer/.style={draw, rounded corners=5pt, inner sep=10pt},
+  layer/.style={draw, rounded corners=3pt, minimum width=6.2cm, minimum height=1.05cm, align=center, inner sep=4pt},
+  box/.style={draw, rounded corners=3pt, minimum width=2.7cm, minimum height=1.0cm, align=center, inner sep=4pt},
+  access/.style={draw, fill=black!4, minimum width=3.2cm, minimum height=1.1cm, align=center},
+  flow/.style={->, line width=0.9pt}
+]
+  \node[access] (browser) at (-4.8, 0.9) {浏览器访问层\\登录页 / 业务页 / 看板页};
+
+  \node[layer] (nav) at (1.7, 3.0) {访问与导航层\\路由与权限控制 / 菜单过滤};
+  \node[layer] (layout) at (1.7, 1.35) {布局承载层\\统一布局容器 / 顶部 / 侧栏 / 内容区};
+  \node[box] (teacher) at (-0.4, -0.45) {教师端页面\\成果 / 画像 / 推荐 / 问答};
+  \node[box] (admin) at (3.8, -0.45) {管理端页面\\审核 / 教师 / 看板};
+  \node[box] (state) at (-0.4, -2.15) {状态与请求封装\\Axios / Token / 上下文};
+  \node[box] (common) at (3.8, -2.15) {公共组件层\\表格 / 表单 / 卡片 / 图表};
+
+  \node[outer, fit=(nav)(layout)(teacher)(admin)(state)(common)] (workbench) {};
+  \node[font=\small] at ($(workbench.north)+(0,0.5)$) {前端工作台结构};
+
+  \draw[flow] (browser.east) -- ++(0.8,0) |- (nav.west);
+  \draw[flow] (nav.south) -- (layout.north);
+  \draw[flow] (layout.south) -- ++(0,-0.35) -| (teacher.north);
+  \draw[flow] (layout.south) -- ++(0,-0.35) -| (admin.north);
+  \draw[flow] (state.north) -- (teacher.south);
+  \draw[flow] (common.north) -- (admin.south);
+\end{tikzpicture}

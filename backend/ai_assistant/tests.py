@@ -26,7 +26,6 @@ class PortraitAssistantApiTests(APITestCase):
             discipline='人工智能',
             title='副教授',
             research_interests='知识图谱, 科研画像',
-            h_index=5,
         )
         self.admin = user_model.objects.create_superuser(
             id=1,
@@ -42,7 +41,6 @@ class PortraitAssistantApiTests(APITestCase):
             date_acquired='2025-05-01',
             paper_type='JOURNAL',
             journal_name='软件导刊',
-            citation_count=8,
             doi='10.1000/assistant-portrait-paper',
             status='APPROVED',
         )
