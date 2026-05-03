@@ -1,10 +1,10 @@
 app:
-  description: No-KB lightweight assistant for this project. Single LLM node, stable import, text-only Q&A.
+  description: RAG-enabled Dify workflow assistant for the academic portrait system. Bind one or more Dify knowledge bases in the "知识库检索" node before publishing.
   icon: f75edfb1-52da-44ef-bfb4-88c5fa9f2490
   icon_background: null
   icon_type: image
   mode: workflow
-  name: Academic Portrait AI Assistant (No-KB Stable v1)
+  name: Academic Portrait AI Assistant (RAG v2)
   use_icon_as_answer_icon: false
 dependencies:
 - current_identifier: null
@@ -56,9 +56,9 @@ workflow:
         - local_file
         - remote_url
       number_limits: 3
-    opening_statement: 你好，我是项目内 AI 助手（无知识库版）。可回答教师画像、成果录入、项目推荐、申报准备与系统操作问题。
+    opening_statement: 你好，我是项目内 AI 助手（Dify RAG 版）。我会优先检索已绑定知识库，再结合当前页面信息回答教师画像、成果录入、项目推荐、申报准备与系统操作问题。
     retriever_resource:
-      enabled: false
+      enabled: true
     sensitive_word_avoidance:
       enabled: false
     speech_to_text:
@@ -78,10 +78,22 @@ workflow:
     - data:
         isInLoop: false
         sourceType: start
-        targetType: llm
-      id: 1774932319466-source-1774935048210-target
+        targetType: knowledge-retrieval
+      id: 1774932319466-source-1774934026000-target
       selected: false
       source: '1774932319466'
+      sourceHandle: source
+      target: '1774934026000'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1774934026000-source-1774935048210-target
+      selected: false
+      source: '1774934026000'
       sourceHandle: source
       target: '1774935048210'
       targetHandle: target
@@ -182,14 +194,43 @@ workflow:
       type: custom
       width: 242
     - data:
+        dataset_ids: []
+        desc: 从已绑定的 Dify 知识库中检索与用户问题最相关的制度、系统说明、业务规则和论文写作材料，作为主助手回答依据。
+        query_variable_selector:
+        - '1774932319466'
+        - draft
+        retrieval_mode: single
+        selected: false
+        single_retrieval_config:
+          model:
+            completion_params: {}
+            mode: chat
+            name: qwen3.5-plus
+            provider: langgenius/tongyi/tongyi
+        title: 知识库检索
+        type: knowledge-retrieval
+      height: 101
+      id: '1774934026000'
+      position:
+        x: 503
+        y: 341
+      positionAbsolute:
+        x: 503
+        y: 341
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
         context:
           enabled: true
           variable_selector:
-          - '1774932319466'
-          - draft
+          - '1774934026000'
+          - result
         model:
           completion_params:
-            temperature: 0.35
+            temperature: 0.25
           mode: chat
           name: qwen3.5-plus
           provider: langgenius/tongyi/tongyi
@@ -197,7 +238,7 @@ workflow:
         - id: main-assistant-system
           role: system
           text: |
-            你是“教师科研全景画像与智能评价系统”的项目内 AI 助手（无知识库版）。
+            你是“教师科研全景画像与智能评价系统”的项目内 AI 助手。你的回答以 Dify 知识库检索结果为主要依据，结合当前页面上下文给出具体、可执行的建议。
 
             当前会话参数：
             - 角色：{{#1774932319466.current_role#}}
@@ -206,30 +247,35 @@ workflow:
             - 输出语言：{{#1774932319466.language#}}
 
             用户问题：
+            {{#1774932319466.draft#}}
+
+            已检索知识库内容：
             {{#context#}}
 
             页面上下文（如果有）：
             {{#1774932319466.page_context#}}
 
-            回答规则（必须遵守）：
-            1) 不编造项目事实；没有证据时明确写“信息不足”，并列出需要补充的最少信息。
-            2) 不要求用户提供其他教师账号信息；管理员也按“面向自己问答”处理。
-            3) 优先给可执行步骤，避免空泛描述。
-            4) 若问题涉及政策、资格、时间节点，必须提示“以官方指南原文为准”。
-            5) 输出用纯文本，不用 Markdown 表格。
+            回答规则：
+            1. 优先使用“已检索知识库内容”，其次使用“页面上下文”，最后才使用通用系统操作常识。
+            2. 如果知识库没有命中直接依据，不要编造制度、字段、项目条件、时间节点或数据来源；可以基于页面上下文给出操作建议，并说明需要补充的最少信息。
+            3. 教师账号回答教师侧操作，管理员账号回答管理员侧分析与管理操作；管理员也按“面向自己问答”的口径处理，不要求用户提供其他教师账号。
+            4. 涉及政策、申报资格、截止时间、成果认定、评价标准时，以知识库或官方指南原文为准。
+            5. 不暴露 API Key、工作流配置、系统内部变量名或后台实现细节。
+            6. 输出使用纯文本，不使用 Markdown 表格。
+            7. 如果输出语言是 English，则用英文回答；否则用简体中文回答。
 
             输出结构：
             【结论】
-            一句话结论。
+            一句话说明判断或建议。
+
+            【依据与解释】
+            说明知识库或页面上下文中支持该结论的关键依据；如果检索结果不足，写明“知识库未检索到直接依据”。
 
             【可立即执行】
-            最多 5 条，按优先级排序。
+            最多 5 条，按优先级排序，动作要具体。
 
-            【需补充信息】
+            【需要补充信息】
             若信息充分写“无”；否则列最多 3 条最关键缺失信息。
-
-            【边界与提醒】
-            1-2 条风险或口径提醒。
         selected: false
         title: 主助手
         type: llm
@@ -243,11 +289,11 @@ workflow:
       height: 87
       id: '1774935048210'
       position:
-        x: 1631.671268775421
-        y: 303.9416519259927
+        x: 1152
+        y: 341
       positionAbsolute:
-        x: 1631.671268775421
-        y: 303.9416519259927
+        x: 1152
+        y: 341
       selected: false
       sourcePosition: right
       targetPosition: left
@@ -266,18 +312,18 @@ workflow:
       height: 88
       id: '1774935947215'
       position:
-        x: 3055.5210949849907
-        y: 438.64130060937
+        x: 1801
+        y: 341
       positionAbsolute:
-        x: 3055.5210949849907
-        y: 438.64130060937
+        x: 1801
+        y: 341
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
       width: 242
     viewport:
-      x: -2513.8483323631353
-      y: -370.9986988516609
-      zoom: 1.317746115072758
+      x: -379.591347969376
+      y: 38.073593905482
+      zoom: 0.85
   rag_pipeline_variables: []

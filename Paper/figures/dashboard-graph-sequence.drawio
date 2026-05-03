@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="dashboard-graph-sequence" name="看板与图谱查询时序图">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="admin" value="管理员" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="45" y="55" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="page" value="看板/图谱页面" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="240" y="55" width="160" height="50" as="geometry" /></mxCell>
+        <mxCell id="api" value="统计与图谱接口" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="470" y="55" width="170" height="50" as="geometry" /></mxCell>
+        <mxCell id="mysql" value="MySQL 业务库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="725" y="55" width="160" height="50" as="geometry" /></mxCell>
+        <mxCell id="neo4j" value="Neo4j 图谱库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="970" y="55" width="160" height="50" as="geometry" /></mxCell>
+        <mxCell id="l1" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="admin"><mxGeometry relative="1" as="geometry"><mxPoint x="110" y="710" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l2" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="page"><mxGeometry relative="1" as="geometry"><mxPoint x="320" y="710" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l3" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="api"><mxGeometry relative="1" as="geometry"><mxPoint x="555" y="710" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l4" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="mysql"><mxGeometry relative="1" as="geometry"><mxPoint x="805" y="710" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l5" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="neo4j"><mxGeometry relative="1" as="geometry"><mxPoint x="1050" y="710" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m1" value="1. 打开学院看板或图谱页面" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="110" y="150" as="sourcePoint" /><mxPoint x="320" y="150" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m2" value="2. 请求学院统计或教师图谱" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="320" y="220" as="sourcePoint" /><mxPoint x="555" y="220" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m3" value="3. 校验角色与学院范围" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="555" y="290" as="sourcePoint" /><mxPoint x="555" y="340" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m4" value="4. 聚合教师、成果、排行与趋势数据" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="555" y="380" as="sourcePoint" /><mxPoint x="805" y="380" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m5" value="5. 优先读取图谱关系" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="555" y="455" as="sourcePoint" /><mxPoint x="1050" y="455" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m6" value="6. 图数据库异常时回退 MySQL 关系数据" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1050" y="530" as="sourcePoint" /><mxPoint x="805" y="530" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m7" value="7. 返回统计卡片、节点边和边界说明" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="555" y="615" as="sourcePoint" /><mxPoint x="320" y="615" as="targetPoint" /></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

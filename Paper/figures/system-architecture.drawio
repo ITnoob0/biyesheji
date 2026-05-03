@@ -1,15 +1,96 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-04-18T00:00:00.000Z" agent="Codex Drawio Bridge" version="29.6.10">
-  <diagram id="page-1" name="Page-1">
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="system-architecture" name="系统总体架构图">
     <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="系统总体架构图" style="rounded=1;whiteSpace=wrap;html=1;fontSize=20;fontStyle=1;strokeColor=#1f2937;fillColor=#e0f2fe;" vertex="1" parent="1">
-          <mxGeometry x="180" y="120" width="320" height="100" as="geometry" />
+        <mxCell id="layer1" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="14" y="45" width="1170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="hint" value="Open this file in draw.io and continue editing." style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;strokeColor=#94a3b8;fillColor=#f8fafc;" vertex="1" parent="1">
-          <mxGeometry x="180" y="260" width="320" height="70" as="geometry" />
+        <mxCell id="layer1Label" value="表现层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=26;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="46" y="16" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="actorTeacher" value="教师端" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="52" y="65" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="actorCollege" value="学院管理员端" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="448" y="65" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="actorAdmin" value="系统管理员端" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="65" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="layer2" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="14" y="225" width="1170" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="layer2Label" value="前端应用层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=26;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="46" y="195" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="vue" value="Vue 3 + Vite" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="52" y="245" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="element" value="Element Plus 页面容器" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="448" y="245" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="echarts" value="ECharts 可视化组件" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="245" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="layer3" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="14" y="405" width="1170" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="layer3Label" value="服务接口层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=26;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="46" y="375" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="apiAuth" value="认证与权限接口" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="52" y="425" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="apiBiz" value="成果 / 画像 / 推荐 / 问答接口" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="436" y="425" width="327" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="apiDashboard" value="学院看板 / 图谱接口" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="425" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="layer4" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="14" y="585" width="1170" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="layer4Label" value="业务处理层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=26;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="46" y="555" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="django" value="Django / DRF 业务服务" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="52" y="605" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rule" value="规则引擎与画像计算" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="448" y="605" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="guard" value="通知、日志与异常处理" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="605" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="layer5" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="14" y="765" width="1170" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="layer5Label" value="数据支撑层" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=26;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="46" y="735" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="mysql" value="MySQL 主业务库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="52" y="785" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="neo4j" value="Neo4j 图谱增强层" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="448" y="785" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="knowledge" value="系统内知识片段与推荐历史" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="785" width="303" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="actorCollege" target="element">
+          <mxGeometry width="50" height="50" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="element" target="apiBiz">
+          <mxGeometry width="50" height="50" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="apiBiz" target="rule">
+          <mxGeometry width="50" height="50" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="rule" target="neo4j">
+          <mxGeometry width="50" height="50" relative="1" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

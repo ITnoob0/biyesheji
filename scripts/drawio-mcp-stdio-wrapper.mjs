@@ -9,7 +9,7 @@ const EXTENSION_PORT = '4333'
 const HTTP_PORT = '3005'
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const WORKSPACE_ROOT = path.resolve(SCRIPT_DIR, '..')
-const DEBUG_LOG_PATH = path.join(WORKSPACE_ROOT, 'Paper', 'drawio-bridge-debug.log')
+const DEBUG_LOG_PATH = path.join(WORKSPACE_ROOT, '.codex-runtime', 'drawio-bridge', 'drawio-bridge-debug.log')
 
 let inputBuffer = Buffer.alloc(0)
 let drawioProcess = null

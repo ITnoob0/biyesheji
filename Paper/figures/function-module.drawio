@@ -1,16 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-04-18T00:00:00.000Z" agent="Codex Drawio Bridge" version="29.6.10">
-  <diagram id="page-1" name="Page-1">
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="function-module" name="系统功能模块结构图">
     <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="系统功能模块结构图" style="rounded=1;whiteSpace=wrap;html=1;fontSize=20;fontStyle=1;strokeColor=#1f2937;fillColor=#e0f2fe;" vertex="1" parent="1">
-          <mxGeometry x="180" y="120" width="320" height="100" as="geometry" />
+        <mxCell id="title" value="高校教师科研能力数字画像与智能辅助系统" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontStyle=1;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="360" y="55" width="450" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="hint" value="Open this file in draw.io and continue editing." style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;strokeColor=#94a3b8;fillColor=#f8fafc;" vertex="1" parent="1">
-          <mxGeometry x="180" y="260" width="320" height="70" as="geometry" />
+        <mxCell id="user" value="用户与权限模块&lt;br&gt;登录认证 / 角色识别 / 访问控制" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="70" y="190" width="250" height="90" as="geometry" />
         </mxCell>
+        <mxCell id="achievement" value="成果治理模块&lt;br&gt;成果录入 / 审核 / 认领 / 统计口径" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="460" y="190" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="portrait" value="科研画像模块&lt;br&gt;六维评分 / 趋势分析 / 同侪对比" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="850" y="190" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="recommend" value="项目推荐模块&lt;br&gt;指南管理 / 规则匹配 / 推荐解释" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="70" y="380" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="qa" value="智能问答模块&lt;br&gt;知识片段 / 来源说明 / 降级回退" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="460" y="380" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="dashboard" value="学院看板模块&lt;br&gt;宏观统计 / 排行钻取 / CSV 导出" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="850" y="380" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="graph" value="学术图谱模块&lt;br&gt;关系展示 / 合作网络 / MySQL 回退" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="250" y="570" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="ops" value="系统保障模块&lt;br&gt;统一错误 / 请求编号 / 演示恢复" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="670" y="570" width="250" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="eUser" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="user"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eAchievement" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="achievement"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ePortrait" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="portrait"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eRecommend" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="recommend"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eQa" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="qa"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eDashboard" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="title" target="dashboard"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eGraph" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="achievement" target="graph"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="eOps" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="qa" target="ops"><mxGeometry relative="1" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

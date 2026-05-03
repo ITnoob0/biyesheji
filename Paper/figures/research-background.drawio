@@ -1,16 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-04-18T00:00:00.000Z" agent="Codex Drawio Bridge" version="29.6.10">
-  <diagram id="page-1" name="Page-1">
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="research-background" name="研究背景与问题域示意图">
     <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="课题研究背景与问题域结构图" style="rounded=1;whiteSpace=wrap;html=1;fontSize=20;fontStyle=1;strokeColor=#1f2937;fillColor=#e0f2fe;" vertex="1" parent="1">
-          <mxGeometry x="180" y="120" width="320" height="100" as="geometry" />
+        <mxCell id="pain" value="高校科研管理痛点" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontStyle=1;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="80" y="95" width="260" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="hint" value="Open this file in draw.io and continue editing." style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;strokeColor=#94a3b8;fillColor=#f8fafc;" vertex="1" parent="1">
-          <mxGeometry x="180" y="260" width="320" height="70" as="geometry" />
+        <mxCell id="pain1" value="成果数据分散&lt;br&gt;多类型成果难以统一治理" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="260" height="80" as="geometry" />
         </mxCell>
+        <mxCell id="pain2" value="分析入口碎片化&lt;br&gt;画像、推荐与统计相互割裂" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pain3" value="结果解释不足&lt;br&gt;辅助决策缺少来源与边界说明" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="80" y="460" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="goal" value="系统建设目标" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontStyle=1;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="455" y="95" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="goal1" value="成果治理" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="220" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="goal2" value="教师科研画像" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="310" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="goal3" value="项目推荐与问答辅助" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="400" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="goal4" value="学院看板与学术图谱" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="490" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="value" value="预期应用价值" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=22;fontStyle=1;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="830" y="95" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="value1" value="形成统一业务闭环" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="830" y="230" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="value2" value="提高科研数据利用率" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="830" y="330" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="value3" value="增强推荐与问答可解释性" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="830" y="430" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="pain" target="goal"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="goal" target="value"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="pain1" target="goal1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="pain2" target="goal2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="pain3" target="goal3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="goal4" target="value1"><mxGeometry relative="1" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

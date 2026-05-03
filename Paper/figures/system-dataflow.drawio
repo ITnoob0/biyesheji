@@ -1,16 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-04-18T00:00:00.000Z" agent="Codex Drawio Bridge" version="29.6.10">
-  <diagram id="page-1" name="Page-1">
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="system-dataflow" name="成果治理数据流图">
     <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="成果治理数据流图" style="rounded=1;whiteSpace=wrap;html=1;fontSize=20;fontStyle=1;strokeColor=#1f2937;fillColor=#e0f2fe;" vertex="1" parent="1">
-          <mxGeometry x="180" y="120" width="320" height="100" as="geometry" />
+        <mxCell id="actor" value="教师 / 管理员" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="40" y="85" width="240" height="95" as="geometry" />
         </mxCell>
-        <mxCell id="hint" value="Open this file in draw.io and continue editing." style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;strokeColor=#94a3b8;fillColor=#f8fafc;" vertex="1" parent="1">
-          <mxGeometry x="180" y="260" width="320" height="70" as="geometry" />
+        <mxCell id="p1" value="P1&lt;br&gt;成果填报与导入" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="340" y="70" width="270" height="115" as="geometry" />
         </mxCell>
+        <mxCell id="p2" value="P2&lt;br&gt;成果审核与认领" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="690" y="70" width="270" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="P3&lt;br&gt;画像计算" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="510" y="380" width="270" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="P4&lt;br&gt;问答与看板" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="900" y="380" width="270" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" value="教师端界面&lt;br&gt;学院看板" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="380" width="240" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="D1 教师与账号库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="160" y="655" width="285" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="D2 成果与日志库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="510" y="655" width="285" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="D3 指南与知识片段库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=24;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="880" y="655" width="330" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="录入 / 审核入口" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="actor" target="p1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="待审核成果" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="已审成果" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p2" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="推荐结果" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p3" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="输出结果" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p4" target="ui"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="教师档案" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="d1" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="成果记录" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="d2" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="反馈 / 规则 / 知识" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="d3" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="成果与日志" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p1" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="审核状态" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;fontSize=18;fontFamily=SimSun;" edge="1" parent="1" source="p2" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

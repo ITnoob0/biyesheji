@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="portrait-activity" name="科研画像生成活动图">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="start" value="" style="ellipse;html=1;shape=startState;fillColor=#111111;strokeColor=#111111;" vertex="1" parent="1"><mxGeometry x="570" y="40" width="30" height="30" as="geometry" /></mxCell>
+        <mxCell id="request" value="教师进入科研画像页面" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="95" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="load" value="读取教师档案与审核通过成果" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="185" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="judge" value="是否存在历史画像快照" style="rhombus;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="485" y="275" width="200" height="110" as="geometry" /></mxCell>
+        <mxCell id="snapshot" value="读取历史快照" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="145" y="300" width="220" height="60" as="geometry" /></mxCell>
+        <mxCell id="aggregate" value="运行时聚合论文、项目、知识产权等指标" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="805" y="300" width="260" height="70" as="geometry" /></mxCell>
+        <mxCell id="calc" value="按六维权重计算画像得分" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="445" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="explain" value="生成维度解释、趋势与同侪基准" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="535" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="response" value="返回雷达图数据和解释结果" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="625" width="260" height="60" as="geometry" /></mxCell>
+        <mxCell id="end" value="" style="ellipse;html=1;shape=endState;fillColor=#111111;strokeColor=#111111;" vertex="1" parent="1"><mxGeometry x="568" y="725" width="34" height="34" as="geometry" /></mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="start" target="request"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="request" target="load"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="load" target="judge"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="是" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="judge" target="snapshot"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="否 / 当前年" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="judge" target="aggregate"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="snapshot" target="calc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="aggregate" target="calc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="calc" target="explain"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="explain" target="response"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="response" target="end"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

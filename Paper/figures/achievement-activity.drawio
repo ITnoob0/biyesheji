@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="achievement-activity" name="成果治理活动图">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="teacherLane" value="教师" style="swimlane;html=1;startSize=36;horizontal=0;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="340" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="systemLane" value="系统" style="swimlane;html=1;startSize=36;horizontal=0;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="380" y="40" width="390" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="adminLane" value="管理员" style="swimlane;html=1;startSize=36;horizontal=0;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="770" y="40" width="340" height="690" as="geometry" />
+        </mxCell>
+        <mxCell id="start" value="" style="ellipse;html=1;shape=startState;fillColor=#111111;strokeColor=#111111;" vertex="1" parent="1">
+          <mxGeometry x="185" y="80" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="login" value="登录系统并进入成果中心" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="100" y="140" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="choose" value="选择成果类型并填写信息" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="100" y="235" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="submit" value="提交审核" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="100" y="330" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="save" value="保存待审核记录并生成日志" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="465" y="330" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="notify" value="发送审核通知" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="465" y="425" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" value="审核成果材料" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="845" y="425" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="decision" value="是否通过" style="rhombus;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="875" y="520" width="140" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="approve" value="更新为已审核状态" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="465" y="540" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="reject" value="退回修改并发送通知" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="100" y="540" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="analysis" value="进入画像、推荐与统计口径" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1">
+          <mxGeometry x="465" y="635" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="end" value="" style="ellipse;html=1;shape=endState;fillColor=#111111;strokeColor=#111111;" vertex="1" parent="1">
+          <mxGeometry x="565" y="735" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="start" target="login"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="login" target="choose"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="choose" target="submit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="submit" target="save"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="save" target="notify"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="notify" target="audit"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="audit" target="decision"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" value="通过" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="decision" target="approve"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" value="驳回" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="decision" target="reject"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="approve" target="analysis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="analysis" target="end"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="修改后重新提交" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="reject" target="choose">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="80" y="570" />
+              <mxPoint x="80" y="265" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,16 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="app.diagrams.net" modified="2026-04-18T00:00:00.000Z" agent="Codex Drawio Bridge" version="29.6.10">
-  <diagram id="page-1" name="Page-1">
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="database-er" name="系统数据库 E-R 图">
     <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="系统数据库 ER 图" style="rounded=1;whiteSpace=wrap;html=1;fontSize=20;fontStyle=1;strokeColor=#1f2937;fillColor=#e0f2fe;" vertex="1" parent="1">
-          <mxGeometry x="180" y="120" width="320" height="100" as="geometry" />
+        <mxCell id="teacher" value="Teacher&lt;hr&gt;teacher_id (PK)&lt;br&gt;user_id (FK)&lt;br&gt;name&lt;br&gt;college&lt;br&gt;discipline&lt;br&gt;research_interests" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="205" width="360" height="230" as="geometry" />
         </mxCell>
-        <mxCell id="hint" value="Open this file in draw.io and continue editing." style="rounded=1;whiteSpace=wrap;html=1;fontSize=14;strokeColor=#94a3b8;fillColor=#f8fafc;" vertex="1" parent="1">
-          <mxGeometry x="180" y="260" width="320" height="70" as="geometry" />
+        <mxCell id="achievement" value="Achievement&lt;hr&gt;achievement_id (PK)&lt;br&gt;teacher_id (FK)&lt;br&gt;type&lt;br&gt;title&lt;br&gt;status&lt;br&gt;score&lt;br&gt;created_at" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="505" y="40" width="360" height="265" as="geometry" />
         </mxCell>
+        <mxCell id="portrait" value="PortraitSnapshot&lt;hr&gt;snapshot_id (PK)&lt;br&gt;teacher_id (FK)&lt;br&gt;snapshot_year&lt;br&gt;dimension_json&lt;br&gt;total_score&lt;br&gt;updated_at" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="505" y="380" width="360" height="245" as="geometry" />
+        </mxCell>
+        <mxCell id="notice" value="Notification&lt;hr&gt;notice_id (PK)&lt;br&gt;receiver_id (FK)&lt;br&gt;type&lt;br&gt;is_read&lt;br&gt;created_at" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="960" y="60" width="330" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="recommendation" value="RecommendationRecord&lt;hr&gt;record_id (PK)&lt;br&gt;teacher_id (FK)&lt;br&gt;guide_id (FK)&lt;br&gt;rule_profile&lt;br&gt;score&lt;br&gt;feedback" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="960" y="390" width="330" height="245" as="geometry" />
+        </mxCell>
+        <mxCell id="guide" value="ProjectGuide&lt;hr&gt;guide_id (PK)&lt;br&gt;title&lt;br&gt;level&lt;br&gt;deadline&lt;br&gt;tags&lt;br&gt;target_keywords" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=20;fontFamily=Times New Roman;align=left;spacingLeft=18;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="960" y="690" width="330" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="rel1" value="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="410" y="248" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel2" value="N" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="470" y="150" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel3" value="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="410" y="350" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel4" value="N" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="470" y="490" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel5" value="触发通知" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="855" y="155" width="110" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel6" value="支撑推荐" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="855" y="478" width="110" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel7" value="N" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="1128" y="635" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="rel8" value="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontFamily=Times New Roman;" vertex="1" parent="1"><mxGeometry x="1128" y="662" width="35" height="30" as="geometry" /></mxCell>
+        <mxCell id="e1" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="teacher" target="achievement"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="teacher" target="portrait"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="achievement" target="notice"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="portrait" target="recommendation"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#111111;strokeWidth=2;" edge="1" parent="1" source="recommendation" target="guide"><mxGeometry relative="1" as="geometry" /></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

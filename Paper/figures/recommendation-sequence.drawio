@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="recommendation-sequence" name="项目推荐时序图">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="teacher" value="教师" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="55" y="55" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="frontend" value="前端推荐页" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="240" y="55" width="150" height="50" as="geometry" /></mxCell>
+        <mxCell id="api" value="推荐接口" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="455" y="55" width="140" height="50" as="geometry" /></mxCell>
+        <mxCell id="portrait" value="画像服务" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="660" y="55" width="140" height="50" as="geometry" /></mxCell>
+        <mxCell id="guide" value="项目指南库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="865" y="55" width="150" height="50" as="geometry" /></mxCell>
+        <mxCell id="history" value="推荐历史库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="1045" y="55" width="150" height="50" as="geometry" /></mxCell>
+        <mxCell id="l1" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="teacher"><mxGeometry relative="1" as="geometry"><mxPoint x="120" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l2" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="frontend"><mxGeometry relative="1" as="geometry"><mxPoint x="315" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l3" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="api"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l4" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="portrait"><mxGeometry relative="1" as="geometry"><mxPoint x="730" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l5" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="guide"><mxGeometry relative="1" as="geometry"><mxPoint x="940" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="l6" value="" style="endArrow=none;dashed=1;html=1;rounded=0;strokeColor=#111111;" edge="1" parent="1" source="history"><mxGeometry relative="1" as="geometry"><mxPoint x="1120" y="690" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m1" value="1. 进入项目推荐页" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="120" y="150" as="sourcePoint" /><mxPoint x="315" y="150" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m2" value="2. 请求推荐列表" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="315" y="210" as="sourcePoint" /><mxPoint x="525" y="210" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m3" value="3. 读取教师画像与研究方向" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="270" as="sourcePoint" /><mxPoint x="730" y="270" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m4" value="4. 返回画像快照" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="730" y="330" as="sourcePoint" /><mxPoint x="525" y="330" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m5" value="5. 查询开放项目指南" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="390" as="sourcePoint" /><mxPoint x="940" y="390" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m6" value="6. 返回指南规则与标签" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="940" y="450" as="sourcePoint" /><mxPoint x="525" y="450" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m7" value="7. 计算推荐分与命中理由" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="510" as="sourcePoint" /><mxPoint x="525" y="560" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m8" value="8. 写入推荐历史" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="590" as="sourcePoint" /><mxPoint x="1120" y="590" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m9" value="9. 返回推荐结果与解释" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="525" y="650" as="sourcePoint" /><mxPoint x="315" y="650" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m10" value="10. 渲染推荐列表" style="endArrow=block;dashed=1;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="315" y="710" as="sourcePoint" /><mxPoint x="120" y="710" as="targetPoint" /></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

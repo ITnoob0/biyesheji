@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-04-30T00:00:00.000Z" agent="Codex" version="29.6.10">
+  <diagram id="achievement-claim-sequence" name="成果认领协同时序图">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n0" value="录入教师" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="30" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n1" value="成果表单" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="235" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n2" value="成果服务" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="445" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n3" value="用户库" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="670" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n4" value="认领记录" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="895" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n5" value="通知服务" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="1115" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="n6" value="被认领教师" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#111111;fillColor=#ffffff;fontSize=18;fontFamily=SimSun;" vertex="1" parent="1"><mxGeometry x="1315" y="55" width="150" height="52" as="geometry" /></mxCell>
+        <mxCell id="e1" value="填写论文" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n0" target="n1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" value="提交保存" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n1" target="n2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="搜索教师" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n2" target="n3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="创建认领" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n2" target="n4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="写通知" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n2" target="n5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="提醒处理" style="endArrow=block;html=1;rounded=0;strokeColor=#111111;fontSize=16;fontFamily=SimSun;" edge="1" parent="1" source="n5" target="n6"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

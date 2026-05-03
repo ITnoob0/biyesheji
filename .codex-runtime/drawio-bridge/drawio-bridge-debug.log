@@ -1,0 +1,170 @@
+[2026-04-30T10:35:29.357Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T10:35:29.361Z] stdin chunk bytes=217
+[2026-04-30T10:35:29.363Z] request: method=initialize id=0
+[2026-04-30T10:35:29.365Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T10:35:29.367Z] stdin chunk bytes=141
+[2026-04-30T10:35:29.367Z] request: method=notifications/initialized id=null
+[2026-04-30T10:35:29.368Z] request: method=tools/list id=1
+[2026-04-30T10:35:29.371Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T10:35:29.376Z] stdin chunk bytes=190
+[2026-04-30T10:35:29.377Z] request: method=resources/templates/list id=3
+[2026-04-30T10:35:29.378Z] send: {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[]}}
+[2026-04-30T10:35:29.378Z] request: method=resources/list id=2
+[2026-04-30T10:35:29.379Z] send: {"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T12:51:16.316Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T12:51:16.321Z] stdin chunk bytes=217
+[2026-04-30T12:51:16.323Z] request: method=initialize id=0
+[2026-04-30T12:51:16.324Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T12:51:16.328Z] stdin chunk bytes=55
+[2026-04-30T12:51:16.329Z] request: method=notifications/initialized id=null
+[2026-04-30T12:51:16.330Z] stdin chunk bytes=86
+[2026-04-30T12:51:16.331Z] request: method=tools/list id=1
+[2026-04-30T12:51:16.332Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T12:51:16.334Z] stdin chunk bytes=90
+[2026-04-30T12:51:16.335Z] request: method=resources/list id=2
+[2026-04-30T12:51:16.336Z] send: {"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T12:51:16.337Z] stdin chunk bytes=100
+[2026-04-30T12:51:16.337Z] request: method=resources/templates/list id=3
+[2026-04-30T12:51:16.338Z] send: {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[]}}
+[2026-04-30T12:56:34.810Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T12:56:34.814Z] stdin chunk bytes=217
+[2026-04-30T12:56:34.816Z] request: method=initialize id=0
+[2026-04-30T12:56:34.818Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T12:56:34.819Z] stdin chunk bytes=55
+[2026-04-30T12:56:34.820Z] request: method=notifications/initialized id=null
+[2026-04-30T12:56:34.821Z] stdin chunk bytes=86
+[2026-04-30T12:56:34.822Z] request: method=tools/list id=1
+[2026-04-30T12:56:34.823Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T12:56:34.825Z] stdin chunk bytes=90
+[2026-04-30T12:56:34.826Z] request: method=resources/list id=2
+[2026-04-30T12:56:34.827Z] send: {"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T12:56:34.829Z] stdin chunk bytes=100
+[2026-04-30T12:56:34.830Z] request: method=resources/templates/list id=3
+[2026-04-30T12:56:34.830Z] send: {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[]}}
+[2026-04-30T13:02:02.217Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T13:02:02.230Z] stdin chunk bytes=217
+[2026-04-30T13:02:02.233Z] request: method=initialize id=0
+[2026-04-30T13:02:02.235Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T13:02:02.241Z] stdin chunk bytes=141
+[2026-04-30T13:02:02.243Z] request: method=notifications/initialized id=null
+[2026-04-30T13:02:02.247Z] request: method=tools/list id=1
+[2026-04-30T13:02:02.250Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T13:02:02.259Z] stdin chunk bytes=190
+[2026-04-30T13:02:02.262Z] request: method=resources/templates/list id=3
+[2026-04-30T13:02:02.266Z] send: {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[]}}
+[2026-04-30T13:02:02.271Z] request: method=resources/list id=2
+[2026-04-30T13:02:02.272Z] send: {"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T13:08:41.642Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T13:08:41.646Z] stdin chunk bytes=217
+[2026-04-30T13:08:41.648Z] request: method=initialize id=0
+[2026-04-30T13:08:41.649Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T13:08:41.652Z] stdin chunk bytes=141
+[2026-04-30T13:08:41.653Z] request: method=notifications/initialized id=null
+[2026-04-30T13:08:41.655Z] request: method=tools/list id=1
+[2026-04-30T13:08:41.656Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T13:08:41.658Z] stdin chunk bytes=100
+[2026-04-30T13:08:41.659Z] request: method=resources/templates/list id=3
+[2026-04-30T13:08:41.661Z] send: {"jsonrpc":"2.0","id":3,"result":{"resourceTemplates":[]}}
+[2026-04-30T13:08:41.663Z] stdin chunk bytes=90
+[2026-04-30T13:08:41.664Z] request: method=resources/list id=2
+[2026-04-30T13:08:41.665Z] send: {"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T13:14:56.994Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T13:14:56.998Z] stdin chunk bytes=217
+[2026-04-30T13:14:57.002Z] request: method=initialize id=0
+[2026-04-30T13:14:57.004Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T13:14:57.011Z] stdin chunk bytes=55
+[2026-04-30T13:14:57.014Z] request: method=notifications/initialized id=null
+[2026-04-30T13:14:57.016Z] stdin chunk bytes=86
+[2026-04-30T13:14:57.018Z] request: method=tools/list id=1
+[2026-04-30T13:14:57.019Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T13:14:57.023Z] stdin chunk bytes=100
+[2026-04-30T13:14:57.024Z] request: method=resources/templates/list id=2
+[2026-04-30T13:14:57.026Z] send: {"jsonrpc":"2.0","id":2,"result":{"resourceTemplates":[]}}
+[2026-04-30T13:14:57.028Z] stdin chunk bytes=90
+[2026-04-30T13:14:57.029Z] request: method=resources/list id=3
+[2026-04-30T13:14:57.030Z] send: {"jsonrpc":"2.0","id":3,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T15:25:33.604Z] bridge started cwd=E:\Tools\Microsoft VS Code argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T15:25:33.604Z] bridge started cwd=e:\Project\BiShe argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-04-30T15:25:33.615Z] stdin chunk bytes=217
+[2026-04-30T15:25:33.615Z] stdin chunk bytes=217
+[2026-04-30T15:25:33.616Z] request: method=initialize id=0
+[2026-04-30T15:25:33.617Z] request: method=initialize id=0
+[2026-04-30T15:25:33.618Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T15:25:33.618Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-04-30T15:25:33.623Z] stdin chunk bytes=55
+[2026-04-30T15:25:33.623Z] stdin chunk bytes=55
+[2026-04-30T15:25:33.624Z] request: method=notifications/initialized id=null
+[2026-04-30T15:25:33.624Z] request: method=notifications/initialized id=null
+[2026-04-30T15:25:33.628Z] stdin chunk bytes=86
+[2026-04-30T15:25:33.628Z] stdin chunk bytes=86
+[2026-04-30T15:25:33.629Z] request: method=tools/list id=1
+[2026-04-30T15:25:33.629Z] request: method=tools/list id=1
+[2026-04-30T15:25:33.630Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T15:25:33.630Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-04-30T15:25:33.637Z] stdin chunk bytes=90
+[2026-04-30T15:25:33.638Z] request: method=resources/list id=3
+[2026-04-30T15:25:33.639Z] send: {"jsonrpc":"2.0","id":3,"result":{"resources":[{"uri":"drawio://editor","name":"Draw.io Editor","description":"Local draw.io editor URL started by the compatibility MCP bridge.","mimeType":"text/plain"},{"uri":"drawio://status","name":"Draw.io Status","description":"Current local draw.io bridge and 
+[2026-04-30T15:25:33.640Z] stdin chunk bytes=100
+[2026-04-30T15:25:33.641Z] request: method=resources/templates/list id=2
+[2026-04-30T15:25:33.642Z] send: {"jsonrpc":"2.0","id":2,"result":{"resourceTemplates":[]}}
+[2026-04-30T15:25:41.237Z] stderr: drawio editor stdout: Initializing draw.io assets...
+[2026-04-30T15:25:41.239Z] stderr: drawio editor stdout: Assets ready!
+[2026-04-30T15:25:41.240Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server (2.0.4) starting (WebSocket extension port: 4333)
+[2026-04-30T15:25:41.247Z] stderr: drawio editor stderr: DEBUG: [start_websocket_server] Listening to port 4333
+[2026-04-30T15:25:41.249Z] stderr: drawio editor stderr: DEBUG: Draw.io editor enabled at: http://localhost:3005/
+[2026-04-30T15:25:41.250Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server HTTP active on port 3005
+DEBUG: MCP endpoint: http://localhost:3005/mcp
+[2026-04-30T15:25:41.251Z] stderr: drawio editor stderr: DEBUG: Editor: http://localhost:3005/
+DEBUG: Draw.io MCP Server running on http
+[2026-05-01T10:36:44.230Z] bridge started cwd=e:\Project\BiShe argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-05-01T10:36:44.237Z] stdin chunk bytes=217
+[2026-05-01T10:36:44.239Z] request: method=initialize id=0
+[2026-05-01T10:36:44.240Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-05-01T10:36:44.243Z] stdin chunk bytes=55
+[2026-05-01T10:36:44.244Z] request: method=notifications/initialized id=null
+[2026-05-01T10:36:44.246Z] stdin chunk bytes=86
+[2026-05-01T10:36:44.247Z] request: method=tools/list id=1
+[2026-05-01T10:36:44.248Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-05-01T10:36:45.266Z] stderr: drawio editor stdout: Initializing draw.io assets...
+[2026-05-01T10:36:45.269Z] stderr: drawio editor stdout: Assets ready!
+[2026-05-01T10:36:45.271Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server (2.0.4) starting (WebSocket extension port: 4333)
+[2026-05-01T10:36:45.283Z] stderr: drawio editor stderr: DEBUG: [start_websocket_server] Listening to port 4333
+[2026-05-01T10:36:45.286Z] stderr: drawio editor stderr: DEBUG: Draw.io editor enabled at: http://localhost:3005/
+[2026-05-01T10:36:45.287Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server HTTP active on port 3005
+[2026-05-01T10:36:45.288Z] stderr: drawio editor stderr: DEBUG: MCP endpoint: http://localhost:3005/mcp
+DEBUG: Editor: http://localhost:3005/
+[2026-05-01T10:36:45.289Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server running on http
+[2026-05-01T10:36:45.528Z] bridge started cwd=e:\Project\BiShe argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-05-01T10:36:45.531Z] stdin chunk bytes=217
+[2026-05-01T10:36:45.532Z] request: method=initialize id=0
+[2026-05-01T10:36:45.532Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-05-01T10:36:45.534Z] stdin chunk bytes=55
+[2026-05-01T10:36:45.535Z] request: method=notifications/initialized id=null
+[2026-05-01T10:36:45.536Z] stdin chunk bytes=86
+[2026-05-01T10:36:45.536Z] request: method=tools/list id=1
+[2026-05-01T10:36:45.537Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-05-01T10:36:46.254Z] stderr: drawio editor stdout: Initializing draw.io assets...
+[2026-05-01T10:36:46.256Z] stderr: drawio editor stdout: Assets ready!
+[2026-05-01T10:36:46.257Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server (2.0.4) starting (WebSocket extension port: 4333)
+[2026-05-01T10:36:46.259Z] stderr: drawio editor stderr: DEBUG: Fatal error in main(): Error: [start_websocket_server] Error: Port 4333 is already in use. Please stop the process using this port and try again.
+    at Object.startWebSocketServer (file:///E:/Project/BiShe/.codex-runtime/drawio-bridge/node_modules/drawio-mcp-server/build/index.js:313:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async main (file:///E:/Project/BiShe/.codex-runtime/drawio-bridge/node_modules/drawio-mcp-server/build/index.js:440:5)
+[2026-05-03T06:27:11.517Z] bridge started cwd=e:\Project\BiShe argv=["E:\\Project\\nodejs\\node.exe","E:\\Project\\BiShe\\scripts\\drawio-mcp-stdio-wrapper.mjs"]
+[2026-05-03T06:27:11.529Z] stdin chunk bytes=217
+[2026-05-03T06:27:11.531Z] request: method=initialize id=0
+[2026-05-03T06:27:11.532Z] send: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18","capabilities":{"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"drawio-compat-bridge","version":"0.2.0"}}}
+[2026-05-03T06:27:11.537Z] stdin chunk bytes=55
+[2026-05-03T06:27:11.539Z] request: method=notifications/initialized id=null
+[2026-05-03T06:27:11.547Z] stdin chunk bytes=86
+[2026-05-03T06:27:11.548Z] request: method=tools/list id=1
+[2026-05-03T06:27:11.550Z] send: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"drawio_open_editor","description":"Return the local draw.io editor URL started by the bridge.","annotations":{"title":"Open draw.io editor URL","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"inputSchema":{
+[2026-05-03T06:27:19.493Z] stderr: drawio editor stdout: Initializing draw.io assets...
+[2026-05-03T06:27:19.495Z] stderr: drawio editor stdout: Assets ready!
+[2026-05-03T06:27:19.496Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server (2.0.4) starting (WebSocket extension port: 4333)
+[2026-05-03T06:27:19.504Z] stderr: drawio editor stderr: DEBUG: [start_websocket_server] Listening to port 4333
+[2026-05-03T06:27:19.506Z] stderr: drawio editor stderr: DEBUG: Draw.io editor enabled at: http://localhost:3005/
+[2026-05-03T06:27:19.507Z] stderr: drawio editor stderr: DEBUG: Draw.io MCP Server HTTP active on port 3005
+[2026-05-03T06:27:19.508Z] stderr: drawio editor stderr: DEBUG: MCP endpoint: http://localhost:3005/mcp
+DEBUG: Editor: http://localhost:3005/
+DEBUG: Draw.io MCP Server running on http
